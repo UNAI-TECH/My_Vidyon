@@ -1,0 +1,305 @@
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, Switch } from 'react-native';
+import { theme } from '../../../src/theme';
+import { PageHeader } from '../../../src/components/common/PageHeader';
+import { useAuth } from '../../../src/hooks/useAuth';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '../../../src/lib/supabase';
+import { 
+  Building, 
+  Mail, 
+  Phone, 
+  MapPin, 
+  Save, 
+  Bell,
+  Settings2,
+  ShieldCheck,
+  ChevronRight,
+  LogOut
+} from 'lucide-react-native';
+
+export default function InstitutionSettingsScreen() {
+  const { institutionId, signOut } = useAuth();
+  const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState<'general' | 'notifications'>('general');
+
+  // Form states
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [address, setAddress] = useState('');
+  const [academicYear, setAcademicYear] = useState('');
+
+  // Fetch institution data
+  const { data: institution, isLoading } = useQuery({
+    queryKey: ['institution-settings', institutionId],
+    queryFn: async (): Promise<any> => {
+      if (!institutionId) return null;
+      const { data, error } = await supabase
+        .from('institutions')
+        .select('*')
+        .eq('institution_id', institutionId)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!institutionId
+  });
+
+  // Sync form with fetched data
+  useEffect(() => {
+    if (institution) {
+      setName(institution.name || '');
+      setEmail(institution.email || '');
+      setPhone(institution.phone || '');
+      setAddress(institution.address || '');
+      setAcademicYear(institution.current_academic_year || '');
+    }
+  }, [institution]);
+
+  // Update mutation
+  const updateMutation = useMutation({
+    mutationFn: async (updatedData: Record<string, any>) => {
+      if (!institutionId) throw new Error('No institution ID');
+      const { error } = await supabase
+        .from('institutions')
+        .update(updatedData as any)
+        .eq('institution_id', institutionId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['institution-settings'] });
+      Alert.alert('Success', 'Settings saved successfully');
+    },
+    onError: (error: any) => {
+      Alert.alert('Error', error.message || 'Failed to save settings');
+    }
+  });
+
+  const handleSave = () => {
+    updateMutation.mutate({
+      name,
+      email,
+      phone,
+      address,
+      current_academic_year: academicYear
+    });
+  };
+
+  if (isLoading) {
+    return (
+      <View style={styles.loader}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      <PageHeader title="Settings" subtitle="Configure institutional preferences" />
+
+      {/* Tab Toggle */}
+      <View style={styles.tabs}>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'general' && styles.activeTab]}
+          onPress={() => setActiveTab('general')}
+        >
+          <Building size={16} color={activeTab === 'general' ? theme.colors.primary : theme.colors.textMuted} {...({} as any)} />
+          <Text style={[styles.tabText, activeTab === 'general' && styles.activeTabText]}>General</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'notifications' && styles.activeTab]}
+          onPress={() => setActiveTab('notifications')}
+        >
+          <Bell size={16} color={activeTab === 'notifications' ? theme.colors.primary : theme.colors.textMuted} {...({} as any)} />
+          <Text style={[styles.tabText, activeTab === 'notifications' && styles.activeTabText]}>Notifications</Text>
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+        {activeTab === 'general' && (
+          <>
+            {/* Profile Card */}
+            <View style={styles.profileCard}>
+              <View style={styles.profileImage}>
+                <Building size={36} color={theme.colors.primary} {...({} as any)} />
+              </View>
+              <View style={styles.profileInfo}>
+                <Text style={styles.orgName}>{institution?.name || 'Institution'}</Text>
+                <Text style={styles.orgId}>Code: {institutionId}</Text>
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{institution?.status || 'Active'}</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Editable Fields */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>General Information</Text>
+              <View style={styles.card}>
+                <View style={styles.fieldRow}>
+                  <Text style={styles.fieldLabel}>Institution Name</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={name}
+                    onChangeText={setName}
+                    placeholder="Institution Name"
+                    placeholderTextColor={theme.colors.textMuted}
+                  />
+                </View>
+                <View style={styles.divider} />
+                <View style={styles.fieldRow}>
+                  <Text style={styles.fieldLabel}>Email Address</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={email}
+                    onChangeText={setEmail}
+                    placeholder="admin@institution.edu"
+                    keyboardType="email-address"
+                    placeholderTextColor={theme.colors.textMuted}
+                  />
+                </View>
+                <View style={styles.divider} />
+                <View style={styles.fieldRow}>
+                  <Text style={styles.fieldLabel}>Contact Number</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={phone}
+                    onChangeText={setPhone}
+                    placeholder="+91 98765 43210"
+                    keyboardType="phone-pad"
+                    placeholderTextColor={theme.colors.textMuted}
+                  />
+                </View>
+                <View style={styles.divider} />
+                <View style={styles.fieldRow}>
+                  <Text style={styles.fieldLabel}>Academic Year</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={academicYear}
+                    onChangeText={setAcademicYear}
+                    placeholder="2026-27"
+                    placeholderTextColor={theme.colors.textMuted}
+                  />
+                </View>
+                <View style={styles.divider} />
+                <View style={styles.fieldRow}>
+                  <Text style={styles.fieldLabel}>Address</Text>
+                  <TextInput
+                    style={[styles.input, { height: 60, textAlignVertical: 'top' }]}
+                    value={address}
+                    onChangeText={setAddress}
+                    placeholder="Full address"
+                    multiline
+                    placeholderTextColor={theme.colors.textMuted}
+                  />
+                </View>
+              </View>
+            </View>
+
+            {/* Save Button */}
+            <TouchableOpacity
+              style={[styles.saveBtn, updateMutation.isPending && styles.saveBtnDisabled]}
+              onPress={handleSave}
+              disabled={updateMutation.isPending}
+            >
+              {updateMutation.isPending ? (
+                <ActivityIndicator size="small" color="white" />
+              ) : (
+                <Save size={18} color="white" {...({} as any)} />
+              )}
+              <Text style={styles.saveBtnText}>{updateMutation.isPending ? 'Saving...' : 'Save Changes'}</Text>
+            </TouchableOpacity>
+          </>
+        )}
+
+        {activeTab === 'notifications' && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Notification Preferences</Text>
+            <View style={styles.card}>
+              <View style={styles.switchRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.switchLabel}>Push Notifications</Text>
+                  <Text style={styles.switchDesc}>Receive instant alerts for critical events</Text>
+                </View>
+                <Switch
+                  value={true}
+                  trackColor={{ false: '#CBD5E1', true: theme.colors.primary + '50' }}
+                  thumbColor={theme.colors.primary}
+                />
+              </View>
+              <View style={styles.divider} />
+              <View style={styles.switchRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.switchLabel}>Leave Request Alerts</Text>
+                  <Text style={styles.switchDesc}>Get notified when staff submits leave requests</Text>
+                </View>
+                <Switch
+                  value={true}
+                  trackColor={{ false: '#CBD5E1', true: theme.colors.primary + '50' }}
+                  thumbColor={theme.colors.primary}
+                />
+              </View>
+              <View style={styles.divider} />
+              <View style={styles.switchRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.switchLabel}>Attendance Summary</Text>
+                  <Text style={styles.switchDesc}>Daily attendance summary at end of day</Text>
+                </View>
+                <Switch
+                  value={false}
+                  trackColor={{ false: '#CBD5E1', true: theme.colors.primary + '50' }}
+                  thumbColor={'#CBD5E1'}
+                />
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* Sign Out */}
+        <TouchableOpacity style={styles.logoutBtn} onPress={signOut}>
+          <LogOut size={20} color="#EF4444" {...({} as any)} />
+          <Text style={styles.logoutText}>Sign Out</Text>
+        </TouchableOpacity>
+
+        <Text style={styles.version}>Version 2.0.1 Stable</Text>
+        <View style={{ height: 40 }} />
+      </ScrollView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.colors.background },
+  loader: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  tabs: { flexDirection: 'row', backgroundColor: 'white', padding: 12, gap: 12, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 10, borderRadius: 12, backgroundColor: '#F8FAFC' },
+  activeTab: { backgroundColor: '#3B82F615' },
+  tabText: { fontSize: 13, fontWeight: '600', color: theme.colors.textMuted },
+  activeTabText: { color: theme.colors.primary, fontWeight: 'bold' },
+  scroll: { flex: 1 },
+  scrollContent: { padding: 20 },
+  profileCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', borderRadius: 24, padding: 20, marginBottom: 24, borderWidth: 1, borderColor: '#F1F5F9', elevation: 2 },
+  profileImage: { width: 72, height: 72, borderRadius: 18, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: theme.colors.primary + '20' },
+  profileInfo: { flex: 1, marginLeft: 16 },
+  orgName: { fontSize: 18, fontWeight: 'bold', color: theme.colors.text },
+  orgId: { fontSize: 12, color: theme.colors.textMuted, marginTop: 2 },
+  badge: { alignSelf: 'flex-start', backgroundColor: '#10b98115', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 12, marginTop: 6 },
+  badgeText: { fontSize: 11, fontWeight: 'bold', color: '#10b981', textTransform: 'capitalize' },
+  section: { marginBottom: 24 },
+  sectionTitle: { fontSize: 13, fontWeight: 'bold', color: theme.colors.textMuted, textTransform: 'uppercase', marginBottom: 12, marginLeft: 4, letterSpacing: 0.5 },
+  card: { backgroundColor: 'white', borderRadius: 20, borderWidth: 1, borderColor: '#F1F5F9', overflow: 'hidden' },
+  fieldRow: { padding: 16 },
+  fieldLabel: { fontSize: 12, fontWeight: '600', color: theme.colors.textMuted, marginBottom: 6 },
+  input: { fontSize: 15, color: theme.colors.text, padding: 0 },
+  divider: { height: 1, backgroundColor: '#F1F5F9' },
+  switchRow: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12 },
+  switchLabel: { fontSize: 15, fontWeight: '600', color: theme.colors.text },
+  switchDesc: { fontSize: 12, color: theme.colors.textMuted, marginTop: 2 },
+  saveBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: theme.colors.primary, padding: 16, borderRadius: 16, marginTop: 8 },
+  saveBtnDisabled: { opacity: 0.6 },
+  saveBtnText: { fontSize: 16, fontWeight: 'bold', color: 'white' },
+  logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: '#EF444410', padding: 16, borderRadius: 20, marginTop: 32 },
+  logoutText: { fontSize: 16, fontWeight: 'bold', color: '#EF4444' },
+  version: { textAlign: 'center', fontSize: 12, color: theme.colors.textMuted, marginTop: 32 }
+});
