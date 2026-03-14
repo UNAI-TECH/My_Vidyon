@@ -1,0 +1,202 @@
+import { useEffect, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '../lib/supabase';
+import { format } from 'date-fns';
+
+export interface AttendanceRecord {
+    id: string;
+    created_at: string;
+    name: string;
+    subtitle: string;
+    type: 'Student' | 'Faculty';
+}
+
+export interface EnrollmentTrend {
+    name: string;
+    value: number;
+}
+
+export interface ClassDistribution {
+    name: string;
+    value: number;
+}
+
+export function useInstitutionData(institutionId: string | null, academicYear: string) {
+    const queryClient = useQueryClient();
+    const today = format(new Date(), 'yyyy-MM-dd');
+
+    // 1. Core Stats
+    const { data: stats = { students: 0, teachers: 0, classes: 0, presentToday: 0, totalPeople: 0 }, isLoading: isStatsLoading } = useQuery({
+        queryKey: ['inst-stats', institutionId, academicYear],
+        queryFn: async () => {
+            if (!institutionId) return { students: 0, teachers: 0, classes: 0, presentToday: 0, totalPeople: 0 };
+
+            const [students, teachers, classes, studentAtt, staffAtt] = await Promise.all([
+                supabase.from('students').select('id', { count: 'exact', head: true }).eq('institution_id', institutionId).eq('academic_year', academicYear),
+                supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('institution_id', institutionId).eq('role', 'faculty'),
+                supabase.from('classes').select('id', { count: 'exact', head: true }).eq('institution_id', institutionId), // classes are often global or fixed
+                supabase.from('student_attendance').select('id', { count: 'exact', head: true }).eq('institution_id', institutionId).eq('attendance_date', today).eq('academic_year', academicYear).in('status', ['present', 'late']),
+                supabase.from('staff_attendance').select('id', { count: 'exact', head: true }).eq('institution_id', institutionId).eq('attendance_date', today).in('status', ['present', 'late']),
+            ]);
+
+            const totalStudents = students.count || 0;
+            const totalTeachers = teachers.count || 0;
+
+            return {
+                students: totalStudents,
+                teachers: totalTeachers,
+                classes: classes.count || 0,
+                presentToday: (studentAtt.count || 0) + (staffAtt.count || 0),
+                totalPeople: totalStudents + totalTeachers
+            };
+        },
+        enabled: !!institutionId,
+    });
+
+    // 2. Charts Data (Enrollment & Distribution)
+    const { data: charts = { enrollmentTrend: [], classDistribution: [] }, isLoading: isChartsLoading } = useQuery({
+        queryKey: ['inst-charts', institutionId, academicYear],
+        queryFn: async () => {
+            if (!institutionId) return { enrollmentTrend: [], classDistribution: [] };
+
+            const { data: studentData } = await supabase
+                .from('students')
+                .select('created_at, class_name')
+                .eq('institution_id', institutionId)
+                .eq('academic_year', academicYear) as { data: { created_at: string; class_name: string }[] | null };
+
+            if (!studentData) return { enrollmentTrend: [], classDistribution: [] };
+
+            // Process Trend
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            const monthlyCounts: Record<string, number> = {};
+            months.forEach(m => monthlyCounts[m] = 0);
+
+            studentData.forEach(s => {
+                const m = months[new Date(s.created_at).getMonth()];
+                monthlyCounts[m]++;
+            });
+
+            let cumulative = 0;
+            const enrollmentTrend = months.map(name => {
+                cumulative += monthlyCounts[name];
+                return { name, value: cumulative };
+            });
+
+            // Process Distribution
+            const classCounts: Record<string, number> = {};
+            studentData.forEach(s => {
+                const cls = s.class_name || 'Unassigned';
+                classCounts[cls] = (classCounts[cls] || 0) + 1;
+            });
+
+            const classDistribution = Object.keys(classCounts).map(name => ({
+                name,
+                value: classCounts[name]
+            })).sort((a, b) => b.value - a.value).slice(0, 5);
+
+            return { enrollmentTrend, classDistribution };
+        },
+        enabled: !!institutionId,
+    });
+
+    // 3. Live Attendance Feed
+    const { data: attendanceFeed = [], isLoading: isFeedLoading, refetch: refetchFeed } = useQuery({
+        queryKey: ['inst-attendance-feed', institutionId],
+        queryFn: async () => {
+            if (!institutionId) return [];
+
+            const [studentAtt, staffAtt] = await Promise.all([
+                supabase
+                    .from('student_attendance')
+                    .select('id, created_at, status, students(full_name, class_name)')
+                    .eq('institution_id', institutionId)
+                    .eq('attendance_date', today)
+                    .order('created_at', { ascending: false })
+                    .limit(5),
+                supabase
+                    .from('staff_attendance')
+                    .select('id, created_at, status, profiles(full_name)')
+                    .eq('institution_id', institutionId)
+                    .eq('attendance_date', today)
+                    .order('created_at', { ascending: false })
+                    .limit(5)
+            ]);
+
+            const feed: AttendanceRecord[] = [
+                ...(studentAtt.data?.map((a: any) => ({
+                    id: a.id,
+                    created_at: a.created_at,
+                    name: a.students?.full_name || 'Student',
+                    subtitle: a.students?.class_name || 'Unknown Class',
+                    type: 'Student' as const
+                })) || []),
+                ...(staffAtt.data?.map((a: any) => ({
+                    id: a.id,
+                    created_at: a.created_at,
+                    name: a.profiles?.full_name || 'Staff',
+                    subtitle: 'Faculty Member',
+                    type: 'Faculty' as const
+                })) || [])
+            ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 5);
+
+            return feed;
+        },
+        enabled: !!institutionId,
+    });
+
+    // 4. Pending Leaves (Notifications)
+    const { data: pendingLeaves = [], isLoading: isLeavesLoading } = useQuery({
+        queryKey: ['inst-pending-leaves', institutionId],
+        queryFn: async () => {
+            if (!institutionId) return [];
+            const { data } = await supabase
+                .from('staff_leaves')
+                .select('id, created_at, leave_type, profiles(full_name)')
+                .eq('institution_id', institutionId)
+                .eq('status', 'Pending')
+                .order('created_at', { ascending: false })
+                .limit(5);
+
+            return (data || []).map((l: any) => ({
+                id: l.id,
+                message: `${l.profiles?.full_name || 'Staff'} requested ${l.leave_type}`,
+                created_at: l.created_at
+            }));
+        },
+        enabled: !!institutionId,
+    });
+
+    // Real-time Subscriptions
+    useEffect(() => {
+        if (!institutionId) return;
+
+        const channel = supabase.channel(`inst-db-${institutionId}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'student_attendance', filter: `institution_id=eq.${institutionId}` }, () => {
+                queryClient.invalidateQueries({ queryKey: ['inst-stats'] });
+                refetchFeed();
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'staff_attendance', filter: `institution_id=eq.${institutionId}` }, () => {
+                queryClient.invalidateQueries({ queryKey: ['inst-stats'] });
+                refetchFeed();
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'students', filter: `institution_id=eq.${institutionId}` }, () => {
+                queryClient.invalidateQueries({ queryKey: ['inst-stats'] });
+                queryClient.invalidateQueries({ queryKey: ['inst-charts'] });
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'staff_leaves', filter: `institution_id=eq.${institutionId}` }, () => {
+                queryClient.invalidateQueries({ queryKey: ['inst-pending-leaves'] });
+            })
+            .subscribe();
+
+        return () => { channel.unsubscribe(); };
+    }, [institutionId]);
+
+    return {
+        stats,
+        charts,
+        attendanceFeed,
+        pendingLeaves,
+        isLoading: isStatsLoading || isChartsLoading || isFeedLoading || isLeavesLoading
+    };
+}

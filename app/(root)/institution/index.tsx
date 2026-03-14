@@ -1,0 +1,272 @@
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, ActivityIndicator } from 'react-native';
+import { NotificationBell } from '../../../src/components/common/NotificationBell';
+import { theme } from '../../../src/theme';
+import { PageHeader } from '../../../src/components/common/PageHeader';
+import { useNotifications } from '../../../src/hooks/useNotifications';
+import { StatCard } from '../../../src/components/common/StatCard';
+import { useAuth } from '../../../src/hooks/useAuth';
+import { useInstitutionData } from '../../../src/hooks/useInstitutionData';
+import { 
+  Users, 
+  Briefcase, 
+  FileText,
+  TrendingUp,
+  Settings,
+  GraduationCap,
+  Building,
+  Scan,
+  UserCheck,
+  Clock,
+  ChevronDown
+} from 'lucide-react-native';
+import { ShortcutGrid } from '../../../src/components/common/ShortcutGrid';
+import { LineChart, PieChart } from 'react-native-chart-kit';
+import { format } from 'date-fns';
+
+const screenWidth = Dimensions.get('window').width;
+
+export default function InstitutionDashboard() {
+  const { institutionId } = useAuth();
+  const [academicYear, setAcademicYear] = useState('2026-27');
+  const { stats, charts, attendanceFeed, pendingLeaves, isLoading } = useInstitutionData(institutionId, academicYear);
+
+  const shortcuts = [
+    { label: 'Org Structure', icon: Building, href: '/(root)/institution/org', color: '#3B82F6' },
+    { label: 'Departments', icon: Briefcase, href: '/(root)/institution/departments', color: '#6366F1' },
+    { label: 'Users', icon: Users, href: '/(root)/institution/users', color: '#A855F7' },
+    { label: 'Add Student', icon: GraduationCap, href: '/(root)/institution/students/add', color: '#14B8A6' },
+    { label: 'Leave Ops', icon: FileText, href: '/(root)/institution/leaves', color: '#EF4444' },
+    { label: 'Timetable', icon: Clock, href: '/(root)/institution/timetable', color: '#F59E0B' },
+    { label: 'Staff Assigning', icon: UserCheck, href: '/(root)/institution/faculty/assign', color: '#10B981' },
+    { label: 'Analytics', icon: TrendingUp, href: '/(root)/institution/analytics', color: '#10B981' },
+    { label: 'Reports', icon: FileText, href: '/(root)/institution/reports', color: '#8B5CF6' },
+    { label: 'Live Vision', icon: Scan, href: '/(root)/institution/live-feed', color: '#06B6D4' },
+    { label: 'Settings', icon: Settings, href: '/(root)/institution/settings', color: '#64748B' },
+  ];
+
+  const attendanceRate = stats.totalPeople > 0 
+    ? Math.round((stats.presentToday / stats.totalPeople) * 100) 
+    : 0;
+
+  if (isLoading && !stats.students) {
+    return (
+      <View style={styles.loaderContainer}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <PageHeader 
+        title="Institution Overview" 
+        subtitle={`Academic Year ${academicYear}`}
+        actions={
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <NotificationBell />
+            <TouchableOpacity style={styles.yearPicker}>
+              <Text style={styles.yearText}>{academicYear}</Text>
+              <ChevronDown size={14} color={theme.colors.textMuted} {...({} as any)} />
+            </TouchableOpacity>
+          </View>
+        }
+      />
+
+      {/* Shortcuts - Moved to Top */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Management Console</Text>
+        <ShortcutGrid items={shortcuts} />
+      </View>
+
+      {/* Stats Grid */}
+      <View style={styles.statsGrid}>
+        <StatCard 
+          title="Daily Attendance" 
+          value={`${attendanceRate}%`} 
+          icon={TrendingUp} 
+          iconColor="#10B981"
+          change={`${stats.presentToday} Present`}
+          changeType="positive"
+        />
+        <StatCard 
+          title="Total Students" 
+          value={stats.students} 
+          icon={GraduationCap} 
+          iconColor="#3B82F6"
+          change="Real-time count"
+        />
+        <StatCard 
+          title="Total teachers" 
+          value={stats.teachers} 
+          icon={Users} 
+          iconColor="#A855F7"
+          change="Active faculty"
+        />
+        <StatCard 
+          title="Total Classes" 
+          value={stats.classes} 
+          icon={Building} 
+          iconColor="#F59E0B"
+          change="Across all groups"
+        />
+      </View>
+
+      {/* Charts Section */}
+      <View style={styles.chartCard}>
+        <Text style={styles.chartTitle}>Enrollment Trend (Cumulative)</Text>
+        <LineChart
+          data={{
+            labels: charts.enrollmentTrend.length > 0 ? charts.enrollmentTrend.map(t => t.name) : ["Jan"],
+            datasets: [{
+              data: charts.enrollmentTrend.length > 0 ? charts.enrollmentTrend.map(t => t.value) : [0]
+            }]
+          }}
+          width={screenWidth - 68}
+          height={180}
+          chartConfig={{
+            backgroundColor: "#fff",
+            backgroundGradientFrom: "#fff",
+            backgroundGradientTo: "#fff",
+            decimalPlaces: 0,
+            color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
+            labelColor: (opacity = 1) => `rgba(100, 116, 139, ${opacity})`,
+            propsForDots: { r: "4", strokeWidth: "2", stroke: "#3B82F6" },
+            style: { borderRadius: 16 },
+          }}
+          bezier
+          style={styles.chartStyle}
+        />
+      </View>
+
+      <View style={styles.chartCard}>
+          <Text style={styles.chartTitle}>Class Distribution</Text>
+          <PieChart
+            data={charts.classDistribution.map((c, i) => ({
+                name: c.name,
+                population: c.value,
+                color: ["#3B82F6", "#A855F7", "#10B981", "#F59E0B", "#EF4444"][i % 5],
+                legendFontColor: "#64748B",
+                legendFontSize: 11
+            }))}
+            width={screenWidth - 68}
+            height={160}
+            chartConfig={{
+              color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+            }}
+            accessor="population"
+            backgroundColor="transparent"
+            paddingLeft="15"
+            absolute
+          />
+      </View>
+
+      {/* Live Feed */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+            <View style={styles.flexRow}>
+                <Scan size={18} color={theme.colors.primary} style={styles.animatePulse} {...({} as any)} />
+                <Text style={styles.sectionTitle}>Live Attendance Stream</Text>
+            </View>
+            <View style={styles.badge}>
+                <Text style={styles.badgeText}>Camera Bridge Active</Text>
+            </View>
+        </View>
+        
+        <View style={styles.feedContainer}>
+            {attendanceFeed.length > 0 ? attendanceFeed.map((item) => (
+                <View key={item.id} style={styles.feedItem}>
+                    <View style={styles.feedProfile}>
+                        <View style={styles.avatar}>
+                            <Text style={styles.avatarText}>{item.name[0]}</Text>
+                        </View>
+                        <View>
+                            <Text style={styles.feedName}>{item.name}</Text>
+                            <Text style={styles.feedSubtitle}>{item.subtitle}</Text>
+                        </View>
+                    </View>
+                    <View style={styles.feedMeta}>
+                        <View style={styles.presentBadge}>
+                            <UserCheck size={12} color="#10B981" {...({} as any)} />
+                            <Text style={styles.presentText}>Present</Text>
+                        </View>
+                        <View style={styles.timeWrapper}>
+                            <Clock size={10} color={theme.colors.textMuted} {...({} as any)} />
+                            <Text style={styles.feedTime}>{format(new Date(item.created_at), 'hh:mm a')}</Text>
+                        </View>
+                    </View>
+                </View>
+            )) : (
+                <View style={styles.emptyFeed}>
+                    <Scan size={40} color="#E2E8F0" {...({} as any)} />
+                    <Text style={styles.emptyText}>Waiting for recognitions...</Text>
+                </View>
+            )}
+        </View>
+      </View>
+
+      {/* Notifications */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Notifications (Leaves)</Text>
+            <TouchableOpacity><Text style={styles.viewAll}>View All</Text></TouchableOpacity>
+        </View>
+        <View style={styles.notificationList}>
+            {pendingLeaves.length > 0 ? pendingLeaves.map(notif => (
+                <View key={notif.id} style={styles.notifItem}>
+                    <View style={styles.notifDot} />
+                    <View style={styles.notifContent}>
+                        <Text style={styles.notifMessage}>{notif.message}</Text>
+                        <Text style={styles.notifTime}>{format(new Date(notif.created_at), 'MMM d • hh:mm a')}</Text>
+                    </View>
+                </View>
+            )) : (
+                <Text style={styles.emptyNotif}>No pending leave requests</Text>
+            )}
+        </View>
+      </View>
+      
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.colors.background },
+  content: { padding: 16, paddingBottom: 40 },
+  loaderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.background },
+  yearPicker: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0', gap: 6 },
+  yearText: { fontSize: 13, fontWeight: '600', color: theme.colors.text },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 20 },
+  chartCard: { backgroundColor: 'white', borderRadius: 24, padding: 18, marginBottom: 20, borderWidth: 1, borderColor: '#F1F5F9' },
+  chartTitle: { fontSize: 14, fontWeight: 'bold', color: theme.colors.text, marginBottom: 16 },
+  chartStyle: { marginLeft: -16, borderRadius: 16 },
+  section: { marginBottom: 24 },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  flexRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  sectionTitle: { fontSize: 16, fontWeight: 'bold', color: theme.colors.text },
+  badge: { backgroundColor: 'rgba(59, 130, 246, 0.05)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(59, 130, 246, 0.2)' },
+  badgeText: { fontSize: 10, fontWeight: 'bold', color: '#3B82F6', textTransform: 'uppercase' },
+  feedContainer: { backgroundColor: 'white', borderRadius: 24, padding: 12, borderWidth: 1, borderColor: '#F1F5F9' },
+  feedItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 12, borderRadius: 16, marginBottom: 8, backgroundColor: '#F8FAFC' },
+  feedProfile: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  avatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(59, 130, 246, 0.1)', justifyContent: 'center', alignItems: 'center' },
+  avatarText: { fontWeight: 'bold', color: '#3B82F6' },
+  feedName: { fontSize: 13, fontWeight: 'bold', color: theme.colors.text },
+  feedSubtitle: { fontSize: 11, color: theme.colors.textMuted },
+  feedMeta: { alignItems: 'flex-end' },
+  presentBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 2 },
+  presentText: { fontSize: 11, fontWeight: '600', color: '#10B981' },
+  timeWrapper: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  feedTime: { fontSize: 10, color: theme.colors.textMuted },
+  animatePulse: { opacity: 0.8 },
+  emptyFeed: { alignItems: 'center', justifyContent: 'center', paddingVertical: 32, gap: 12 },
+  emptyText: { fontSize: 12, color: theme.colors.textMuted },
+  notificationList: { backgroundColor: 'white', borderRadius: 24, padding: 16, borderWidth: 1, borderColor: '#F1F5F9' },
+  notifItem: { flexDirection: 'row', gap: 12, marginBottom: 16 },
+  notifDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#F59E0B', marginTop: 6 },
+  notifContent: { flex: 1 },
+  notifMessage: { fontSize: 13, fontWeight: '600', color: theme.colors.text },
+  notifTime: { fontSize: 11, color: theme.colors.textMuted, marginTop: 2 },
+  viewAll: { fontSize: 12, color: theme.colors.primary, fontWeight: '600' },
+  emptyNotif: { textAlign: 'center', paddingVertical: 12, fontSize: 12, color: theme.colors.textMuted },
+});
