@@ -7,6 +7,7 @@ type AuthContextType = {
   user: User | null;
   role: 'admin' | 'faculty' | 'student' | 'parent' | 'institution' | 'accountant' | 'canteen' | 'superadmin' | null;
   institutionId: string | null;
+  institutionUuid: string | null;
   loading: boolean;
   signOut: () => Promise<void>;
 };
@@ -16,6 +17,7 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   role: null,
   institutionId: null,
+  institutionUuid: null,
   loading: true,
   signOut: async () => {},
 });
@@ -25,6 +27,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<AuthContextType['role']>(null);
   const [institutionId, setInstitutionId] = useState<string | null>(null);
+  const [institutionUuid, setInstitutionUuid] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const signOut = async () => {
@@ -69,22 +72,37 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         console.log('Role found in DB:', data.role);
         setRole(data.role as any);
         setInstitutionId(data.institution_id);
+
+        // Fetch the proper UUID if we have a slug
+        if (data.institution_id) {
+          const { data: instData } = await supabase
+            .from('institutions')
+            .select('id')
+            .eq('institution_id', data.institution_id)
+            .maybeSingle();
+          
+          if (instData) {
+            setInstitutionUuid((instData as any).id);
+          }
+        }
       } else {
         console.warn('No profile found, defaulting to student');
         setRole('student');
         setInstitutionId(null);
+        setInstitutionUuid(null);
       }
     } catch (e) {
       console.error('Error fetching role:', e);
       setRole('student');
       setInstitutionId(null);
+      setInstitutionUuid(null);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <AuthContext.Provider value={{ session, user, role, institutionId, loading, signOut }}>
+    <AuthContext.Provider value={{ session, user, role, institutionId, institutionUuid, loading, signOut }}>
       {children}
     </AuthContext.Provider>
   );

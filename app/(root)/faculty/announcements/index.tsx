@@ -17,7 +17,7 @@ import { format } from 'date-fns';
 import { ActivityIndicator as RNActivityIndicator } from 'react-native';
 
 export default function FacultyAnnouncements() {
-  const { user, institutionId } = useAuth();
+  const { user, institutionId, institutionUuid } = useAuth();
   const { assignedSubjects } = useFacultyDashboard(user?.id, institutionId || undefined);
   const [selectedClass, setSelectedClass] = React.useState<any>(null);
 

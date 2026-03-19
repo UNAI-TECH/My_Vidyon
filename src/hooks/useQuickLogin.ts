@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { LargeSecureStore } from '../lib/storage';
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 
@@ -31,13 +31,13 @@ export function useQuickLogin() {
 
   const loadAccounts = async () => {
     try {
-      const stored = await AsyncStorage.getItem(STORAGE_KEY);
+      const stored = await LargeSecureStore.getItem(STORAGE_KEY);
       if (stored) {
         const parsed = JSON.parse(stored) as SavedAccount[];
         // Filter out old-format accounts that don't have tokens
         const valid = parsed.filter(a => a.access_token && a.refresh_token);
         if (valid.length !== parsed.length) {
-          await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(valid));
+          await LargeSecureStore.setItem(STORAGE_KEY, JSON.stringify(valid));
         }
         setSavedAccounts(valid.sort((a, b) => b.lastLogin - a.lastLogin));
       }
@@ -50,7 +50,7 @@ export function useQuickLogin() {
 
   const saveAccount = async (account: Omit<SavedAccount, 'lastLogin'>) => {
     try {
-      const stored = await AsyncStorage.getItem(STORAGE_KEY);
+      const stored = await LargeSecureStore.getItem(STORAGE_KEY);
       const current: SavedAccount[] = stored ? JSON.parse(stored) : [];
       const existingIndex = current.findIndex(a => a.id === account.id);
 
@@ -69,7 +69,7 @@ export function useQuickLogin() {
         .sort((a, b) => b.lastLogin - a.lastLogin)
         .slice(0, 5);
 
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(limited));
+      await LargeSecureStore.setItem(STORAGE_KEY, JSON.stringify(limited));
       setSavedAccounts(limited);
     } catch (e) {
       console.error('Error saving account:', e);
@@ -139,10 +139,10 @@ export function useQuickLogin() {
 
   const removeAccount = async (id: string) => {
     try {
-      const stored = await AsyncStorage.getItem(STORAGE_KEY);
+      const stored = await LargeSecureStore.getItem(STORAGE_KEY);
       const current: SavedAccount[] = stored ? JSON.parse(stored) : [];
       const updated = current.filter(a => a.id !== id);
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      await LargeSecureStore.setItem(STORAGE_KEY, JSON.stringify(updated));
       setSavedAccounts(updated);
     } catch (e) {
       console.error('Error removing account:', e);

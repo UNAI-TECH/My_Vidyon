@@ -64,7 +64,7 @@ export const AlertModal = ({
                 </TouchableOpacity>
               ))
             ) : (
-              <TouchableOpacity style={styles.primaryBtn} onPress={onClose}>
+              <TouchableOpacity style={[styles.btn, styles.primaryBtn]} onPress={onClose}>
                 <Text style={[styles.btnText, { color: 'white' }]}>OK</Text>
               </TouchableOpacity>
             )}
@@ -79,12 +79,40 @@ const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 },
   content: { backgroundColor: 'white', borderRadius: 24, padding: 24, width: '100%', maxWidth: 340, alignItems: 'center' },
   iconContainer: { marginBottom: 16 },
-  title: { fontSize: 20, fontWeight: 'bold', color: theme.colors.text, marginBottom: 12, textAlign: 'center' },
-  message: { fontSize: 15, color: theme.colors.textMuted, textAlign: 'center', marginBottom: 24, lineHeight: 22 },
+  title: { fontSize: 22, fontWeight: 'bold', color: theme.colors.text, marginBottom: 12, textAlign: 'center' },
+  message: { fontSize: 16, color: theme.colors.textMuted, textAlign: 'center', marginBottom: 24, lineHeight: 22 },
   actions: { width: '100%', flexDirection: 'row', gap: 12 },
-  btn: { height: 48, borderRadius: 14, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 16 },
-  primaryBtn: { backgroundColor: theme.colors.primary, flex: 1 },
-  secondaryBtn: { backgroundColor: '#F1F5F9', flex: 1 },
-  destructiveBtn: { backgroundColor: '#EF4444', flex: 1 },
-  btnText: { fontSize: 15, fontWeight: '700' },
+  btn: { 
+    height: 50, 
+    borderRadius: 8, // Smaller radius for "beveled" feel
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    paddingHorizontal: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  primaryBtn: { 
+    backgroundColor: theme.colors.secondary,
+    borderWidth: 1,
+    borderColor: '#D97706', // subtle bevel border
+    flex: 1 
+  },
+  secondaryBtn: { 
+    backgroundColor: '#F8FAFC', 
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    flex: 1 
+  },
+  destructiveBtn: { 
+    backgroundColor: '#EF4444', 
+    flex: 1 
+  },
+  btnText: { 
+    fontSize: 16, 
+    fontWeight: '700',
+    textAlign: 'center'
+  },
 });

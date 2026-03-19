@@ -23,19 +23,25 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../../../../src/lib/supabase';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AlertModal } from '../../../../src/components/common/AlertModal';
 
-const steps = [
-  { id: 1, name: 'Basic Info', icon: Building2 },
-  { id: 2, name: 'Admin Account', icon: UserCog },
-  { id: 3, name: 'Structure', icon: School },
-  { id: 4, name: 'Subjects', icon: BookOpen },
-  { id: 5, name: 'Review', icon: Check },
-];
+// Removed global steps array to make it dynamic inside component
 
 export default function InstitutionOnboarding() {
   const router = useRouter();
   const { mode, id } = useLocalSearchParams();
   const isEditMode = mode === 'edit';
+  const isSecurityMode = mode === 'security';
+
+  const allSteps = [
+    { id: 1, name: 'Basic Info', icon: Building2, visible: !isSecurityMode },
+    { id: 2, name: 'Admin Account', icon: UserCog, visible: !isEditMode || isSecurityMode },
+    { id: 3, name: 'Structure', icon: School, visible: !isSecurityMode },
+    { id: 4, name: 'Subjects', icon: BookOpen, visible: !isSecurityMode },
+    { id: 5, name: 'Review', icon: Check, visible: !isSecurityMode },
+  ];
+
+  const steps = allSteps.filter(s => s.visible);
   
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -91,7 +97,26 @@ export default function InstitutionOnboarding() {
   const [currentSubjectInput, setCurrentSubjectInput] = useState('');
   const [selectedGroup, setSelectedGroup] = useState(''); // for higher secondary
   
-  const [pendingSubjects, setPendingSubjects] = useState<string[]>([]);  useEffect(() => {
+  const [pendingSubjects, setPendingSubjects] = useState<string[]>([]);
+  
+  // Alert State
+  const [alert, setAlert] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type: 'success' | 'error' | 'info' | 'warning';
+    onClose?: () => void;
+    buttons?: any[];
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info'
+  });
+
+  const showAlert = (title: string, message: string, type: any = 'info', onClose?: () => void, buttons?: any[]) => {
+    setAlert({ visible: true, title, message, type, onClose, buttons });
+  };  useEffect(() => {
     if (isEditMode && id) {
       fetchInstitutionData();
     }
@@ -131,7 +156,7 @@ export default function InstitutionOnboarding() {
         });
       }
     } catch (err: any) {
-      Alert.alert('Error', 'Failed to fetch institution: ' + err.message);
+      showAlert('Error', 'Failed to fetch institution: ' + err.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -157,22 +182,22 @@ export default function InstitutionOnboarding() {
           <View style={styles.stepWrapper}>
             <View style={[
               styles.stepIcon, 
-              currentStep === step.id && styles.activeStepIcon,
-              currentStep > step.id && styles.completedStepIcon
+              (isSecurityMode ? currentStep === 1 : currentStep === step.id) && styles.activeStepIcon,
+              (isSecurityMode ? false : currentStep > step.id) && styles.completedStepIcon
             ]}>
               <step.icon 
                 size={18} 
-                color={currentStep >= step.id ? 'white' : theme.colors.textMuted} 
+                color={(isSecurityMode || currentStep >= step.id) ? 'white' : theme.colors.textMuted} 
                 {...({} as any)} 
               />
             </View>
             <Text style={[
               styles.stepLabel, 
-              currentStep === step.id && styles.activeStepLabel
+              (isSecurityMode ? currentStep === 1 : currentStep === step.id) && styles.activeStepLabel
             ]}>{step.name}</Text>
           </View>
           {index < steps.length - 1 && (
-            <View style={[styles.stepLine, currentStep > step.id && styles.activeStepLine]} />
+            <View style={[styles.stepLine, (isSecurityMode ? false : currentStep > step.id) && styles.activeStepLine]} />
           )}
         </React.Fragment>
       ))}
@@ -276,9 +301,9 @@ export default function InstitutionOnboarding() {
   const handleVerify = () => {
     if (verification.oldEmail === existingCreds.email && verification.oldPassword === existingCreds.password) {
       setCredentialsVerified(true);
-      Alert.alert('Verified', 'Old credentials verified. You can now update the email and password.');
+      showAlert('Verified', 'Old credentials verified. You can now update the email and password.', 'success');
     } else {
-      Alert.alert('Error', 'Incorrect old email or password.');
+      showAlert('Error', 'Incorrect old email or password.', 'error');
     }
   };
 
@@ -593,7 +618,7 @@ export default function InstitutionOnboarding() {
   const addPendingSubject = () => {
     if (!currentSubjectInput.trim()) return;
     if (pendingSubjects.some(s => s.toLowerCase() === currentSubjectInput.trim().toLowerCase())) {
-        Alert.alert('Error', 'Subject already in list');
+        showAlert('Error', 'Subject already in list', 'warning');
         return;
     }
     setPendingSubjects([...pendingSubjects, currentSubjectInput.trim()]);
@@ -606,13 +631,13 @@ export default function InstitutionOnboarding() {
 
   const savePendingSubjects = () => {
     if (!selectedClassId) {
-        Alert.alert('Error', 'Please select a class first');
+        showAlert('Error', 'Please select a class first', 'warning');
         return;
     }
 
     const selectedClassObj = allAvailableClasses.find(c => c.id === selectedClassId);
     if (!selectedClassObj) {
-        Alert.alert('Error', 'Selected class not found');
+        showAlert('Error', 'Selected class not found', 'error');
         return;
     }
 
@@ -858,22 +883,33 @@ export default function InstitutionOnboarding() {
   );
 
   const handleNext = () => {
-    if (currentStep === 1) {
-      if (!basicInfo.name || !basicInfo.school_code) return Alert.alert('Missing Info', 'Please fill name and code.');
-    }
-    
-    if (currentStep === 2 && isEditMode) {
-      const emailChanged = adminInfo.email !== existingCreds.email;
-      const passwordChanged = adminInfo.password !== '';
-      
-      if ((emailChanged || passwordChanged) && !credentialsVerified) {
-        return Alert.alert('Verification Required', 'Please verify old credentials before changing admin email or password.');
+    if (!isSecurityMode) {
+      if (currentStep === 1) {
+        if (!basicInfo.name || !basicInfo.school_code) return showAlert('Missing Info', 'Please fill name and code.', 'warning');
       }
-    }
+      
+      if (currentStep === 2 && isEditMode) {
+        const emailChanged = adminInfo.email !== existingCreds.email;
+        const passwordChanged = adminInfo.password !== '';
+        
+        if ((emailChanged || passwordChanged) && !credentialsVerified) {
+          return showAlert('Verification Required', 'Please verify old credentials before changing admin email or password.', 'warning');
+        }
+      }
 
-    if (currentStep < steps.length) {
-      setCurrentStep(currentStep + 1);
+      if (currentStep < 5) { // Max steps for non-security
+        // Special logic to skip Step 2 if in edit mode (since it's now separated)
+        if (isEditMode && currentStep === 1) {
+          setCurrentStep(3); // Skip Admin Account
+        } else {
+          setCurrentStep(currentStep + 1);
+        }
+      } else {
+        handleSubmit();
+      }
     } else {
+      // In security mode, we only have one step (which is rendered directly)
+      // and "Continue" should trigger submit.
       handleSubmit();
     }
   };
@@ -882,9 +918,9 @@ export default function InstitutionOnboarding() {
     try {
       setSubmitting(true);
       
-      // 1. Upload Logo if it's a new local URI
+      // 1. Upload Logo if it's a new local URI (Skip in security mode)
       let finalLogoUrl = logo;
-      if (logo && logo.startsWith('file://')) {
+      if (!isSecurityMode && logo && logo.startsWith('file://')) {
         const fileExt = logo.split('.').pop();
         const fileName = `${basicInfo.school_code}-${Math.random()}.${fileExt}`;
         const formData = new FormData();
@@ -903,26 +939,28 @@ export default function InstitutionOnboarding() {
         }
       }
 
-      // 2. Create/Update Institution
-      const instData: any = {
-        institution_id: basicInfo.school_code,
-        name: basicInfo.name,
-        type: basicInfo.type,
-        address: basicInfo.address,
-        city: basicInfo.city,
-        state: basicInfo.state,
-        email: basicInfo.email,
-        phone: basicInfo.phone,
-        current_academic_year: basicInfo.academic_year,
-        logo_url: finalLogoUrl,
-        status: isEditMode ? undefined : 'active'
-      };
+      // 2. Create/Update Institution (Skip in security mode unless it's a new institution)
+      if (!isSecurityMode) {
+        const instData: any = {
+          institution_id: basicInfo.school_code,
+          name: basicInfo.name,
+          type: basicInfo.type,
+          address: basicInfo.address,
+          city: basicInfo.city,
+          state: basicInfo.state,
+          email: basicInfo.email,
+          phone: basicInfo.phone,
+          current_academic_year: basicInfo.academic_year,
+          logo_url: finalLogoUrl,
+          status: isEditMode ? undefined : 'active'
+        };
 
-      const { error: instError } = await (supabase
-        .from('institutions') as any)
-        .upsert([instData], { onConflict: 'institution_id' });
+        const { error: instError } = await (supabase
+          .from('institutions') as any)
+          .upsert([instData], { onConflict: 'institution_id' });
 
-      if (instError) throw instError;
+        if (instError) throw instError;
+      }
 
       // 3. Provision or Update Admin
       const emailChanged = adminInfo.email !== existingCreds.email;
@@ -967,8 +1005,8 @@ export default function InstitutionOnboarding() {
         }
       }
 
-      // 4. Setup Structure (Simplified for this version)
-      if (structure.length > 0) {
+      // 4. Setup Structure (Skip in security mode)
+      if (!isSecurityMode && structure.length > 0) {
         for (const group of structure) {
           const { data: gData, error: gError } = await (supabase
             .from('groups') as any)
@@ -977,18 +1015,18 @@ export default function InstitutionOnboarding() {
             .single();
             
           if (!gError && gData) {
-            const classesToInsert = group.classes.map((c: string) => ({
+            const classesToInsert = group.classes.map((c: any) => ({
               group_id: gData.id,
-              name: c,
-              sections: ['A', 'B']
+              name: typeof c === 'string' ? c : c.name,
+              sections: c.sections || ['A', 'B']
             }));
             await (supabase.from('classes') as any).insert(classesToInsert);
           }
         }
       }
       
-      // 5. Setup Subjects
-      if (subjects.length > 0) {
+      // 5. Setup Subjects (Skip in security mode)
+      if (!isSecurityMode && subjects.length > 0) {
         const subjectsToInsert = subjects.map(sub => ({
           institution_id: basicInfo.school_code,
           name: sub.name,
@@ -999,11 +1037,11 @@ export default function InstitutionOnboarding() {
         await (supabase.from('subjects') as any).insert(subjectsToInsert);
       }
       
-      Alert.alert('Success', 'Institution onboarding completed!', [
-        { text: 'OK', onPress: () => router.replace('/admin/institutions') }
-      ]);
+      showAlert('Success', isSecurityMode ? 'Admin credentials updated!' : 'Institution onboarding completed!', 'success', () => {
+        router.replace('/admin/institutions');
+      });
     } catch (err: any) {
-      Alert.alert('Error', err.message);
+      showAlert('Error', err.message, 'error');
     } finally {
       setSubmitting(false);
     }
@@ -1021,11 +1059,17 @@ export default function InstitutionOnboarding() {
         
         {renderStepIndicator()}
 
-        {currentStep === 1 && renderBasicInfo()}
-        {currentStep === 2 && renderAdminAccount()}
-        {currentStep === 3 && renderStructure()}
-        {currentStep === 4 && renderSubjects()}
-        {currentStep === 5 && renderReview()}
+        {isSecurityMode ? (
+          renderAdminAccount()
+        ) : (
+          <>
+            {currentStep === 1 && renderBasicInfo()}
+            {currentStep === 2 && renderAdminAccount()}
+            {currentStep === 3 && renderStructure()}
+            {currentStep === 4 && renderSubjects()}
+            {currentStep === 5 && renderReview()}
+          </>
+        )}
 
         <View style={styles.navButtons}>
           {currentStep > 1 && (
@@ -1056,6 +1100,18 @@ export default function InstitutionOnboarding() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      <AlertModal 
+        visible={alert.visible}
+        title={alert.title}
+        message={alert.message}
+        type={alert.type}
+        onClose={() => {
+          setAlert({ ...alert, visible: false });
+          if (alert.onClose) alert.onClose();
+        }}
+        buttons={alert.buttons}
+      />
     </View>
   );
 }

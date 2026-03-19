@@ -158,6 +158,7 @@ export default function InstitutionsList() {
               onToggleStatus={() => handleToggle(inst.id, inst.status, inst.name)}
               onDelete={() => handleDelete(inst.id, inst.name)}
               onEdit={() => router.push(`/admin/onboarding?mode=edit&id=${inst.institution_id}`)}
+              onSecurity={() => router.push(`/admin/onboarding?mode=security&id=${inst.institution_id}`)}
               onClick={() => handleShowDetail(inst)}
             />
           ))

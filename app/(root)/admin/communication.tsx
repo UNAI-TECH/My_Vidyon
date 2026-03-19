@@ -5,13 +5,41 @@ import { Bell, Send, Users, Smartphone } from 'lucide-react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../src/lib/supabase';
 import { useAuth } from '../../../src/hooks/useAuth';
+import { School, ChevronDown, Check, X } from 'lucide-react-native';
+import { AlertModal } from '../../../src/components/common/AlertModal';
+import { Modal, FlatList } from 'react-native';
+
+interface Institution {
+  id: string; 
+  institution_id: string; // The Slug (TEXT) used for announcements
+  name: string;
+}
 
 export default function CommunicationHub() {
   const { institutionId, user } = useAuth();
   const queryClient = useQueryClient();
   const [message, setMessage] = React.useState('');
-  const [audience, setAudience] = React.useState<'all' | 'faculty'>('all');
+  const [audience, setAudience] = React.useState<'all' | 'institution'>('all');
+  const [selectedInstitutionId, setSelectedInstitutionId] = React.useState<string | null>(null);
   const [isSending, setIsSending] = React.useState(false);
+  const [showInstitutionSelector, setShowInstitutionSelector] = React.useState(false);
+  
+  // Alert State
+  const [alert, setAlert] = React.useState({ visible: false, title: '', message: '', type: 'info' as any });
+
+  const { data: institutions = [] } = useQuery<Institution[]>({
+    queryKey: ['institutions-active-v5'], // New key to clear any UUID cache
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('institutions')
+        .select('id, institution_id, name')
+        .eq('status', 'active');
+      return (data as Institution[]) || [];
+    },
+    staleTime: 0,
+    gcTime: 0, // Ensure no old data is kept
+    refetchOnMount: 'always'
+  });
 
   const { data: history = [], isLoading } = useQuery({
     queryKey: ['announcements'],
@@ -29,29 +57,42 @@ export default function CommunicationHub() {
     if (!message.trim() || !user) return;
     setIsSending(true);
     try {
+      const payload: any = {
+        title: audience === 'all' ? 'Announcement for ALL' : `Announcement for ${institutions.find(i => i.institution_id === selectedInstitutionId)?.name || 'Institution'}`,
+        content: message,
+        type: audience === 'all' ? 'all' : 'info',
+        created_by: user.id,
+        category: 'General'
+      };
+
+      if (audience === 'institution' && selectedInstitutionId) {
+        payload.institution_id = selectedInstitutionId;
+      } else {
+        payload.institution_id = null; // System-wide
+      }
+
       const { error } = await supabase
         .from('announcements')
-        // @ts-ignore: bypass 'never' type inference
-        .insert({
-          title: `Announcement for ${audience.toUpperCase()}`,
-          content: message,
-          type: audience === 'all' ? 'all' : 'faculty',
-          created_by: user.id,
-          institution_id: institutionId,
-          category: 'General'
-        });
+        .insert(payload);
       
       if (!error) {
         setMessage('');
+        setSelectedInstitutionId(null);
+        setAudience('all');
+        showAlert('Success', 'Announcement blasted successfully!', 'success');
         queryClient.invalidateQueries({ queryKey: ['announcements'] });
       } else {
-        console.error('Insert error:', error);
+        showAlert('Error', error.message, 'error');
       }
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      showAlert('Error', e.message, 'error');
     } finally {
       setIsSending(false);
     }
+  };
+
+  const showAlert = (title: string, message: string, type: any) => {
+    setAlert({ visible: true, title, message, type });
   };
 
   return (
@@ -74,13 +115,28 @@ export default function CommunicationHub() {
             <Text style={audience === 'all' ? styles.audienceTextActive : styles.audienceText}>All</Text>
           </TouchableOpacity>
           <TouchableOpacity 
-            style={[styles.audienceBtn, audience === 'faculty' && styles.activeAudience]}
-            onPress={() => setAudience('faculty')}
+            style={[styles.audienceBtn, audience === 'institution' && styles.activeAudience]}
+            onPress={() => setAudience('institution')}
           >
-            <Smartphone size={18} color={audience === 'faculty' ? "white" : theme.colors.textMuted} {...({} as any)} />
-            <Text style={audience === 'faculty' ? styles.audienceTextActive : styles.audienceText}>Faculty</Text>
+            <School size={18} color={audience === 'institution' ? "white" : theme.colors.textMuted} {...({} as any)} />
+            <Text style={audience === 'institution' ? styles.audienceTextActive : styles.audienceText}>Institutions</Text>
           </TouchableOpacity>
         </View>
+
+        {audience === 'institution' && (
+          <View style={{ marginBottom: 24 }}>
+            <Text style={styles.label}>Select Institution</Text>
+            <TouchableOpacity 
+              style={styles.institutionPicker}
+              onPress={() => setShowInstitutionSelector(true)}
+            >
+              <Text style={selectedInstitutionId ? styles.pickerText : styles.pickerPlaceholder}>
+                {institutions.find(i => i.institution_id === selectedInstitutionId)?.name || 'Choose an institution...'}
+              </Text>
+              <ChevronDown size={20} color={theme.colors.textMuted} />
+            </TouchableOpacity>
+          </View>
+        )}
 
         <Text style={styles.label}>Message Body</Text>
         <TextInput
@@ -119,6 +175,61 @@ export default function CommunicationHub() {
           </View>
         ))
       )}
+
+      {/* Institution Selector Modal */}
+      <Modal
+        visible={showInstitutionSelector}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowInstitutionSelector(false)}
+      >
+        <TouchableOpacity 
+          style={styles.modalOverlay} 
+          activeOpacity={1} 
+          onPress={() => setShowInstitutionSelector(false)}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Institution</Text>
+              <TouchableOpacity onPress={() => setShowInstitutionSelector(false)}>
+                <X size={24} color={theme.colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            <FlatList
+              data={institutions}
+              keyExtractor={(item) => item.institution_id}
+              renderItem={({ item }) => (
+                <TouchableOpacity 
+                  style={styles.instItem}
+                  onPress={() => {
+                    setSelectedInstitutionId(item.institution_id);
+                    setShowInstitutionSelector(false);
+                  }}
+                >
+                  <Text style={styles.instName}>{item.name}</Text>
+                  {selectedInstitutionId === item.institution_id && (
+                    <Check size={20} color={theme.colors.primary} />
+                  )}
+                </TouchableOpacity>
+              )}
+              ListEmptyComponent={
+                <Text style={{ textAlign: 'center', marginTop: 20, color: theme.colors.textMuted }}>
+                  No active institutions found.
+                </Text>
+              }
+            />
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      <AlertModal
+        visible={alert.visible}
+        title={alert.title}
+        message={alert.message}
+        type={alert.type}
+        onClose={() => setAlert({ ...alert, visible: false })}
+      />
     </ScrollView>
   );
 }
@@ -143,4 +254,13 @@ const styles = StyleSheet.create({
   historyCard: { padding: 16, borderRadius: 20, backgroundColor: theme.colors.glass, borderWidth: 1, borderColor: theme.colors.glassBorder, marginBottom: 12 },
   historyTitle: { fontSize: 15, fontWeight: '600', color: theme.colors.text },
   historyMeta: { fontSize: 12, color: theme.colors.textMuted, marginTop: 4 },
+  institutionPicker: { height: 52, borderRadius: 16, borderWidth: 1, borderColor: theme.colors.glassBorder, backgroundColor: 'rgba(255,255,255,0.05)', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16 },
+  pickerText: { color: theme.colors.text, fontSize: 14, fontWeight: '500' },
+  pickerPlaceholder: { color: theme.colors.textMuted, fontSize: 14 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: 'white', borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, maxHeight: '80%' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  modalTitle: { fontSize: 20, fontWeight: 'bold', color: theme.colors.text },
+  instItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  instName: { fontSize: 16, color: theme.colors.text },
 });

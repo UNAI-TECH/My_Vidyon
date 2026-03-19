@@ -1,0 +1,24 @@
+{
+  "institutions": [
+    {
+      "id": "bcaf3023-99a6-49ee-9297-d14b5b89a13a",
+      "institution_id": "UNAI2026",
+      "name": "UNAI INSTITUTE"
+    },
+    {
+      "id": "c2bc54ff-2f05-42f8-b689-0742f01c1c03",
+      "institution_id": "ABC-SCHOOL",
+      "name": "ABC schools"
+    },
+    {
+      "id": "1e327ef9-1b55-44e3-bf1b-ac68c22d11f8",
+      "institution_id": "SS1212",
+      "name": "Story seed Studio"
+    }
+  ],
+  "ann_samples": [],
+  "errors": {
+    "inst": null,
+    "ann": null
+  }
+}

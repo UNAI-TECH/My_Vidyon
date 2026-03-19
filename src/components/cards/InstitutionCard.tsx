@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { theme } from '../../theme';
-import { MapPin, Users, GraduationCap, MoreVertical, Edit2, Trash2, Power } from 'lucide-react-native';
+import { MapPin, Users, GraduationCap, MoreVertical, Edit2, Trash2, Power, ShieldCheck } from 'lucide-react-native';
 import { Badge } from '../common/Badge';
 
 interface InstitutionCardProps {
@@ -15,6 +15,7 @@ interface InstitutionCardProps {
   logoUrl?: string | null;
   onClick?: () => void;
   onEdit?: () => void;
+  onSecurity?: () => void;
   onToggleStatus?: () => void;
   onDelete?: () => void;
 }
@@ -30,6 +31,7 @@ export function InstitutionCard({
   logoUrl,
   onClick,
   onEdit,
+  onSecurity,
   onToggleStatus,
   onDelete
 }: InstitutionCardProps) {
@@ -83,6 +85,9 @@ export function InstitutionCard({
       <View style={styles.actions}>
         <TouchableOpacity onPress={onEdit} style={styles.actionBtn}>
           <Edit2 size={16} color={theme.colors.text} {...({} as any)} />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={onSecurity} style={styles.actionBtn}>
+          <ShieldCheck size={16} color={theme.colors.secondary} {...({} as any)} />
         </TouchableOpacity>
         <TouchableOpacity onPress={onToggleStatus} style={styles.actionBtn}>
           <Power size={16} color={status === 'active' ? '#EF4444' : '#10B981'} {...({} as any)} />
