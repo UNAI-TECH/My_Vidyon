@@ -12,6 +12,7 @@ export default function InstitutionCommunication() {
   const { institutionId, user } = useAuth();
   const queryClient = useQueryClient();
   const [message, setMessage] = React.useState('');
+  const [targetRole, setTargetRole] = React.useState<'all' | 'student' | 'faculty' | 'staff'>('all');
   const [isSending, setIsSending] = React.useState(false);
   
   // Alert State
@@ -39,10 +40,10 @@ export default function InstitutionCommunication() {
       const payload: any = {
         title: 'Institution Announcement',
         content: message,
-        type: 'info',
+        type: targetRole,
+        category: targetRole, // Target role
         created_by: user.id,
-        institution_id: institutionId, // Tied to current institution
-        category: 'General'
+        institution_id: institutionId
       };
 
       const { error } = await supabase
@@ -50,8 +51,49 @@ export default function InstitutionCommunication() {
         .insert(payload);
       
       if (!error) {
+        // Now also send to notifications table for each student/staff if targeted
+        try {
+          let userIds: string[] = [];
+          
+          if (targetRole === 'all' || targetRole === 'student') {
+            const { data } = await supabase
+              .from('students')
+              .select('user_id')
+              .eq('institution_id', institutionId) as { data: { user_id: string }[] | null };
+            if (data) userIds.push(...data.map(s => s.user_id).filter(Boolean));
+          }
+
+          if (targetRole === 'all' || targetRole === 'faculty' || targetRole === 'staff') {
+            const query = supabase.from('profiles').select('id').eq('institution_id', institutionId);
+            if (targetRole !== 'all') query.eq('role', targetRole);
+            const { data } = await query as { data: { id: string }[] | null };
+            if (data) userIds.push(...data.map(p => p.id).filter(Boolean));
+          }
+
+          userIds = [...new Set(userIds)];
+
+          if (userIds.length > 0) {
+            const notifications = userIds.map(uid => ({
+              user_id: uid,
+              title: payload.title,
+              message: payload.content,
+              type: 'announcement',
+              read: false,
+              institution_id: institutionId
+            }));
+
+            const chunkSize = 100;
+            for (let i = 0; i < notifications.length; i += chunkSize) {
+              await supabase.from('notifications').insert(notifications.slice(i, i + chunkSize) as any);
+            }
+          }
+        } catch (notifErr) {
+          console.error('Failed to blast notifications:', notifErr);
+        }
+
         setMessage('');
-        showAlert('Success', 'Announcement sent to all members!', 'success');
+        setTargetRole('all');
+        showAlert('Success', 'Announcement sent successfully!', 'success');
         queryClient.invalidateQueries({ queryKey: ['announcements', institutionId] });
       } else {
         showAlert('Error', error.message, 'error');
@@ -78,6 +120,21 @@ export default function InstitutionCommunication() {
         <View style={styles.cardHeader}>
           <Bell size={20} color={theme.colors.primary} />
           <Text style={styles.cardTitle}>New Announcement</Text>
+        </View>
+
+        <Text style={styles.label}>Target Role</Text>
+        <View style={styles.audienceSelectors}>
+          {(['all', 'student', 'faculty', 'staff'] as const).map((role) => (
+            <TouchableOpacity 
+              key={role}
+              style={[styles.audienceBtn, targetRole === role && styles.activeAudience]}
+              onPress={() => setTargetRole(role)}
+            >
+              <Text style={targetRole === role ? styles.audienceTextActive : styles.audienceText}>
+                {role.charAt(0).toUpperCase() + role.slice(1)}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
 
         <View style={styles.inputContainer}>
@@ -156,6 +213,12 @@ const styles = StyleSheet.create({
   card: { backgroundColor: 'white', borderRadius: 24, padding: 20, borderWidth: 1, borderColor: '#F1F5F9', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 15 },
   cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20 },
   cardTitle: { fontSize: 16, fontWeight: 'bold', color: theme.colors.text },
+  label: { fontSize: 12, fontWeight: '600', color: theme.colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 },
+  audienceSelectors: { flexDirection: 'row', gap: 8, marginBottom: 20 },
+  audienceBtn: { flex: 1, height: 40, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center' },
+  activeAudience: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
+  audienceText: { color: theme.colors.textMuted, fontSize: 13, fontWeight: '600' },
+  audienceTextActive: { color: 'white', fontSize: 13, fontWeight: '600' },
   inputContainer: { backgroundColor: '#F8FAFC', borderRadius: 16, padding: 12, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 20 },
   input: { fontSize: 15, color: theme.colors.text, minHeight: 100, textAlignVertical: 'top' },
   blastButton: { backgroundColor: theme.colors.primary, borderRadius: 16, paddingVertical: 16, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10 },

@@ -25,16 +25,33 @@ export function useStudentDashboard(authUserId?: string, institutionId?: string)
         queryKey: ['student-profile', authUserId],
         queryFn: async () => {
             if (!authUserId) return null;
+            
+            // 1. Try by user_id
             const { data, error } = await supabase
                 .from('students')
                 .select('*')
                 .eq('user_id', authUserId)
                 .maybeSingle();
+            
+            if (data) return data;
+
+            // 2. Fallback to auth email if user_id fails
+            const { data: authData } = await supabase.auth.getUser();
+            const email = authData.user?.email;
+            
+            if (email) {
+                const { data: byEmail } = await supabase
+                    .from('students')
+                    .select('*')
+                    .eq('email', email)
+                    .maybeSingle();
+                if (byEmail) return byEmail;
+            }
+
             if (error) {
                 console.error('Error fetching student profile:', error);
-                return null;
             }
-            return data;
+            return null;
         },
         enabled: !!authUserId,
     });
@@ -43,30 +60,48 @@ export function useStudentDashboard(authUserId?: string, institutionId?: string)
 
     // 1. Fetch Assignments for student's class
     const { data: assignments = [], isLoading: isAssignmentsLoading } = useQuery({
-        queryKey: ['student-assignments', studentId, (studentProfile as Student)?.class_name],
+        queryKey: ['student-assignments', studentId, studentProfile?.class_name],
         queryFn: async () => {
             if (!studentId || !studentProfile) return [];
             
-            const { data, error } = await supabase
+            // Fetch assignments for this class
+            const assignmentsQuery = supabase
                 .from('assignments')
-                .select('*, submissions(*)')
-                .eq('class_name', (studentProfile as Student).class_name)
-                .eq('submissions.student_id', studentId);
+                .select('*')
+                .eq('class_name', (studentProfile as Student).class_name);
 
-            if (error) {
-                console.error('Error fetching assignments:', error);
+            const section = (studentProfile as Student).section;
+            if (section) {
+                assignmentsQuery.eq('section', section);
+            }
+
+            const { data: assignmentsData, error: assignmentsError } = await assignmentsQuery;
+
+            if (assignmentsError) {
+                console.error('Error fetching assignments:', assignmentsError);
                 return [];
             }
 
-            const assignmentsData = data as unknown as AssignmentWithSub[];
+            // Fetch submissions for this student
+            const { data: submissionsData, error: submissionsError } = await supabase
+                .from('submissions')
+                .select('*')
+                .eq('student_id', studentId);
 
-            return assignmentsData.map((a) => ({
-                id: a.id,
-                title: a.title,
-                subject: a.subject,
-                dueDate: a.due_date,
-                status: a.submissions?.[0]?.status || 'pending',
-            }));
+            if (submissionsError) {
+                console.error('Error fetching submissions:', submissionsError);
+            }
+
+            return (assignmentsData || []).map((a: any) => {
+                const mySubmission = (submissionsData || []).find((s: any) => s.assignment_id === a.id);
+                return {
+                    id: a.id,
+                    title: a.title,
+                    subject: a.subject,
+                    dueDate: a.due_date,
+                    status: (mySubmission as any)?.status || 'pending',
+                };
+            });
         },
         enabled: !!studentId && !!studentProfile,
     });
@@ -141,11 +176,28 @@ export function useStudentDashboard(authUserId?: string, institutionId?: string)
         pendingFees: (fees as Fee[]).reduce((acc: number, f: Fee) => acc + (f.amount_due || 0), 0),
     };
 
+    // 6. Fetch Institution Logo/Name
+    const { data: institution = null } = useQuery({
+        queryKey: ['student-institution', institutionId],
+        queryFn: async () => {
+            if (!institutionId) return null;
+            const { data } = await supabase
+                .from('institutions')
+                .select('name, logo_url')
+                .eq('institution_id', institutionId)
+                .maybeSingle();
+            return data as any;
+        },
+        enabled: !!institutionId,
+    });
+
     return {
         stats,
         assignments,
         attendanceRecords,
         grades,
+        institution,
+        studentProfile,
         isLoading: isProfileLoading,
     };
 }

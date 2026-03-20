@@ -20,6 +20,7 @@ export default function CommunicationHub() {
   const queryClient = useQueryClient();
   const [message, setMessage] = React.useState('');
   const [audience, setAudience] = React.useState<'all' | 'institution'>('all');
+  const [targetRole, setTargetRole] = React.useState<'all' | 'student' | 'faculty' | 'staff'>('all');
   const [selectedInstitutionId, setSelectedInstitutionId] = React.useState<string | null>(null);
   const [isSending, setIsSending] = React.useState(false);
   const [showInstitutionSelector, setShowInstitutionSelector] = React.useState(false);
@@ -58,11 +59,11 @@ export default function CommunicationHub() {
     setIsSending(true);
     try {
       const payload: any = {
-        title: audience === 'all' ? 'Announcement for ALL' : `Announcement for ${institutions.find(i => i.institution_id === selectedInstitutionId)?.name || 'Institution'}`,
+        title: audience === 'all' ? 'System Announcement' : `Institution Announcement`,
         content: message,
-        type: audience === 'all' ? 'all' : 'info',
-        created_by: user.id,
-        category: 'General'
+        type: targetRole,
+        category: targetRole, // We use category as the target role
+        created_by: user.id
       };
 
       if (audience === 'institution' && selectedInstitutionId) {
@@ -76,9 +77,57 @@ export default function CommunicationHub() {
         .insert(payload);
       
       if (!error) {
+        // Now also send to notifications table for each student/staff if targeted
+        try {
+          let userIds: string[] = [];
+          
+          if (targetRole === 'all' || targetRole === 'student') {
+            const query = supabase.from('students').select('user_id');
+            if (audience === 'institution' && selectedInstitutionId) {
+              query.eq('institution_id', selectedInstitutionId);
+            }
+            const { data } = await query as { data: { user_id: string }[] | null };
+            if (data) userIds.push(...data.map(s => s.user_id).filter(Boolean));
+          }
+
+          if (targetRole === 'all' || targetRole === 'faculty' || targetRole === 'staff') {
+            // Fetch profiles with matching role
+            const query = supabase.from('profiles').select('id');
+            if (targetRole !== 'all') query.eq('role', targetRole);
+            if (audience === 'institution' && selectedInstitutionId) {
+              query.eq('institution_id', selectedInstitutionId);
+            }
+            const { data } = await query as { data: { id: string }[] | null };
+            if (data) userIds.push(...data.map(p => p.id).filter(Boolean));
+          }
+
+          // Unique IDs only
+          userIds = [...new Set(userIds)];
+
+          if (userIds.length > 0) {
+            const notifications = userIds.map(uid => ({
+              user_id: uid,
+              title: payload.title,
+              message: payload.content,
+              type: 'announcement',
+              read: false,
+              institution_id: payload.institution_id
+            }));
+
+            // Chunk inserts if too many
+            const chunkSize = 100;
+            for (let i = 0; i < notifications.length; i += chunkSize) {
+              await supabase.from('notifications').insert(notifications.slice(i, i + chunkSize) as any);
+            }
+          }
+        } catch (notifErr) {
+          console.error('Failed to blast notifications:', notifErr);
+        }
+
         setMessage('');
         setSelectedInstitutionId(null);
         setAudience('all');
+        setTargetRole('all');
         showAlert('Success', 'Announcement blasted successfully!', 'success');
         queryClient.invalidateQueries({ queryKey: ['announcements'] });
       } else {
@@ -112,15 +161,30 @@ export default function CommunicationHub() {
             onPress={() => setAudience('all')}
           >
             <Users size={18} color={audience === 'all' ? "white" : theme.colors.textMuted} {...({} as any)} />
-            <Text style={audience === 'all' ? styles.audienceTextActive : styles.audienceText}>All</Text>
+            <Text style={audience === 'all' ? styles.audienceTextActive : styles.audienceText}>All Institutions</Text>
           </TouchableOpacity>
           <TouchableOpacity 
             style={[styles.audienceBtn, audience === 'institution' && styles.activeAudience]}
             onPress={() => setAudience('institution')}
           >
             <School size={18} color={audience === 'institution' ? "white" : theme.colors.textMuted} {...({} as any)} />
-            <Text style={audience === 'institution' ? styles.audienceTextActive : styles.audienceText}>Institutions</Text>
+            <Text style={audience === 'institution' ? styles.audienceTextActive : styles.audienceText}>Specific Inst.</Text>
           </TouchableOpacity>
+        </View>
+
+        <Text style={styles.label}>Target Role</Text>
+        <View style={styles.audienceSelectors}>
+          {(['all', 'student', 'faculty', 'staff'] as const).map((role) => (
+            <TouchableOpacity 
+              key={role}
+              style={[styles.audienceBtn, targetRole === role && styles.activeAudience, { flex: role === 'all' ? 0.7 : 1 }]}
+              onPress={() => setTargetRole(role)}
+            >
+              <Text style={targetRole === role ? styles.audienceTextActive : styles.audienceText}>
+                {role.charAt(0).toUpperCase() + role.slice(1)}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
 
         {audience === 'institution' && (

@@ -1,0 +1,380 @@
+import React from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert } from 'react-native';
+import { theme } from '../../../../src/theme';
+import { PageHeader } from '../../../../src/components/common/PageHeader';
+import { useAuth } from '../../../../src/hooks/useAuth';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '../../../../src/lib/supabase';
+import { 
+  CheckCircle, 
+  User, 
+  ChevronLeft,
+  AlertCircle,
+  Save,
+  Send
+} from 'lucide-react-native';
+
+export default function ExamGrading() {
+  const { id } = useLocalSearchParams();
+  const { user } = useAuth();
+  const router = useRouter();
+  
+  const [marks, setMarks] = React.useState<Record<string, { internal: string, external: string, remarks: string }>>({});
+  const [maxMarks, setMaxMarks] = React.useState('100');
+  const [isSaving, setIsSaving] = React.useState(false);
+  const [isPublishing, setIsPublishing] = React.useState(false);
+
+  // Fetch exam schedule details
+  const { data: exam, isLoading: isLoadingExam } = useQuery<any>({
+    queryKey: ['faculty-exam-detail', id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('exam_schedules')
+        .select('*, classes:class_id(name)')
+        .eq('id', id)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!id,
+  });
+
+  // Fetch subjects assigned to this faculty for this class
+  const { data: facultySubjects = [] } = useQuery<any[]>({
+    queryKey: ['faculty-exam-subjects', user?.id, exam?.class_id, exam?.section],
+    queryFn: async () => {
+      if (!user?.id || !exam) return [];
+      const { data, error } = await supabase
+        .from('faculty_subjects')
+        .select('*, subjects:subject_id(name)')
+        .eq('faculty_profile_id', user.id)
+        .eq('class_id', exam.class_id)
+        .eq('section', exam.section);
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!exam && !!user?.id,
+  });
+
+  const isClassTeacher = React.useMemo(() => {
+    return facultySubjects.some(fs => fs.assignment_type === 'class_teacher');
+  }, [facultySubjects]);
+
+  const [selectedSubject, setSelectedSubject] = React.useState<any>(null);
+
+  // Set default subject
+  React.useEffect(() => {
+    if (facultySubjects.length > 0 && !selectedSubject) {
+      setSelectedSubject(facultySubjects[0]);
+    }
+  }, [facultySubjects]);
+
+  // Fetch students and existing marks
+  const { data: studentMarks = [], isLoading: isLoadingMarks, refetch } = useQuery<any[]>({
+    queryKey: ['exam-student-marks', id, selectedSubject?.subject_id],
+    queryFn: async () => {
+      if (!id || !selectedSubject) return [];
+      
+      // 1. Get all students in this class/section
+      const { data: students } = await supabase
+        .from('students')
+        .select('id, name, register_number')
+        .eq('class_name', exam.classes?.name)
+        .eq('section', exam.section)
+        .order('name');
+
+      // 2. Get existing marks
+      const { data: existingResults } = await supabase
+        .from('exam_results')
+        .select('*')
+        .eq('exam_id', id)
+        .eq('subject_id', selectedSubject.subject_id);
+
+      const resultsMap = (existingResults || []).reduce((acc: any, res: any) => {
+        acc[res.student_id] = res;
+        return acc;
+      }, {});
+
+      // Initial state for marks
+      const initialMarks: any = {};
+      const mapped = (students || []).map((s: any) => {
+        const res = resultsMap[s.id] || {};
+        initialMarks[s.id] = {
+          internal: res.internal_marks?.toString() || '',
+          external: res.external_marks?.toString() || '',
+          remarks: res.remarks || ''
+        };
+        return { ...s, existing: res };
+      });
+      
+      setMarks(initialMarks);
+      return mapped;
+    },
+    enabled: !!exam && !!selectedSubject,
+  });
+
+  const updateMark = (studentId: string, field: 'internal' | 'external' | 'remarks', value: string) => {
+    setMarks(prev => ({
+      ...prev,
+      [studentId]: { ...prev[studentId], [field]: value }
+    }));
+  };
+
+  const handleSaveMarks = async () => {
+    if (!selectedSubject || !exam) return;
+    setIsSaving(true);
+    try {
+      const records = Object.entries(marks).map(([studentId, data]) => ({
+        exam_id: id,
+        student_id: studentId,
+        subject_id: selectedSubject.subject_id,
+        institution_id: exam.institution_id,
+        internal_marks: parseFloat(data.internal) || 0,
+        external_marks: parseFloat(data.external) || 0,
+        total_marks: (parseFloat(data.internal) || 0) + (parseFloat(data.external) || 0),
+        max_marks: parseFloat(maxMarks) || 100,
+        remarks: data.remarks,
+        staff_id: user?.id,
+        class_id: exam.class_id,
+        section: exam.section,
+        status: 'draft',
+      }));
+
+      const { error } = await supabase
+        .from('exam_results')
+        .upsert(records as any, { onConflict: 'exam_id,student_id,subject_id' });
+
+      if (error) throw error;
+      Alert.alert('Success', 'Marks saved as draft');
+      refetch();
+    } catch (error: any) {
+      console.error('Error saving marks:', error);
+      Alert.alert('Error', error.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handlePublishMarks = async () => {
+    if (!selectedSubject || !exam) return;
+    
+    Alert.alert(
+      'Confirm Publishing',
+      'Once published, students and parents can view these marks. Are you sure?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Publish', 
+          onPress: async () => {
+            setIsPublishing(true);
+            try {
+              const { error } = await supabase
+                .from('exam_results')
+                .update({ status: 'published' } as any)
+                .eq('exam_id', id)
+                .eq('subject_id', selectedSubject.subject_id);
+
+              if (error) throw error;
+              Alert.alert('Success', 'Marks published successfully');
+              refetch();
+            } catch (error: any) {
+              Alert.alert('Error', error.message);
+            } finally {
+              setIsPublishing(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  if (isLoadingExam) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      <PageHeader 
+        title={exam?.exam_display_name || 'Grading'} 
+        subtitle={`Class ${exam?.classes?.name} - ${exam?.section}`}
+        leftAction={
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+            <ChevronLeft size={24} color={theme.colors.text} {...({} as any)} />
+          </TouchableOpacity>
+        }
+      />
+
+      <ScrollView contentContainerStyle={styles.content}>
+        {/* Subject Selector */}
+        {facultySubjects.length > 1 && (
+          <View style={styles.subjectSelector}>
+            <Text style={styles.label}>Select Subject:</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
+              {facultySubjects.map((s: any, idx: number) => (
+                <TouchableOpacity 
+                  key={idx} 
+                  style={[
+                    styles.chip, 
+                    selectedSubject?.id === s.id && styles.activeChip
+                  ]}
+                  onPress={() => setSelectedSubject(s)}
+                >
+                  <Text style={[
+                    styles.chipText,
+                    selectedSubject?.id === s.id && styles.activeChipText
+                  ]}>
+                    {s.subjects?.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
+        <View style={styles.configCard}>
+          <Text style={styles.label}>Max Marks:</Text>
+          <TextInput
+            style={styles.configInput}
+            keyboardType="numeric"
+            value={maxMarks}
+            onChangeText={setMaxMarks}
+          />
+        </View>
+
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>
+              {selectedSubject?.subjects?.name} Marks
+            </Text>
+            <View style={styles.headerActions}>
+              <TouchableOpacity 
+                style={styles.saveBtn} 
+                onPress={handleSaveMarks}
+                disabled={isSaving}
+              >
+                <Save size={16} color="white" {...({} as any)} />
+                <Text style={styles.saveBtnText}>{isSaving ? '...' : 'Save'}</Text>
+              </TouchableOpacity>
+              
+              {isClassTeacher && (
+                <TouchableOpacity 
+                  style={[styles.saveBtn, { backgroundColor: '#166534' }]} 
+                  onPress={handlePublishMarks}
+                  disabled={isPublishing}
+                >
+                  <Send size={16} color="white" {...({} as any)} />
+                  <Text style={styles.saveBtnText}>{isPublishing ? '...' : 'Publish'}</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+
+          {isLoadingMarks ? (
+            <ActivityIndicator size="small" color={theme.colors.primary} />
+          ) : studentMarks.length === 0 ? (
+            <Text style={styles.emptyText}>No students found.</Text>
+          ) : (
+            studentMarks.map((student: any) => (
+              <View key={student.id} style={styles.studentCard}>
+                <View style={styles.studentHeader}>
+                  <View style={styles.studentInfo}>
+                    <User size={16} color={theme.colors.textMuted} {...({} as any)} />
+                    <Text style={styles.studentName}>{student.name}</Text>
+                    <Text style={styles.regNo}>#{student.register_number}</Text>
+                  </View>
+                  {student.existing?.status === 'published' && (
+                    <View style={styles.publishedBadge}>
+                      <CheckCircle size={10} color="#166534" {...({} as any)} />
+                      <Text style={styles.publishedText}>Published</Text>
+                    </View>
+                  )}
+                </View>
+
+                <View style={styles.marksRow}>
+                  <View style={styles.markInputGroup}>
+                    <Text style={styles.inputLabel}>Internal</Text>
+                    <TextInput
+                      style={styles.input}
+                      keyboardType="numeric"
+                      value={marks[student.id]?.internal}
+                      onChangeText={(v) => updateMark(student.id, 'internal', v)}
+                      placeholder="0"
+                    />
+                  </View>
+                  <View style={styles.markInputGroup}>
+                    <Text style={styles.inputLabel}>External</Text>
+                    <TextInput
+                      style={styles.input}
+                      keyboardType="numeric"
+                      value={marks[student.id]?.external}
+                      onChangeText={(v) => updateMark(student.id, 'external', v)}
+                      placeholder="0"
+                    />
+                  </View>
+                  <View style={styles.totalGroup}>
+                    <Text style={styles.inputLabel}>Total</Text>
+                    <View style={styles.totalValue}>
+                      <Text style={styles.totalText}>
+                        {(parseFloat(marks[student.id]?.internal) || 0) + (parseFloat(marks[student.id]?.external) || 0)}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                <TextInput
+                  style={styles.remarksInput}
+                  placeholder="Remarks..."
+                  value={marks[student.id]?.remarks}
+                  onChangeText={(v) => updateMark(student.id, 'remarks', v)}
+                />
+              </View>
+            ))
+          )}
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.colors.background },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  content: { padding: 20 },
+  backBtn: { marginRight: 8 },
+  subjectSelector: { marginBottom: 20 },
+  label: { fontSize: 13, fontWeight: 'bold', color: theme.colors.textMuted, marginBottom: 10 },
+  chipScroll: { flexDirection: 'row' },
+  chip: { backgroundColor: 'white', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12, marginRight: 8, borderWidth: 1, borderColor: '#F1F5F9' },
+  activeChip: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
+  chipText: { fontSize: 12, color: theme.colors.textMuted, fontWeight: '600' },
+  activeChipText: { color: 'white' },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  sectionTitle: { fontSize: 16, fontWeight: 'bold', color: theme.colors.text },
+  headerActions: { flexDirection: 'row', gap: 8 },
+  saveBtn: { backgroundColor: theme.colors.primary, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  saveBtnText: { color: 'white', fontSize: 11, fontWeight: 'bold' },
+  configCard: { backgroundColor: 'white', borderRadius: 16, padding: 12, marginBottom: 20, flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderColor: '#F1F5F9' },
+  configInput: { backgroundColor: '#F8FAFC', borderRadius: 8, padding: 6, borderWidth: 1, borderColor: '#E2E8F0', width: 60, textAlign: 'center', fontWeight: 'bold' },
+  studentCard: { backgroundColor: 'white', borderRadius: 20, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: '#F1F5F9' },
+  studentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  studentInfo: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  studentName: { fontSize: 14, fontWeight: 'bold', color: theme.colors.text },
+  regNo: { fontSize: 11, color: theme.colors.textMuted },
+  marksRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
+  markInputGroup: { flex: 1 },
+  totalGroup: { width: 60 },
+  inputLabel: { fontSize: 10, color: theme.colors.textMuted, marginBottom: 6, fontWeight: 'bold' },
+  input: { backgroundColor: '#F8FAFC', borderRadius: 8, padding: 8, borderWidth: 1, borderColor: '#E2E8F0', textAlign: 'center', fontSize: 14 },
+  totalValue: { backgroundColor: '#F1F5F9', borderRadius: 8, padding: 8, height: 40, justifyContent: 'center', alignItems: 'center' },
+  totalText: { fontWeight: 'bold', color: theme.colors.primary },
+  remarksInput: { fontSize: 12, color: theme.colors.text, backgroundColor: '#F8FAFC', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0' },
+  publishedBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#F0FDF4', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  publishedText: { fontSize: 10, fontWeight: '700', color: '#166534' },
+  emptyText: { textAlign: 'center', color: theme.colors.textMuted, marginTop: 40 },
+  section: { marginBottom: 32 }
+});

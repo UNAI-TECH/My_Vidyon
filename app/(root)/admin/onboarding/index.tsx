@@ -921,21 +921,29 @@ export default function InstitutionOnboarding() {
       // 1. Upload Logo if it's a new local URI (Skip in security mode)
       let finalLogoUrl = logo;
       if (!isSecurityMode && logo && logo.startsWith('file://')) {
-        const fileExt = logo.split('.').pop();
+        const fileExt = logo.split('.').pop() || 'jpeg';
         const fileName = `${basicInfo.school_code}-${Math.random()}.${fileExt}`;
         const formData = new FormData();
-        const response = await fetch(logo);
-        const blob = await response.blob();
+        
+        formData.append('file', {
+          uri: logo,
+          name: fileName,
+          type: `image/${fileExt}`
+        } as unknown as Blob);
         
         const { data: uploadData, error: uploadError } = await supabase.storage
           .from('logos')
-          .upload(fileName, blob);
+          .upload(fileName, formData, {
+            upsert: true
+          });
           
         if (!uploadError) {
           const { data: { publicUrl } } = supabase.storage
             .from('logos')
             .getPublicUrl(fileName);
           finalLogoUrl = publicUrl;
+        } else {
+          console.error("Logo upload failed", uploadError);
         }
       }
 

@@ -23,6 +23,9 @@ export function useERPRealtime() {
           console.log('Attendance Change Detected:', payload);
           queryClient.invalidateQueries({ queryKey: ['attendance'] });
           queryClient.invalidateQueries({ queryKey: ['canteen_status'] });
+          queryClient.invalidateQueries({ queryKey: ['parent-children'] });
+          queryClient.invalidateQueries({ queryKey: ['parent-student-detail'] });
+          queryClient.invalidateQueries({ queryKey: ['parent-student-stats'] });
         }
       )
       .subscribe();
@@ -36,6 +39,7 @@ export function useERPRealtime() {
         (payload) => {
           queryClient.invalidateQueries({ queryKey: ['fees'] });
           queryClient.invalidateQueries({ queryKey: ['financial_stats'] });
+          queryClient.invalidateQueries({ queryKey: ['parent-pending-fees'] });
         }
       )
       .subscribe();
@@ -67,7 +71,20 @@ export function useERPRealtime() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'leave_requests' },
         (payload) => {
+          console.log('Leave change detected:', payload.eventType);
           queryClient.invalidateQueries({ queryKey: ['leaves'] });
+          queryClient.invalidateQueries({ queryKey: ['pending-leaves'] });
+          queryClient.invalidateQueries({ queryKey: ['institution-leaves'] });
+          queryClient.invalidateQueries({ queryKey: ['parent-leaves'] });
+          queryClient.invalidateQueries({ queryKey: ['student-leaves'] });
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'student_leave_requests' },
+        (payload) => {
+          queryClient.invalidateQueries({ queryKey: ['parent-leaves'] });
+          queryClient.invalidateQueries({ queryKey: ['student-leaves'] });
         }
       )
       .on(
@@ -75,6 +92,7 @@ export function useERPRealtime() {
         { event: '*', schema: 'public', table: 'staff_leaves' },
         (payload) => {
           queryClient.invalidateQueries({ queryKey: ['leaves'] });
+          queryClient.invalidateQueries({ queryKey: ['staff-leaves'] });
         }
       )
       .subscribe();
@@ -154,6 +172,20 @@ export function useERPRealtime() {
           queryClient.invalidateQueries({ queryKey: ['superadmin-users'] });
           queryClient.invalidateQueries({ queryKey: ['superadmin-activity'] });
           queryClient.invalidateQueries({ queryKey: ['user-profile'] });
+          queryClient.invalidateQueries({ queryKey: ['parent-children'] });
+          queryClient.invalidateQueries({ queryKey: ['parent-pending-fees'] });
+        }
+      )
+      .subscribe();
+
+    // 10. Grades Real-time
+    const gradesSub = supabase
+      .channel('erp-grades')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'grades' },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ['parent-children'] });
         }
       )
       .subscribe();
@@ -168,6 +200,7 @@ export function useERPRealtime() {
       supabase.removeChannel(eventsSub);
       supabase.removeChannel(notificationsSub);
       supabase.removeChannel(adminSub);
+      supabase.removeChannel(gradesSub);
     };
   }, [queryClient]);
 }

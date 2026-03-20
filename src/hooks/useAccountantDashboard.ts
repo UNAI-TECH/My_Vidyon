@@ -11,6 +11,7 @@ export interface AccountantDashboardStats {
     outstandingAmount: number;
     transactionCount: number;
     recentPayments: FeePayment[];
+    accountantProfile: { full_name: string; image_url: string | null } | null;
 }
 
 export function useAccountantDashboard(institutionId?: string) {
@@ -79,15 +80,46 @@ export function useAccountantDashboard(institutionId?: string) {
         enabled: !!institutionId,
     });
 
-    const stats: AccountantDashboardStats = {
+    const stats = {
         totalRevenue,
         outstandingAmount,
         transactionCount,
         recentPayments,
     };
 
+    // 5. Fetch Institution Logo/Name
+    const { data: institution = null } = useQuery({
+        queryKey: ['accountant-institution', institutionId],
+        queryFn: async () => {
+            if (!institutionId) return null;
+            const { data } = await supabase
+                .from('institutions')
+                .select('name, logo_url')
+                .eq('institution_id', institutionId)
+                .maybeSingle();
+            return data as any;
+        },
+        enabled: !!institutionId,
+    });
+
+    // 6. Fetch Accountant Profile
+    const { data: accountantProfile = null } = useQuery({
+        queryKey: ['accountant-profile', institutionId],
+        queryFn: async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return null;
+            const { data } = await supabase
+                .from('profiles')
+                .select('full_name, image_url')
+                .eq('id', user.id)
+                .maybeSingle();
+            return data as any;
+        },
+    });
+
     return {
-        stats,
+        stats: { ...stats, accountantProfile },
+        institution,
         isLoading: false,
     };
 }

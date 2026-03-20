@@ -34,12 +34,12 @@ export default function TimetableIndexScreen() {
   const { staff } = useInstitutionUsers(institutionId);
   const faculties = useMemo(() => staff.filter((s: any) => s.role === 'teacher' || s.role === 'faculty'), [staff]);
 
-  const { slots, config, isLoading } = useInstitutionTimetable(institutionId, selectedFaculty?.id);
+  const { slots, isLoading } = useInstitutionTimetable(institutionId, selectedFaculty?.id);
 
   const daySlots = useMemo(() => {
     return slots
       .filter((s: any) => s.day_of_week === activeDay)
-      .sort((a: any, b: any) => a.period_index - b.period_index);
+      .sort((a: any, b: any) => a.start_time.localeCompare(b.start_time));
   }, [slots, activeDay]);
 
   const renderFacultyItem = ({ item }: { item: any }) => (
@@ -102,16 +102,25 @@ export default function TimetableIndexScreen() {
         <ScrollView style={styles.slotList} contentContainerStyle={styles.slotListContent}>
           <View style={styles.listHeader}>
             <Text style={styles.listTitle}>{activeDay}'s Schedule</Text>
-            <TouchableOpacity 
-              style={styles.editBtn} 
-              onPress={() => router.push({
-                pathname: '/(root)/institution/timetable/edit',
-                params: { facultyId: selectedFaculty.id, day: activeDay }
-              })}
-            >
-              <Plus size={16} color="white" {...({} as any)} />
-              <Text style={styles.editBtnText}>Edit</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity 
+                style={[styles.editBtn, { backgroundColor: theme.colors.secondary }]} 
+                onPress={() => router.push('/(root)/institution/timetable/special')}
+              >
+                <Calendar size={16} color="white" {...({} as any)} />
+                <Text style={styles.editBtnText}>Special</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.editBtn} 
+                onPress={() => router.push({
+                  pathname: '/(root)/institution/timetable/edit',
+                  params: { facultyId: selectedFaculty.id, day: activeDay }
+                })}
+              >
+                <Plus size={16} color="white" {...({} as any)} />
+                <Text style={styles.editBtnText}>Edit</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {daySlots.length === 0 ? (
@@ -120,7 +129,7 @@ export default function TimetableIndexScreen() {
               <Text style={styles.noSlotsText}>No classes scheduled for today</Text>
             </View>
           ) : (
-            daySlots.map((slot: any) => (
+            daySlots.map((slot: any, i: number) => (
               <TouchableOpacity 
                 key={slot.id} 
                 style={[
@@ -135,7 +144,7 @@ export default function TimetableIndexScreen() {
                 ]}>
                   {slot.subject_id === 'break' ? <Coffee size={18} color={theme.colors.primary} /> : 
                    slot.subject_id === 'lunch' ? <Utensils size={18} color={theme.colors.primary} /> :
-                   <Text style={styles.periodNumber}>{slot.period_index}</Text>}
+                   <Text style={styles.periodNumber}>{i + 1}</Text>}
                 </View>
                 <View style={styles.slotInfo}>
                   <Text style={styles.subjectName}>
@@ -144,7 +153,7 @@ export default function TimetableIndexScreen() {
                      (slot.subjects?.name || 'Unknown Subject')}
                   </Text>
                   {slot.subjects?.name && (
-                    <Text style={styles.className}>{slot.classes?.name || 'N/A'} - Section {slot.section}</Text>
+                    <Text style={styles.className}>{slot.classes?.name || 'N/A'}{slot.section ? ` - Section ${slot.section}` : ''}</Text>
                   )}
                   <View style={styles.timeInfo}>
                     <Clock size={12} color={theme.colors.textMuted} {...({} as any)} />

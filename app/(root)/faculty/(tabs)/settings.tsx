@@ -1,11 +1,11 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import { theme } from '../../../src/theme';
+import { View, Text, StyleSheet } from 'react-native';
+import { theme } from '../../../../src/theme';
 
-export default function NoticesScreen() {
+export default function FacultySettings() {
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>Notices Coming Soon</Text>
+      <Text style={styles.text}>Faculty Profile & Settings Coming Soon</Text>
     </View>
   );
 }

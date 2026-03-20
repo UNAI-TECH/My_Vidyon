@@ -11,7 +11,7 @@ export function useInstitutionUsers(institutionId: string | null) {
       if (!institutionId) return [];
       const { data, error } = await supabase
         .from('students')
-        .select('*')
+        .select('*, parents:parent_id(full_name, email, phone)')
         .eq('institution_id', institutionId)
         .order('name');
       if (error) throw error;
@@ -85,7 +85,7 @@ export function useInstitutionUsers(institutionId: string | null) {
   const toggleUserStatus = async (id: string, type: 'student' | 'staff' | 'parent', currentStatus: boolean) => {
     const action = currentStatus ? 'disable_user_access' : 'enable_user_access';
     try {
-      const { data, error } = await supabase.rpc(action, {
+      const { data, error } = await (supabase.rpc as any)(action, {
         user_id: id,
         user_type: type
       });
@@ -106,12 +106,38 @@ export function useInstitutionUsers(institutionId: string | null) {
   const updateUser = async (id: string, type: 'student' | 'staff' | 'parent', updates: any) => {
     try {
       const table = type === 'student' ? 'students' : (type === 'parent' ? 'parents' : 'profiles');
-      const { error } = await supabase
-        .from(table)
-        .update(updates)
-        .eq('id', id);
+      // If updating a student and parent fields are provided
+      if (type === 'student' && updates.parent_id) {
+        // We only update the student's parent_id link in the students table
+        // If the user also changed parent_name/phone, we should technically update the parent's profile
+        // but for now let's just ensure the link is updated.
+        const { parent_name, parent_phone, parent_email, ...studentUpdates } = updates;
+        
+        const { error: studentError } = await (supabase
+          .from('students' as any) as any)
+          .update(studentUpdates as any)
+          .eq('id', id);
+        
+        if (studentError) throw studentError;
 
-      if (error) throw error;
+        // Optionally update the parent's profile if name/phone were manually changed
+        if (parent_name || parent_phone) {
+          await (supabase
+            .from('profiles' as any) as any)
+            .update({ 
+              full_name: parent_name, 
+              phone: parent_phone 
+            } as any)
+            .eq('id', updates.parent_id);
+        }
+      } else {
+        const { error } = await (supabase
+          .from(table as any) as any)
+          .update(updates as any)
+          .eq('id', id);
+
+        if (error) throw error;
+      }
 
       // Invalidate queries
       if (type === 'student') queryClient.invalidateQueries({ queryKey: ['institution-students'] });

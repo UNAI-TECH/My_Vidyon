@@ -18,9 +18,11 @@ import {
 } from 'lucide-react-native';
 
 export default function CanteenDashboard() {
-  const { institutionId } = useAuth();
+  const { institutionId, role } = useAuth();
   const [selectedClass, setSelectedClass] = useState<string | undefined>();
-  const { students, classes, isLoading } = useCanteenDashboard(institutionId || undefined, selectedClass);
+  const { students, classes, institution, canteenProfile, isLoading } = useCanteenDashboard(institutionId || undefined, selectedClass);
+
+  const welcomeName = canteenProfile?.full_name || 'Canteen Manager';
 
   const toggleStatus = async (studentId: string, currentStatus: string) => {
     const nextStatus = currentStatus === 'permitted' ? 'unverified' : currentStatus === 'unverified' ? 'absent' : 'permitted';
@@ -57,8 +59,13 @@ export default function CanteenDashboard() {
   return (
     <View style={styles.container}>
       <PageHeader 
-        title="Dining Hall Manager" 
-        subtitle="Real-time attendance-synced entry control" 
+        title={`Hello, ${welcomeName}!`} 
+        subtitle="Real-time Dining entry control" 
+        institutionName={institution?.name}
+        institutionLogo={institution?.logo_url}
+        userRole={role || undefined}
+        userAvatar={canteenProfile?.image_url || undefined}
+        userSubtitle="Canteen Admin"
         actions={<NotificationBell />}
       />
       

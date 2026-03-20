@@ -1355,39 +1355,36 @@ export interface Database {
           institution_id: string
           title: string
           content: string
-          category: string
           type: string
-          event_date: string
-          image_url: string
-          created_by: string // Note: This is a Foreign Key to `profiles.id`.<fk table='profiles' column='id'/>
+          category: string
+          target_class_id: string | null
+          target_section: string | null
+          created_by: string | null
           created_at: string
-          updated_at: string
         }
         Insert: {
           id?: string | null
           institution_id?: string | null
           title?: string | null
           content?: string | null
-          category?: string | null
           type?: string | null
-          event_date?: string | null
-          image_url?: string | null
+          category?: string | null
+          target_class_id?: string | null
+          target_section?: string | null
           created_by?: string | null
           created_at?: string | null
-          updated_at?: string | null
         }
         Update: {
           id?: string | null
           institution_id?: string | null
           title?: string | null
           content?: string | null
-          category?: string | null
           type?: string | null
-          event_date?: string | null
-          image_url?: string | null
+          category?: string | null
+          target_class_id?: string | null
+          target_section?: string | null
           created_by?: string | null
           created_at?: string | null
-          updated_at?: string | null
         }
       }
       transport_vehicles: {

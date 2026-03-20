@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
 import { useAuth } from '../../../../src/hooks/useAuth';
@@ -33,18 +33,18 @@ export default function FacultyAttendance() {
     buttons: { text: string; style?: 'cancel' | 'destructive'; onPress: () => void }[];
   } | null>(null);
 
-  // Filter to only show class teacher assignments
-  const classTeacherAssignments = React.useMemo(() => {
-    return assignedSubjects.filter((as: any) => as.assignment_type === 'class_teacher');
+  // Show all assignments (Class Teacher and Subject Teacher)
+  const allAssignments = React.useMemo(() => {
+    return assignedSubjects;
   }, [assignedSubjects]);
 
-  // Handle non-class teacher case
+  // Handle no assignments case
   React.useEffect(() => {
-    if (!loadingAssignments && classTeacherAssignments.length === 0) {
+    if (!loadingAssignments && allAssignments.length === 0) {
       setAlertConfig({
         visible: true,
-        title: "Access Restricted",
-        message: "You are not assigned as a Class Teacher for any class. Attendance marking is restricted to Class Teachers only.",
+        title: "No Assigned Classes",
+        message: "You are not assigned to any class or subject. Please contact the administrator.",
         buttons: [
           { 
             text: "Back to Dashboard", 
@@ -53,14 +53,14 @@ export default function FacultyAttendance() {
         ]
       });
     }
-  }, [loadingAssignments, classTeacherAssignments, router]);
+  }, [loadingAssignments, allAssignments, router]);
 
   // Set default selection
   React.useEffect(() => {
-    if (classTeacherAssignments.length > 0 && !selectedAssignment) {
-      setSelectedAssignment(classTeacherAssignments[0]);
+    if (allAssignments.length > 0 && !selectedAssignment) {
+      setSelectedAssignment(allAssignments[0]);
     }
-  }, [classTeacherAssignments]);
+  }, [allAssignments]);
 
   // Fetch students for the selected class/section
   const { data: students = [], isLoading: loadingStudents } = useQuery({
@@ -91,9 +91,42 @@ export default function FacultyAttendance() {
   });
 
   const [attendanceRecords, setAttendanceRecords] = React.useState<Record<string, 'present' | 'absent'>>({});
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   const toggleAttendance = (studentId: string, status: 'present' | 'absent') => {
     setAttendanceRecords(prev => ({ ...prev, [studentId]: status }));
+  };
+
+  const handleSubmit = async () => {
+    if (!selectedAssignment || Object.keys(attendanceRecords).length === 0) {
+      Alert.alert('Error', 'Please mark attendance for at least one student');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const today = format(new Date(), 'yyyy-MM-dd');
+      const records = Object.entries(attendanceRecords).map(([studentId, status]) => ({
+        student_id: studentId,
+        institution_id: selectedAssignment.institution_id,
+        attendance_date: today,
+        status: status,
+        academic_year: '2023-24', // Should dynamic if possible, but hardcoded based on current state
+      }));
+
+      const { error } = await supabase
+        .from('student_attendance')
+        .upsert(records as any, { onConflict: 'student_id,attendance_date' });
+
+      if (error) throw error;
+
+      Alert.alert('Success', 'Attendance records submitted successfully');
+    } catch (error: any) {
+      console.error('Error submitting attendance:', error);
+      Alert.alert('Error', error.message);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const getCleanClassName = (name: any) => {
@@ -129,11 +162,11 @@ export default function FacultyAttendance() {
         />
 
         {/* Class Selector */}
-        {classTeacherAssignments.length > 0 && (
+        {allAssignments.length > 0 && (
           <View style={styles.selectorContainer}>
-            <Text style={styles.label}>Select Class:</Text>
+            <Text style={styles.label}>Select Class / Subject:</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
-              {classTeacherAssignments.map((as: any, idx: number) => (
+              {allAssignments.map((as: any, idx: number) => (
                 <TouchableOpacity 
                   key={idx} 
                   style={[
@@ -146,7 +179,7 @@ export default function FacultyAttendance() {
                     styles.classChipText,
                     selectedAssignment?.id === as.id && styles.activeClassChipText
                   ]}>
-                    {getCleanClassName(as.classes?.name)} ({as.section})
+                    {getCleanClassName(as.classes?.name)} ({as.section}) {as.subjects?.name ? `- ${as.subjects.name}` : ''}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -156,24 +189,16 @@ export default function FacultyAttendance() {
 
         <View style={styles.tabContainer}>
           <TouchableOpacity 
-            style={[styles.tab, method === 'scan' && styles.activeTab]} 
-            onPress={() => setMethod('scan')}
+            style={[styles.tab, styles.activeTab]} 
           >
-            <Camera size={18} color={method === 'scan' ? 'white' : theme.colors.textMuted} {...({} as any)} />
-            <Text style={[styles.tabText, method === 'scan' && styles.activeTabText]}>Scan QR</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.tab, method === 'manual' && styles.activeTab]} 
-            onPress={() => setMethod('manual')}
-          >
-            <UserCheck size={18} color={method === 'manual' ? 'white' : theme.colors.textMuted} {...({} as any)} />
-            <Text style={[styles.tabText, method === 'manual' && styles.activeTabText]}>Manual</Text>
+            <UserCheck size={18} color="white" {...({} as any)} />
+            <Text style={[styles.tabText, styles.activeTabText]}>Manual Marking</Text>
           </TouchableOpacity>
         </View>
 
         {loadingStudents ? (
           <ActivityIndicator size="large" color={theme.colors.primary} />
-        ) : method === 'manual' ? (
+        ) : (
           <View style={styles.list}>
             {students.length === 0 ? (
               <View style={styles.emptyCard}>
@@ -204,15 +229,18 @@ export default function FacultyAttendance() {
               ))
             )}
             {students.length > 0 && (
-              <TouchableOpacity style={styles.submitBtn}>
-                <Text style={styles.submitText}>Submit Records</Text>
+              <TouchableOpacity 
+                style={styles.submitBtn}
+                onPress={handleSubmit}
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? (
+                  <ActivityIndicator size="small" color="white" />
+                ) : (
+                  <Text style={styles.submitText}>Submit Records</Text>
+                )}
               </TouchableOpacity>
             )}
-          </View>
-        ) : (
-          <View style={styles.cameraPlaceholder}>
-            <Camera size={48} color={theme.colors.textMuted} {...({} as any)} />
-            <Text style={styles.placeholderText}>Camera integration pending bridge</Text>
           </View>
         )}
       </ScrollView>

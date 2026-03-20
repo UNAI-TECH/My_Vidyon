@@ -172,14 +172,49 @@ Deno.serve(async (req: Request) => {
                 .upsert({
                     profile_id: userId,
                     institution_id: institution_id,
-                    phone: phone
-                }, { onConflict: 'email' })
+                    name: full_name,
+                    email: email.toLowerCase(),
+                    phone: phone || null
+                }, { onConflict: 'profile_id' })
                 .select()
                 .single();
 
             if (parentError) {
                 console.error("Parent sync error:", parentError);
-                throw new Error(`Parent sync failed: ${parentError.message}`);
+                // If the parents table doesn't have an email column, try without it
+                const { data: parentData2, error: parentError2 } = await supabaseAdmin
+                    .from('parents')
+                    .upsert({
+                        profile_id: userId,
+                        institution_id: institution_id,
+                        name: full_name,
+                        phone: phone || null
+                    }, { onConflict: 'profile_id' })
+                    .select()
+                    .single();
+
+                if (parentError2) {
+                    console.error("Parent sync error (retry):", parentError2);
+                    throw new Error(`Parent sync failed: ${parentError2.message}`);
+                }
+
+                const targetStudentIds = student_ids || (student_id ? [student_id] : []);
+                if (targetStudentIds.length > 0 && parentData2) {
+                    const links = targetStudentIds.map((sId: string) => ({
+                        student_id: sId,
+                        parent_id: parentData2.id
+                    }));
+                    const { error: linkError } = await supabaseAdmin
+                        .from('student_parents')
+                        .upsert(links, { onConflict: 'student_id,parent_id' });
+                    if (linkError) console.error("student_parents link error:", linkError);
+
+                    const { error: studentUpdateError } = await supabaseAdmin
+                        .from('students')
+                        .update({ parent_id: userId })
+                        .in('id', targetStudentIds);
+                    if (studentUpdateError) console.error("Students parent_id update error:", studentUpdateError);
+                }
             } else if (parentData) {
                 const targetStudentIds = student_ids || (student_id ? [student_id] : []);
 

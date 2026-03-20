@@ -12,8 +12,11 @@ import {
   AlertCircle
 } from 'lucide-react-native';
 
+import { useRouter } from 'expo-router';
+
 export default function FacultyExams() {
   const { user } = useAuth();
+  const router = useRouter();
   const { exams, pendingMarks, isLoading } = useFacultyExams(user?.id);
 
   if (isLoading) {
@@ -52,7 +55,10 @@ export default function FacultyExams() {
                 </View>
               </View>
               <View style={styles.actions}>
-                <TouchableOpacity style={styles.actionBtn}>
+                <TouchableOpacity 
+                  style={styles.actionBtn}
+                  onPress={() => router.push(`/(root)/faculty/exams/${exam.id}`)}
+                >
                   <ClipboardList size={16} color="white" {...({} as any)} />
                   <Text style={styles.actionText}>Enter Marks</Text>
                 </TouchableOpacity>

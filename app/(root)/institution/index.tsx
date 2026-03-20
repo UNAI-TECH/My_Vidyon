@@ -36,7 +36,7 @@ export default function InstitutionDashboard() {
     { label: 'Org Structure', icon: Building, href: '/(root)/institution/org', color: '#3B82F6' },
     { label: 'Departments', icon: Briefcase, href: '/(root)/institution/departments', color: '#6366F1' },
     { label: 'Users', icon: Users, href: '/(root)/institution/users', color: '#A855F7' },
-    { label: 'Add Student', icon: GraduationCap, href: '/(root)/institution/students/add', color: '#14B8A6' },
+    { label: 'Add User', icon: GraduationCap, href: '/(root)/institution/students/add', color: '#14B8A6' },
     { label: 'Leave Ops', icon: FileText, href: '/(root)/institution/leaves', color: '#EF4444' },
     { label: 'Timetable', icon: Clock, href: '/(root)/institution/timetable', color: '#F59E0B' },
     { label: 'Communication', icon: Bell, href: '/(root)/institution/communication', color: '#F43F5E' },

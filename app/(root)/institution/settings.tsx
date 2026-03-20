@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, Switch } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, Switch, Image } from 'react-native';
 import { theme } from '../../../src/theme';
 import { PageHeader } from '../../../src/components/common/PageHeader';
 import { useAuth } from '../../../src/hooks/useAuth';
@@ -17,11 +17,25 @@ import {
   ChevronRight,
   LogOut
 } from 'lucide-react-native';
+import { AlertModal } from '../../../src/components/common/AlertModal';
+import * as ImagePicker from 'expo-image-picker';
 
 export default function InstitutionSettingsScreen() {
   const { institutionId, signOut } = useAuth();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<'general' | 'notifications'>('general');
+
+  // Alert Modal State
+  const [alertConfig, setAlertConfig] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type?: 'success' | 'error' | 'info' | 'warning';
+  }>({ visible: false, title: '', message: '' });
+
+  const showAlert = (title: string, message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') => {
+    setAlertConfig({ visible: true, title, message, type });
+  };
 
   // Form states
   const [name, setName] = useState('');
@@ -29,6 +43,8 @@ export default function InstitutionSettingsScreen() {
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [academicYear, setAcademicYear] = useState('');
+  const [logo, setLogo] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   // Fetch institution data
   const { data: institution, isLoading } = useQuery({
@@ -54,36 +70,88 @@ export default function InstitutionSettingsScreen() {
       setPhone(institution.phone || '');
       setAddress(institution.address || '');
       setAcademicYear(institution.current_academic_year || '');
+      setLogo(institution.logo_url || null);
     }
   }, [institution]);
+
+  // Image Picker
+  const pickImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.5,
+    });
+
+    if (!result.canceled) {
+      setLogo(result.assets[0].uri);
+    }
+  };
 
   // Update mutation
   const updateMutation = useMutation({
     mutationFn: async (updatedData: Record<string, any>) => {
       if (!institutionId) throw new Error('No institution ID');
-      const { error } = await supabase
-        .from('institutions')
+      const { error } = await (supabase
+        .from('institutions' as any) as any)
         .update(updatedData as any)
         .eq('institution_id', institutionId);
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['institution-settings'] });
-      Alert.alert('Success', 'Settings saved successfully');
+      showAlert('Success', 'Settings saved successfully', 'success');
     },
     onError: (error: any) => {
-      Alert.alert('Error', error.message || 'Failed to save settings');
+      showAlert('Error', error.message || 'Failed to save settings', 'error');
     }
   });
 
-  const handleSave = () => {
-    updateMutation.mutate({
-      name,
-      email,
-      phone,
-      address,
-      current_academic_year: academicYear
-    });
+  const handleSave = async () => {
+    try {
+      setIsUploading(true);
+      let finalLogoUrl = logo;
+      
+      if (logo && logo.startsWith('file://')) {
+        const fileExt = logo.split('.').pop() || 'jpeg';
+        const fileName = `${institutionId}-${Math.random()}.${fileExt}`;
+        const formData = new FormData();
+        
+        formData.append('file', {
+          uri: logo,
+          name: fileName,
+          type: `image/${fileExt}`
+        } as unknown as Blob);
+        
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('logos')
+          .upload(fileName, formData, {
+            upsert: true
+          });
+          
+        if (!uploadError) {
+          const { data: { publicUrl } } = supabase.storage
+            .from('logos')
+            .getPublicUrl(fileName);
+          finalLogoUrl = publicUrl;
+        } else {
+          throw new Error("Logo upload failed: " + uploadError.message);
+        }
+      }
+
+      updateMutation.mutate({
+        name,
+        email,
+        phone,
+        address,
+        current_academic_year: academicYear,
+        logo_url: finalLogoUrl
+      });
+    } catch (err: any) {
+      showAlert('Error', err.message, 'error');
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   if (isLoading) {
@@ -121,9 +189,16 @@ export default function InstitutionSettingsScreen() {
           <>
             {/* Profile Card */}
             <View style={styles.profileCard}>
-              <View style={styles.profileImage}>
-                <Building size={36} color={theme.colors.primary} {...({} as any)} />
-              </View>
+              <TouchableOpacity style={styles.profileImage} onPress={pickImage}>
+                {logo ? (
+                  <Image source={{ uri: logo }} style={{ width: 72, height: 72, borderRadius: 18 }} />
+                ) : (
+                  <Building size={36} color={theme.colors.primary} {...({} as any)} />
+                )}
+                <View style={{ position: 'absolute', bottom: -5, right: -5, backgroundColor: theme.colors.primary, borderRadius: 12, padding: 4 }}>
+                  <Settings2 size={12} color="white" {...({} as any)} />
+                </View>
+              </TouchableOpacity>
               <View style={styles.profileInfo}>
                 <Text style={styles.orgName}>{institution?.name || 'Institution'}</Text>
                 <Text style={styles.orgId}>Code: {institutionId}</Text>
@@ -199,16 +274,16 @@ export default function InstitutionSettingsScreen() {
 
             {/* Save Button */}
             <TouchableOpacity
-              style={[styles.saveBtn, updateMutation.isPending && styles.saveBtnDisabled]}
+              style={[styles.saveBtn, (updateMutation.isPending || isUploading) && styles.saveBtnDisabled]}
               onPress={handleSave}
-              disabled={updateMutation.isPending}
+              disabled={updateMutation.isPending || isUploading}
             >
-              {updateMutation.isPending ? (
+              {(updateMutation.isPending || isUploading) ? (
                 <ActivityIndicator size="small" color="white" />
               ) : (
                 <Save size={18} color="white" {...({} as any)} />
               )}
-              <Text style={styles.saveBtnText}>{updateMutation.isPending ? 'Saving...' : 'Save Changes'}</Text>
+              <Text style={styles.saveBtnText}>{(updateMutation.isPending || isUploading) ? 'Saving...' : 'Save Changes'}</Text>
             </TouchableOpacity>
           </>
         )}
@@ -265,6 +340,14 @@ export default function InstitutionSettingsScreen() {
         <Text style={styles.version}>Version 2.0.1 Stable</Text>
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      <AlertModal
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        onClose={() => setAlertConfig(prev => ({ ...prev, visible: false }))}
+      />
     </View>
   );
 }

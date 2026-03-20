@@ -59,15 +59,30 @@ export default function InstitutionTimetableEditScreen() {
     if (slots.length > 0 && day) {
       const filtered = slots
         .filter((s: any) => s.day_of_week === day)
-        .map((s: any) => ({ 
-          ...s, 
-          type: s.subject_id === 'break' ? 'break' : (s.subject_id === 'lunch' ? 'lunch' : 'period') 
-        }));
-      setLocalSlots(filtered.sort((a: any, b: any) => a.period_index - b.period_index));
-    } else {
+        .map((s: any) => {
+          // Attempt to find the section from assignments if it's missing in the slot
+          // (Since the 'timetable' table doesn't store section)
+          let resolvedSection = s.section;
+          if (!resolvedSection && assignments.length > 0) {
+            const match = (assignments as any[]).find(a => 
+              a.faculty_profile_id === facultyId && 
+              a.class_id === s.class_id && 
+              a.subject_id === s.subject_id
+            );
+            if (match) resolvedSection = match.section;
+          }
+
+          return { 
+            ...s, 
+            section: resolvedSection || 'A',
+            type: s.subject_id === 'break' ? 'break' : (s.subject_id === 'lunch' ? 'lunch' : 'period') 
+          };
+        });
+      setLocalSlots(filtered.sort((a: any, b: any) => a.start_time.localeCompare(b.start_time)));
+    } else if (slots.length === 0 && !isTimetableLoading) {
       setLocalSlots([]);
     }
-  }, [slots, day]);
+  }, [slots, day, assignments, isTimetableLoading]);
 
   const uniqueSubjects = useMemo(() => {
     const seen = new Set();
@@ -129,7 +144,10 @@ export default function InstitutionTimetableEditScreen() {
       setIsSaving(true);
       for (const slot of localSlots) {
         if (!slot.subject_id) continue;
-        await saveSlot(slot);
+        const result = await saveSlot(slot);
+        if (!result?.success) {
+          throw new Error(result?.error?.message || 'Failed to save a slot. Please check your connection.');
+        }
       }
       setAlert({
         visible: true,
@@ -137,11 +155,11 @@ export default function InstitutionTimetableEditScreen() {
         message: "Timetable updated successfully",
         type: 'success'
       });
-    } catch (err) {
+    } catch (err: any) {
       setAlert({
         visible: true,
         title: "Error",
-        message: "Failed to save timetable changes",
+        message: err.message || "Failed to save timetable changes",
         type: 'error'
       });
     } finally {
@@ -150,8 +168,9 @@ export default function InstitutionTimetableEditScreen() {
   };
 
   const handleAddSlot = () => {
-    const nextPeriod = localSlots.length > 0 ? Math.max(...localSlots.map(s => s.period_index)) + 1 : 1;
-    const prevEnd = localSlots.length > 0 ? localSlots[localSlots.length - 1].end_time : '09:00';
+    const prevEnd = localSlots.length > 0 
+      ? localSlots.sort((a, b) => a.start_time.localeCompare(b.start_time))[localSlots.length - 1].end_time 
+      : '09:00';
     
     const [h, m] = prevEnd.split(':').map(Number);
     const date = new Date(2000, 0, 1, h, m + 60);
@@ -160,15 +179,14 @@ export default function InstitutionTimetableEditScreen() {
     setLocalSlots([...localSlots, {
       id: `new-${Date.now()}`,
       day_of_week: day,
-      period_index: nextPeriod,
       type: 'period',
       start_time: prevEnd,
       end_time: endStr,
       subject_id: '',
       class_id: '',
-      section: 'A',
+      section: '',
       room_number: ''
-    }]);
+    }].sort((a, b) => a.start_time.localeCompare(b.start_time)));
   };
 
   const updateSlot = (tempId: string, field: string, value: any) => {
@@ -218,7 +236,7 @@ export default function InstitutionTimetableEditScreen() {
           <View key={slot.id} style={styles.editCard}>
             <View style={styles.cardHeader}>
               <View style={styles.periodBadge}>
-                <Text style={styles.periodBadgeText}>Period {slot.period_index}</Text>
+                <Text style={styles.periodBadgeText}>Slot {slot.start_time}</Text>
               </View>
               <TouchableOpacity onPress={() => removeSlot(slot.id)} style={styles.deleteBtn}>
                 <Trash2 size={18} color="#EF4444" {...({} as any)} />

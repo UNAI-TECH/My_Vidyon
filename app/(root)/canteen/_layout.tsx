@@ -54,7 +54,7 @@ export default function CanteenTabs() {
       />
 
       {/* Hidden Screens */}
-      <Tabs.Screen name="menu/index" options={{ href: null }} />
+      <Tabs.Screen name="menu" options={{ href: null }} />
       <Tabs.Screen name="notifications" options={{ href: null }} />
     </Tabs>
   );

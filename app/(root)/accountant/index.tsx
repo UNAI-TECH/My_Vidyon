@@ -17,16 +17,23 @@ import {
 import { ShortcutGrid } from '../../../src/components/common/ShortcutGrid';
 
 export default function AccountantDashboard() {
-  const { institutionId } = useAuth();
-  const { stats, isLoading } = useAccountantDashboard(institutionId || undefined);
+  const { institutionId, role } = useAuth();
+  const { stats, institution, isLoading } = useAccountantDashboard(institutionId || undefined);
+
+  const welcomeName = stats.accountantProfile?.full_name || 'Accountant';
 
   if (isLoading) return <View style={styles.container}><Text>Loading Financial Data...</Text></View>;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <PageHeader
-        title="Financial Management"
-        subtitle="Accountant Control Center"
+        title={`Hello, ${welcomeName}!`}
+        subtitle="Financial Control Center"
+        institutionName={institution?.name}
+        institutionLogo={institution?.logo_url}
+        userRole={role || undefined}
+        userAvatar={stats.accountantProfile?.image_url || undefined}
+        userSubtitle="Financial Head"
         actions={<NotificationBell />}
       />
 

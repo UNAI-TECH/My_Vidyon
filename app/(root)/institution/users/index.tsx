@@ -1,15 +1,18 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, ActivityIndicator, Alert, Modal, ScrollView } from 'react-native';
 import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
 import { useAuth } from '../../../../src/hooks/useAuth';
 import { useInstitutionUsers } from '../../../../src/hooks/useInstitutionUsers';
 import { 
-  Users, Search, Plus, UserMinus, UserCheck, ChevronRight, Filter, Download, X, Edit2, Save, ChevronDown, Copy, Check
+  Users, Search, Plus, UserMinus, UserCheck, ChevronRight, Filter, Download, X, Edit2, Save, ChevronDown, Copy, Check, CheckCircle
 } from 'lucide-react-native';
 import { Badge } from '../../../../src/components/common/Badge';
+import { AlertModal } from '../../../../src/components/common/AlertModal';
+import { CalendarModal } from '../../../../src/components/common/CalendarPicker';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../../../src/lib/supabase';
+import { useQuery } from '@tanstack/react-query';
 import * as XLSX from 'xlsx';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
@@ -33,6 +36,64 @@ export default function UserManagementScreen() {
 
   const [availableClasses, setAvailableClasses] = useState<any[]>([]);
   const [availableDepartments, setAvailableDepartments] = useState<string[]>([]);
+
+  // Parent search state (for student edit)
+  const [parentSearchQuery, setParentSearchQuery] = useState('');
+  const [selectedParent, setSelectedParent] = useState<any>(null);
+  const [showParentDropdown, setShowParentDropdown] = useState(false);
+
+  // Alert Modal State
+  const [alertConfig, setAlertConfig] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type?: 'success' | 'error' | 'info' | 'warning';
+    buttons?: { text: string; style?: 'primary' | 'secondary' | 'destructive'; onPress: () => void }[];
+  }>({ visible: false, title: '', message: '' });
+
+  const [showDOBPicker, setShowDOBPicker] = useState(false);
+
+  const showAlert = (title: string, message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info', buttons?: any[]) => {
+    setAlertConfig({ visible: true, title, message, type, buttons });
+  };
+
+  // Search existing parents by email
+  const { data: parentResults = [] } = useQuery({
+    queryKey: ['edit-parent-search', institutionId, parentSearchQuery],
+    queryFn: async (): Promise<any[]> => {
+      if (!institutionId || parentSearchQuery.length < 2) return [];
+      const { data } = await (supabase
+        .from('profiles') as any)
+        .select('id, full_name, email, phone')
+        .eq('institution_id', institutionId)
+        .eq('role', 'parent')
+        .ilike('email', `%${parentSearchQuery}%`)
+        .limit(10);
+      return data || [];
+    },
+    enabled: !!institutionId && parentSearchQuery.length >= 2
+  });
+
+  const handleSelectParent = useCallback((parent: any) => {
+    setSelectedParent(parent);
+    setEditForm((prev: any) => ({
+      ...prev,
+      parent_name: parent.full_name || '',
+      parent_email: parent.email || '',
+      parent_phone: parent.phone || '',
+      parent_id: parent.id,
+    }));
+    setParentSearchQuery(parent.email || '');
+    setShowParentDropdown(false);
+  }, []);
+
+  const handleClearParent = useCallback(() => {
+    setSelectedParent(null);
+    setParentSearchQuery('');
+    setEditForm((prev: any) => ({
+      ...prev, parent_name: '', parent_email: '', parent_phone: '', parent_id: undefined
+    }));
+  }, []);
 
   // Fetch real data for dropdowns
   React.useEffect(() => {
@@ -100,18 +161,19 @@ export default function UserManagementScreen() {
     const type = activeTab === 'students' ? 'student' : (activeTab === 'parents' ? 'parent' : 'staff');
     const isActive = item.is_active !== false;
     
-    Alert.alert(
+    showAlert(
       isActive ? "Disable User" : "Enable User",
       `Are you sure you want to ${isActive ? "disable" : "enable"} ${item.name || item.full_name}?`,
+      'warning',
       [
-        { text: "Cancel", style: "cancel" },
+        { text: "Cancel", style: "secondary", onPress: () => {} },
         { 
           text: isActive ? "Disable" : "Enable", 
-          style: isActive ? "destructive" : "default",
+          style: isActive ? "destructive" : "primary",
           onPress: async () => {
             const res = await toggleUserStatus(item.id, type, isActive);
             if (!res.success) {
-              Alert.alert("Error", "Failed to update user status");
+              showAlert("Error", "Failed to update user status", "error");
             }
           }
         }
@@ -125,13 +187,26 @@ export default function UserManagementScreen() {
       name: user.name || user.full_name,
       email: user.email,
       phone: user.phone,
+      dob: user.dob || user.date_of_birth || '',
       class_name: user.class_name,
       section: user.section,
       register_number: user.register_number,
       staff_id: user.staff_id,
       department: user.department,
       image_url: user.image_url || user.profile_image_url || user.avatar_url,
+      // Parent info (pre-fill if already linked)
+      parent_id: user.parent_id || undefined,
+      parent_name: user.parents?.full_name || '',
+      parent_email: user.parents?.email || '',
+      parent_phone: user.parents?.phone || '',
     });
+    // Pre-fill parent search if already linked
+    setParentSearchQuery(user.parents?.email || '');
+    setSelectedParent(user.parent_id ? { 
+      id: user.parent_id, 
+      full_name: user.parents?.full_name, 
+      email: user.parents?.email 
+    } : null);
     setCopied(false);
     setIsModalVisible(true);
   };
@@ -145,15 +220,23 @@ export default function UserManagementScreen() {
     if (activeTab === 'students') {
       updates.name = editForm.name;
       updates.phone = editForm.phone;
+      updates.dob = editForm.dob;
       updates.class_name = editForm.class_name;
       updates.section = editForm.section;
       updates.register_number = editForm.register_number;
+      // Parent linking
+      if (editForm.parent_id) updates.parent_id = editForm.parent_id;
+      if (editForm.parent_name) updates.parent_name = editForm.parent_name;
+      if (editForm.parent_email) updates.parent_email = editForm.parent_email;
+      if (editForm.parent_phone) updates.parent_phone = editForm.parent_phone;
     } else if (activeTab === 'parents') {
       updates.name = editForm.name;
       updates.phone = editForm.phone;
+      updates.dob = editForm.dob;
     } else {
       updates.full_name = editForm.name;
       updates.phone = editForm.phone;
+      updates.dob = editForm.dob;
       updates.staff_id = editForm.staff_id;
       updates.department = editForm.department;
     }
@@ -162,9 +245,9 @@ export default function UserManagementScreen() {
     setIsUpdating(false);
     if (res.success) {
       setIsModalVisible(false);
-      Alert.alert("Success", "User updated successfully");
+      showAlert("Success", "User updated successfully", "success");
     } else {
-      Alert.alert("Error", "Failed to update user");
+      showAlert("Error", "Failed to update user", "error");
     }
   };
 
@@ -335,7 +418,10 @@ export default function UserManagementScreen() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalBody}>
+            <ScrollView 
+              style={styles.modalBody}
+              contentContainerStyle={styles.modalScrollContent}
+            >
               <View style={styles.modalAvatarContainer}>
                 <View style={styles.largeAvatar}>
                   {editForm.image_url ? (
@@ -388,6 +474,18 @@ export default function UserManagementScreen() {
                   />
                 </View>
 
+                <View style={styles.inputWrap}>
+                  <Text style={styles.fieldLabel}>Date of Birth (YYYY-MM-DD)</Text>
+                  <TouchableOpacity 
+                    style={[styles.modalInput, { justifyContent: 'center' }]} 
+                    onPress={() => setShowDOBPicker(true)}
+                  >
+                    <Text style={{ color: editForm.dob ? theme.colors.text : '#94A3B8' }}>
+                      {editForm.dob || 'Select Date'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
                 {activeTab === 'students' && (
                   <>
                     <View style={styles.inputWrap}>
@@ -436,53 +534,125 @@ export default function UserManagementScreen() {
                         onChangeText={(v) => setEditForm({...editForm, register_number: v})}
                       />
                     </View>
-                  </>
-                )}
 
-                {activeTab !== 'students' && activeTab !== 'parents' && (
-                  <>
+
+
+                    {/* Parent Linking integrated here */}
+                    <View style={styles.divider} />
+                    <Text style={[styles.sectionLabel, { marginTop: 16 }]}>Parent Linking</Text>
+
                     <View style={styles.inputWrap}>
-                      <Text style={styles.fieldLabel}>Staff ID</Text>
-                      <TextInput 
-                        style={styles.modalInput}
-                        value={editForm.staff_id}
-                        onChangeText={(v) => setEditForm({...editForm, staff_id: v})}
+                      <Text style={styles.fieldLabel}>Search Parent by Email</Text>
+                      <View style={styles.parentSearchRow}>
+                        <Search size={16} color={theme.colors.textMuted} {...({} as any)} />
+                        <TextInput
+                          style={styles.parentSearchInput}
+                          value={parentSearchQuery}
+                          onChangeText={(v) => {
+                            setParentSearchQuery(v);
+                            setShowParentDropdown(true);
+                            if (!v) handleClearParent();
+                          }}
+                          onFocus={() => setShowParentDropdown(true)}
+                          placeholder="Search existing parent..."
+                          keyboardType="email-address"
+                          autoCapitalize="none"
+                        />
+                        {selectedParent && (
+                          <TouchableOpacity onPress={handleClearParent}>
+                            <X size={16} color={theme.colors.textMuted} {...({} as any)} />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+
+                      {showParentDropdown && parentResults.length > 0 && (
+                        <View style={styles.parentDropdown}>
+                          {(parentResults as any[]).map((p: any) => (
+                            <TouchableOpacity
+                              key={p.id}
+                              style={styles.parentDropdownItem}
+                              onPress={() => handleSelectParent(p)}
+                            >
+                              <View style={{ flex: 1 }}>
+                                <Text style={styles.parentDropdownName}>{p.full_name || 'Parent'}</Text>
+                                <Text style={styles.parentDropdownEmail}>{p.email}</Text>
+                              </View>
+                              {selectedParent?.id === p.id && (
+                                <CheckCircle size={16} color="#10B981" {...({} as any)} />
+                              )}
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      )}
+
+                      {selectedParent && (
+                        <View style={styles.parentLinkedCard}>
+                          <View style={styles.parentLinkedDot} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.parentLinkedName}>{selectedParent.full_name}</Text>
+                            <Text style={styles.parentLinkedEmail}>{selectedParent.email}</Text>
+                          </View>
+                          <CheckCircle size={18} color="#10B981" {...({} as any)} />
+                        </View>
+                      )}
+                    </View>
+
+                    <View style={styles.inputWrap}>
+                      <Text style={styles.fieldLabel}>Parent Name {selectedParent && '(Linked)'}</Text>
+                      <TextInput
+                        style={[styles.modalInput, selectedParent && styles.readOnlyInput]}
+                        value={editForm.parent_name || ''}
+                        onChangeText={(v) => setEditForm({...editForm, parent_name: v})}
+                        editable={!selectedParent}
+                        placeholder="Parent Name"
                       />
                     </View>
+
                     <View style={styles.inputWrap}>
-                      <Text style={styles.fieldLabel}>Department</Text>
-                      <TouchableOpacity 
-                        style={styles.modalInput}
-                        onPress={() => {
-                          if (availableDepartments.length === 0) {
-                            // If no departments exist, allow manual entry or show a prompt
-                            Alert.alert("Departments", "No existing departments found. Please type it in.");
-                            return;
-                          }
-                          Alert.alert("Select Department", "", availableDepartments.map(d => ({
-                            text: d,
-                            onPress: () => setEditForm({...editForm, department: d})
-                          })).concat([
-                            { text: "Other (Type manually)", onPress: () => {
-                              // We can't easily open a prompt from Alert.alert on all platforms, 
-                              // but we can at least show what's available.
-                            }},
-                            { text: "Cancel", style: "cancel" }
-                          ] as any));
-                        }}
-                      >
-                         <TextInput 
-                           style={{ color: theme.colors.text, padding: 0 }}
-                           value={editForm.department}
-                           onChangeText={(v) => setEditForm({...editForm, department: v})}
-                           placeholder="Type or select..."
-                         />
-                         <ChevronDown size={16} color={theme.colors.textMuted} style={{ position: 'absolute', right: 16, top: 12 }} {...({} as any)} />
-                      </TouchableOpacity>
+                      <Text style={styles.fieldLabel}>Parent Phone</Text>
+                      <TextInput
+                        style={[styles.modalInput, selectedParent && styles.readOnlyInput]}
+                        value={editForm.parent_phone || ''}
+                        onChangeText={(v) => setEditForm({...editForm, parent_phone: v})}
+                        editable={!selectedParent}
+                        placeholder="Phone Number"
+                        keyboardType="phone-pad"
+                      />
                     </View>
                   </>
                 )}
               </View>
+
+              {activeTab !== 'students' && activeTab !== 'parents' && (
+                <View style={styles.formSection}>
+                  <View style={styles.inputWrap}>
+                    <Text style={styles.fieldLabel}>Department</Text>
+                    <TouchableOpacity 
+                      style={styles.modalInput}
+                      onPress={() => {
+                        if (availableDepartments.length === 0) {
+                          Alert.alert("Departments", "No existing departments found. Please type it in.");
+                          return;
+                        }
+                        Alert.alert("Select Department", "", availableDepartments.map(d => ({
+                          text: d,
+                          onPress: () => setEditForm({...editForm, department: d})
+                        })).concat([
+                          { text: "Cancel", style: "cancel" }
+                        ] as any));
+                      }}
+                    >
+                       <TextInput 
+                         style={{ color: theme.colors.text, padding: 0 }}
+                         value={editForm.department}
+                         onChangeText={(v) => setEditForm({...editForm, department: v})}
+                         placeholder="Type or select..."
+                       />
+                       <ChevronDown size={16} color={theme.colors.textMuted} style={{ position: 'absolute', right: 16, top: 12 }} {...({} as any)} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
             </ScrollView>
 
             <View style={styles.modalFooter}>
@@ -510,6 +680,23 @@ export default function UserManagementScreen() {
           </View>
         </View>
       </Modal>
+
+      <AlertModal
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        buttons={alertConfig.buttons}
+        onClose={() => setAlertConfig(prev => ({ ...prev, visible: false }))}
+      />
+
+      <CalendarModal
+        visible={showDOBPicker}
+        title="Select Date of Birth"
+        initialDate={editForm.dob}
+        onSelect={(date) => setEditForm(prev => ({ ...prev, dob: date }))}
+        onClose={() => setShowDOBPicker(false)}
+      />
     </View>
   );
 }
@@ -552,7 +739,8 @@ const styles = StyleSheet.create({
   modalContent: { backgroundColor: 'white', borderTopLeftRadius: 32, borderTopRightRadius: 32, height: '90%', paddingBottom: 20 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
   modalTitle: { fontSize: 20, fontWeight: 'bold', color: theme.colors.text },
-  modalBody: { flex: 1, padding: 24 },
+  modalBody: { flex: 1 },
+  modalScrollContent: { padding: 24, paddingBottom: 40 },
   modalAvatarContainer: { alignItems: 'center', marginBottom: 32 },
   largeAvatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', marginBottom: 16, borderWidth: 4, borderColor: 'white', elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, overflow: 'hidden' },
   largeAvatarImage: { width: '100%', height: '100%' },
@@ -561,14 +749,27 @@ const styles = StyleSheet.create({
   emailContainer: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   modalSub: { fontSize: 14, color: theme.colors.textMuted },
   copyBtn: { padding: 4, backgroundColor: '#F1F5F9', borderRadius: 6 },
-  formSection: { marginBottom: 32 },
+  formSection: { marginBottom: 24 },
   sectionLabel: { fontSize: 16, fontWeight: 'bold', color: theme.colors.text, marginBottom: 16 },
+  divider: { height: 1, backgroundColor: '#F1F5F9', marginVertical: 8 },
   inputWrap: { marginBottom: 20 },
   fieldLabel: { fontSize: 12, fontWeight: '600', color: theme.colors.textMuted, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
   modalInput: { backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, fontSize: 15, color: theme.colors.text },
+  readOnlyInput: { backgroundColor: '#F1F5F9', color: theme.colors.textMuted },
   modalFooter: { flexDirection: 'row', padding: 24, gap: 12, borderTopWidth: 1, borderTopColor: '#F1F5F9' },
   cancelBtn: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F1F5F9' },
   cancelBtnText: { fontSize: 16, fontWeight: 'bold', color: theme.colors.textMuted },
   saveChangesBtn: { flex: 2, flexDirection: 'row', backgroundColor: theme.colors.primary, paddingVertical: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: 8 },
   saveChangesBtnText: { color: 'white', fontSize: 16, fontWeight: 'bold' },
+  // Parent search styles
+  parentSearchRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
+  parentSearchInput: { flex: 1, fontSize: 14, color: theme.colors.text, padding: 0 },
+  parentDropdown: { marginTop: 4, backgroundColor: 'white', borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', overflow: 'hidden' },
+  parentDropdownItem: { flexDirection: 'row', alignItems: 'center', padding: 14, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', gap: 10 },
+  parentDropdownName: { fontSize: 14, fontWeight: '600', color: theme.colors.text },
+  parentDropdownEmail: { fontSize: 12, color: theme.colors.textMuted },
+  parentLinkedCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#F0FDF4', borderRadius: 12, padding: 12, marginTop: 8, borderWidth: 1, borderColor: '#D1FAE5' },
+  parentLinkedDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#10B981' },
+  parentLinkedName: { fontSize: 13, fontWeight: 'bold', color: '#065F46' },
+  parentLinkedEmail: { fontSize: 12, color: '#10B981' },
 });

@@ -15,16 +15,18 @@ export const HeaderLogo = () => {
 
 const styles = StyleSheet.create({
   container: {
-    height: '100%',
+    height: 50,
     justifyContent: 'center',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     backgroundColor: 'transparent',
-    paddingLeft: 4,
-    width: 120, // max width permitted in header left
+    paddingLeft: 16,
+    width: 200, 
   },
   logo: {
-    width: '100%',
-    height: '100%',
+    width: 140,
+    height: 40,
     backgroundColor: 'transparent',
+    transform: [{ scale: 1.65 }],
+    marginLeft: 12,
   },
 });

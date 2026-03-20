@@ -68,9 +68,41 @@ export function useCanteenDashboard(institutionId?: string, selectedClass?: stri
         enabled: !!institutionId,
     });
 
+    // 3. Fetch Institution Logo/Name
+    const { data: institution = null } = useQuery({
+        queryKey: ['canteen-institution', institutionId],
+        queryFn: async () => {
+            if (!institutionId) return null;
+            const { data } = await supabase
+                .from('institutions')
+                .select('name, logo_url')
+                .eq('institution_id', institutionId)
+                .maybeSingle();
+            return data as any;
+        },
+        enabled: !!institutionId,
+    });
+
+    // 4. Fetch Canteen Profile
+    const { data: canteenProfile = null } = useQuery({
+        queryKey: ['canteen-profile', institutionId],
+        queryFn: async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return null;
+            const { data } = await supabase
+                .from('profiles')
+                .select('full_name, image_url')
+                .eq('id', user.id)
+                .maybeSingle();
+            return data as any;
+        },
+    });
+
     return {
         students: canteenData,
         classes,
+        institution,
+        canteenProfile,
         isLoading,
     };
 }

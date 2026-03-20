@@ -1,33 +1,43 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
-import { NotificationBell } from '../../../src/components/common/NotificationBell';
-import { theme } from '../../../src/theme';
-import { PageHeader } from '../../../src/components/common/PageHeader';
-import { StatCard } from '../../../src/components/common/StatCard';
-import { useAuth } from '../../../src/hooks/useAuth';
+import { NotificationBell } from '../../../../src/components/common/NotificationBell';
+import { theme } from '../../../../src/theme';
+import { PageHeader } from '../../../../src/components/common/PageHeader';
+import { StatCard } from '../../../../src/components/common/StatCard';
+import { useAuth } from '../../../../src/hooks/useAuth';
 import { 
   Users, 
   Calendar, 
   CreditCard, 
   ShieldAlert, 
   Phone,
-  ArrowRight
+  ArrowRight,
+  ChevronRight
 } from 'lucide-react-native';
-import { ShortcutGrid } from '../../../src/components/common/ShortcutGrid';
+import { ShortcutGrid } from '../../../../src/components/common/ShortcutGrid';
+import { Link, useRouter } from 'expo-router';
 
-import { useParentDashboard } from '../../../src/hooks/useParentDashboard';
+import { useParentDashboard } from '../../../../src/hooks/useParentDashboard';
 
 export default function ParentDashboard() {
-  const { user } = useAuth();
-  const { children, pendingFees, isLoading } = useParentDashboard(user?.id);
+  const { user, role } = useAuth();
+  const router = useRouter();
+  const { children, pendingFees, institution, parentProfile, isLoading } = useParentDashboard(user?.id);
+
+  const welcomeName = parentProfile?.full_name || user?.email?.split('@')[0] || 'Parent';
 
   if (isLoading) return <View style={styles.container}><Text>Loading Children Data...</Text></View>;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <PageHeader 
-        title="Parent Dashboard" 
-        subtitle="Staying connected to your child's progress"
+        title={`Hello, ${welcomeName}!`} 
+        subtitle={institution ? `Staying connected with ${institution.name}` : "Staying connected to your child's progress"}
+        institutionName={institution?.name}
+        institutionLogo={institution?.logo_url}
+        userRole={role || undefined}
+        userAvatar={parentProfile?.image_url || undefined}
+        userSubtitle={`${children.length} Children Enrolled`}
         actions={<NotificationBell />}
       />
 
@@ -45,14 +55,23 @@ export default function ParentDashboard() {
         <Text style={styles.sectionTitle}>Your Children</Text>
         {children.length > 0 ? (
           children.map((child, index) => (
-            <TouchableOpacity key={index} style={[styles.childCard, { marginBottom: 12 }]}>
+            <TouchableOpacity 
+              key={index} 
+              style={[styles.childCard, { marginBottom: 12 }]}
+              onPress={() => router.push({
+                pathname: "/(root)/parent/student/[id]",
+                params: { id: child.id, name: child.name }
+              })}
+            >
               <View style={styles.childInfo}>
                 <View style={styles.avatar}>
                   <Text style={styles.avatarText}>{child.name.substring(0, 2).toUpperCase()}</Text>
                 </View>
-                <View>
-                  <Text style={styles.childName}>{child.name}</Text>
-                  <Text style={styles.childMeta}>Class {child.class_name} • Roll #{child.register_number}</Text>
+                <View style={{ flex: 1, marginRight: 8 }}>
+                  <Text style={styles.childName} numberOfLines={1}>{child.name}</Text>
+                  <Text style={styles.childMeta} numberOfLines={1} ellipsizeMode="tail">
+                    Class {child.class_name} • Roll #{child.register_number}
+                  </Text>
                 </View>
               </View>
               <View style={styles.childStats}>
@@ -62,10 +81,10 @@ export default function ParentDashboard() {
                 </View>
                 <View style={styles.miniStat}>
                   <Text style={styles.miniStatLabel}>GRADES</Text>
-                  <Text style={[styles.miniStatValue, { color: '#FAB75A' }]}>{child.grade}</Text>
+                  <Text style={[styles.miniStatValue, { color: '#FAB75A' }]}>{child.grade || 'N/A'}</Text>
                 </View>
               </View>
-              <ArrowRight size={20} color={theme.colors.textMuted} {...({} as any)} />
+              <ChevronRight size={18} color={theme.colors.textMuted} {...({} as any)} />
             </TouchableOpacity>
           ))
         ) : (

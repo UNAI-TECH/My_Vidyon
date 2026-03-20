@@ -36,8 +36,8 @@ export default function RootLayout() {
           
           // Check if user is in audience
           const isTargeted = 
-            !newAnnouncement.institution_id || // Sent to "All" (no specific institution)
-            newAnnouncement.institution_id === institutionId; // Filter by Slug matching profile.institution_id
+            (!newAnnouncement.institution_id || newAnnouncement.institution_id === institutionId) &&
+            (!newAnnouncement.category || newAnnouncement.category === 'all' || newAnnouncement.category === role);
 
           // We show to the sender too just for testing purposes or remove if not needed
           // const isSender = newAnnouncement.created_by === user.id;

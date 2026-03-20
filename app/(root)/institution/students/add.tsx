@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Image, ActivityIndicator, Alert, Platform, Modal } from 'react-native';
 import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
@@ -12,10 +12,11 @@ import * as Sharing from 'expo-sharing';
 import * as XLSX from 'xlsx';
 import { 
   UserPlus, ArrowLeft, Save, Camera, Upload, Trash2,
-  ChevronRight, ChevronLeft, ChevronDown, Copy, FileSpreadsheet, Download, Users, Plus
+  ChevronRight, ChevronLeft, ChevronDown, Copy, FileSpreadsheet, Download, Users, Plus, Search, CheckCircle, X
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { CalendarModal } from '../../../../src/components/common/CalendarPicker';
 
 type UserRole = 'student' | 'faculty' | 'accountant' | 'canteen_manager' | 'driver' | 'parent';
 
@@ -63,6 +64,11 @@ export default function AddUserScreen() {
   const [generatedEmail, setGeneratedEmail] = useState('');
   const [bulkProgress, setBulkProgress] = useState<{ current: number; total: number } | null>(null);
   const [bulkResults, setBulkResults] = useState<any[] | null>(null);
+
+  // Parent search
+  const [parentSearchQuery, setParentSearchQuery] = useState('');
+  const [selectedParent, setSelectedParent] = useState<any>(null);
+  const [showParentDropdown, setShowParentDropdown] = useState(false);
   
   // Generic Modal States
   const [pickerConfig, setPickerConfig] = useState<{
@@ -77,6 +83,8 @@ export default function AddUserScreen() {
     message: string;
     buttons: { text: string; onPress: () => void; style?: 'default' | 'destructive' | 'cancel' }[];
   } | null>(null);
+
+  const [showDOBPicker, setShowDOBPicker] = useState(false);
 
 
   const [form, setForm] = useState({
@@ -123,6 +131,41 @@ export default function AddUserScreen() {
     },
     enabled: !!institutionId
   });
+
+  // Search parents by email
+  const { data: parentResults = [] } = useQuery({
+    queryKey: ['parent-search', institutionId, parentSearchQuery],
+    queryFn: async (): Promise<any[]> => {
+      if (!institutionId || parentSearchQuery.length < 2) return [];
+      const { data } = await (supabase
+        .from('profiles') as any)
+        .select('id, full_name, email, phone')
+        .eq('institution_id', institutionId)
+        .eq('role', 'parent')
+        .ilike('email', `%${parentSearchQuery}%`)
+        .limit(10);
+      return data || [];
+    },
+    enabled: !!institutionId && parentSearchQuery.length >= 2
+  });
+
+  const handleSelectParent = useCallback((parent: any) => {
+    setSelectedParent(parent);
+    setForm(prev => ({
+      ...prev,
+      parentName: parent.full_name || '',
+      parentEmail: parent.email || '',
+      parentPhone: parent.phone || '',
+    }));
+    setParentSearchQuery(parent.email || '');
+    setShowParentDropdown(false);
+  }, []);
+
+  const handleClearParent = useCallback(() => {
+    setSelectedParent(null);
+    setParentSearchQuery('');
+    setForm(prev => ({ ...prev, parentName: '', parentEmail: '', parentPhone: '' }));
+  }, []);
 
   const availableSections = useMemo(() => {
     const cls = availableClasses.find((c: any) => c.name === form.className);
@@ -225,6 +268,10 @@ export default function AddUserScreen() {
         body.parent_email = form.parentEmail || null;
         body.parent_phone = form.parentPhone || null;
         body.parent_relation = form.parentRelation;
+        // Link to existing parent profile if selected
+        if (selectedParent?.id) {
+          body.parent_id = selectedParent.id;
+        }
       } else if (selectedRole === 'parent') {
         // parent-specific fields would go here
       } else {
@@ -547,7 +594,14 @@ export default function AddUserScreen() {
         <View style={styles.row}>
           <View style={[styles.inputGroup, { flex: 1 }]}>
             <Text style={styles.label}>DOB (YYYY-MM-DD)</Text>
-            <TextInput style={styles.input} value={form.dob} onChangeText={v => updateField('dob', v)} placeholder="2010-01-01" />
+            <TouchableOpacity 
+              style={[styles.input, { justifyContent: 'center' }]} 
+              onPress={() => setShowDOBPicker(true)}
+            >
+              <Text style={{ color: form.dob ? theme.colors.text : '#94A3B8' }}>
+                {form.dob || 'Select Date'}
+              </Text>
+            </TouchableOpacity>
           </View>
           <View style={[styles.inputGroup, { flex: 1 }]}>
             <Text style={styles.label}>Phone</Text>
@@ -621,18 +675,99 @@ export default function AddUserScreen() {
             </View>
 
             <Text style={styles.sectionTitle}>Parent Details</Text>
+
+            {/* Parent Search Dropdown */}
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Parent Name *</Text>
-              <TextInput style={styles.input} value={form.parentName} onChangeText={v => updateField('parentName', v)} placeholder="Parent Name" />
+              <Text style={styles.label}>Link to Existing Parent (search by email)</Text>
+              <View style={styles.searchWrapper}>
+                <Search size={16} color={theme.colors.textMuted} {...({} as any)} />
+                <TextInput
+                  style={styles.searchInput}
+                  value={parentSearchQuery}
+                  onChangeText={(v) => {
+                    setParentSearchQuery(v);
+                    setShowParentDropdown(true);
+                    if (!v) handleClearParent();
+                  }}
+                  onFocus={() => setShowParentDropdown(true)}
+                  placeholder="Search parent email..."
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+                {selectedParent && (
+                  <TouchableOpacity onPress={handleClearParent}>
+                    <X size={16} color={theme.colors.textMuted} {...({} as any)} />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Dropdown results */}
+              {showParentDropdown && parentResults.length > 0 && (
+                <View style={styles.dropdownList}>
+                  {parentResults.map((p: any) => (
+                    <TouchableOpacity
+                      key={p.id}
+                      style={styles.dropdownItem}
+                      onPress={() => handleSelectParent(p)}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.dropdownName}>{p.full_name || 'Parent'}</Text>
+                        <Text style={styles.dropdownEmail}>{p.email}</Text>
+                      </View>
+                      {selectedParent?.id === p.id && (
+                        <CheckCircle size={16} color="#10B981" {...({} as any)} />
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              {/* Selected Parent Card */}
+              {selectedParent && (
+                <View style={styles.selectedParentCard}>
+                  <View style={styles.selectedParentDot} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.selectedParentName}>{selectedParent.full_name}</Text>
+                    <Text style={styles.selectedParentEmail}>{selectedParent.email}</Text>
+                  </View>
+                  <CheckCircle size={18} color="#10B981" {...({} as any)} />
+                </View>
+              )}
+            </View>
+
+            {/* Auto-filled / manual parent details */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Parent Name {!selectedParent ? '*' : '(auto-filled)'}</Text>
+              <TextInput
+                style={[styles.input, selectedParent && styles.inputReadOnly]}
+                value={form.parentName}
+                onChangeText={v => updateField('parentName', v)}
+                placeholder="Parent Full Name"
+                editable={!selectedParent}
+              />
             </View>
             <View style={styles.row}>
               <View style={[styles.inputGroup, { flex: 1 }]}>
-                <Text style={styles.label}>Parent Phone *</Text>
-                <TextInput style={styles.input} value={form.parentPhone} onChangeText={v => updateField('parentPhone', v)} keyboardType="phone-pad" placeholder="+91..." />
+                <Text style={styles.label}>Parent Phone</Text>
+                <TextInput
+                  style={[styles.input, selectedParent && styles.inputReadOnly]}
+                  value={form.parentPhone}
+                  onChangeText={v => updateField('parentPhone', v)}
+                  keyboardType="phone-pad"
+                  placeholder="+91..."
+                  editable={!selectedParent}
+                />
               </View>
               <View style={[styles.inputGroup, { flex: 1 }]}>
                 <Text style={styles.label}>Parent Email</Text>
-                <TextInput style={styles.input} value={form.parentEmail} onChangeText={v => updateField('parentEmail', v)} keyboardType="email-address" placeholder="email@..." />
+                <TextInput
+                  style={[styles.input, selectedParent && styles.inputReadOnly]}
+                  value={form.parentEmail}
+                  onChangeText={v => updateField('parentEmail', v)}
+                  keyboardType="email-address"
+                  placeholder="email@..."
+                  editable={!selectedParent}
+                />
               </View>
             </View>
           </>
@@ -743,8 +878,7 @@ export default function AddUserScreen() {
           <View style={styles.alertContent}>
             <Text style={styles.alertTitle}>{alertConfig?.title}</Text>
             <Text style={styles.alertMessage}>{alertConfig?.message}</Text>
-            
-            <View style={styles.alertActions}>
+                        <View style={styles.alertActions}>
               {alertConfig?.buttons.map((btn, idx) => (
                 <TouchableOpacity 
                   key={idx} 
@@ -767,6 +901,14 @@ export default function AddUserScreen() {
           </View>
         </View>
       </Modal>
+
+      <CalendarModal
+        visible={showDOBPicker}
+        title="Select Date of Birth"
+        initialDate={form.dob}
+        onSelect={(date) => updateField('dob', date)}
+        onClose={() => setShowDOBPicker(false)}
+      />
     </View>
   );
 }
@@ -792,9 +934,21 @@ const styles = StyleSheet.create({
   inputGroup: { gap: 4 },
   label: { fontSize: 12, fontWeight: '600', color: theme.colors.textMuted },
   input: { backgroundColor: 'white', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, fontSize: 14, color: theme.colors.text },
+  inputReadOnly: { backgroundColor: '#F8FAFC', color: theme.colors.textMuted },
   select: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'white', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0' },
   selectText: { fontSize: 14, color: theme.colors.text },
   placeholder: { color: '#94A3B8' },
+  // Parent search
+  searchWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
+  searchInput: { flex: 1, fontSize: 14, color: theme.colors.text, padding: 0 },
+  dropdownList: { marginTop: 4, backgroundColor: 'white', borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', overflow: 'hidden', zIndex: 999 },
+  dropdownItem: { flexDirection: 'row', alignItems: 'center', padding: 14, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', gap: 10 },
+  dropdownName: { fontSize: 14, fontWeight: '600', color: theme.colors.text },
+  dropdownEmail: { fontSize: 12, color: theme.colors.textMuted },
+  selectedParentCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#F0FDF4', borderRadius: 12, padding: 12, marginTop: 8, borderWidth: 1, borderColor: '#D1FAE5' },
+  selectedParentDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#10B981' },
+  selectedParentName: { fontSize: 13, fontWeight: 'bold', color: '#065F46' },
+  selectedParentEmail: { fontSize: 12, color: '#10B981' },
   footer: { flexDirection: 'row', justifyContent: 'space-between', padding: 16, paddingBottom: 28, borderTopWidth: 1, borderTopColor: '#F1F5F9', backgroundColor: 'white' },
   prevBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
   prevBtnText: { fontSize: 16, fontWeight: '600', color: theme.colors.text },
