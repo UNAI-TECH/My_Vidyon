@@ -2,6 +2,7 @@
   "expo": {
     "name": "my-vidyon-rebuild",
     "slug": "my-vidyon-rebuild",
+    "scheme": "myvidyonrebuild",
     "version": "1.0.0",
     "sdkVersion": "54.0.0",
     "orientation": "portrait",
@@ -30,7 +31,15 @@
     "plugins": [
       "expo-router",
       "expo-asset",
-      "expo-secure-store"
-    ]
+      "expo-secure-store",
+      "expo-notifications",
+      "@react-native-community/datetimepicker"
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "e43bedd5-6bcc-4eeb-9a4b-4588ac9d04aa"
+      }
+    }
   }
 }

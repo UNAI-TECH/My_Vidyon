@@ -6,9 +6,11 @@ import { useAuth } from '../../../../src/hooks/useAuth';
 import { useStudentDashboard } from '../../../../src/hooks/useStudentDashboard';
 import { Badge } from '../../../../src/components/common/Badge';
 import { FileText, Clock } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
 
 export default function StudentAssignments() {
   const { user } = useAuth();
+  const router = useRouter();
   const { assignments, isLoading } = useStudentDashboard(user?.id);
 
   return (
@@ -20,7 +22,13 @@ export default function StudentAssignments() {
         keyExtractor={(item: any) => item.id}
         contentContainerStyle={styles.list}
         renderItem={({ item }) => (
-          <TouchableOpacity style={styles.card}>
+          <TouchableOpacity 
+            style={styles.card}
+            onPress={() => router.push({
+              pathname: '/(root)/student/assignments/[id]',
+              params: { id: item.id }
+            })}
+          >
             <View style={styles.iconWrapper}>
               <FileText size={20} color={theme.colors.primary} {...({} as any)} />
             </View>

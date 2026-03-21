@@ -1,0 +1,2 @@
+--- Checking user_push_tokens Columns ---
+user_push_tokens Columns: id, user_id, fcm_token, platform, device_info, created_at, updated_at, last_used_at

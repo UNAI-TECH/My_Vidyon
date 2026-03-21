@@ -51,14 +51,14 @@ export default function StudentDashboard() {
   const isLoading = isDashboardLoading || isTimetableLoading;
 
   const shortcuts = [
-    { label: 'Attendance', icon: CheckCircle, href: '/(root)/student/attendance', color: '#3B82F6' },
-    { label: 'Courses', icon: BookOpen, href: '/(root)/student/courses', color: '#F97316' },
-    { label: 'Assignments', icon: ClipboardList, href: '/(root)/student/assignments', color: '#10B981' },
-    { label: 'AI Tutor', icon: Sparkles, href: '/(root)/student/ai-tutor', color: '#A855F7' },
-    { label: 'Leave', icon: FileText, href: '/(root)/student/leave', color: '#EF4444' },
-    { label: 'Grades', icon: TrendingUp, href: '/(root)/student/grades', color: '#F59E0B' },
-    { label: 'Certificates', icon: Award, href: '/(root)/student/certificates', color: '#6366F1' },
-    { label: 'Timetable', icon: Clock, href: '/(root)/student/timetable', color: '#64748B' },
+    { label: 'Attendance', icon: CheckCircle, href: '/student/attendance', color: '#3B82F6' },
+    { label: 'Courses', icon: BookOpen, href: '/student/courses', color: '#F97316' },
+    { label: 'Assignments', icon: ClipboardList, href: '/student/assignments', color: '#10B981' },
+    { label: 'AI Tutor', icon: Sparkles, href: '/student/ai-tutor', color: '#A855F7' },
+    { label: 'Leave', icon: FileText, href: '/student/leave', color: '#EF4444' },
+    { label: 'Grades', icon: TrendingUp, href: '/student/grades', color: '#F59E0B' },
+    { label: 'Certificates', icon: Award, href: '/student/certificates', color: '#6366F1' },
+    { label: 'Timetable', icon: Clock, href: '/student/timetable', color: '#64748B' },
   ];
 
   if (isLoading) {

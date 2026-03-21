@@ -96,7 +96,7 @@ function pemToDer(pem: string): ArrayBuffer {
     return bytes.buffer
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
     if (req.method === 'OPTIONS') {
         return new Response('ok', { headers: corsHeaders })
     }
@@ -144,7 +144,7 @@ serve(async (req) => {
 
         // Send to each device using FCM V1 API
         const results = await Promise.allSettled(
-            tokens.map(async (tokenRecord) => {
+            tokens.map(async (tokenRecord: { fcm_token: string, platform: string }) => {
                 const fcmPayload = {
                     message: {
                         token: tokenRecord.fcm_token,
@@ -202,7 +202,7 @@ serve(async (req) => {
             })
         )
 
-        const successCount = results.filter((r): r is PromiseFulfilledResult<any> =>
+        const successCount = results.filter((r: any) =>
             r.status === 'fulfilled' && r.value.success
         ).length
 

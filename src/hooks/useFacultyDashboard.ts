@@ -69,7 +69,16 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
                 return { subjects: [], studentCount: 0 };
             }
 
-            const subjects = (subjectsData || []) as unknown as FacultySubject[];
+            const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
+            const subjects = (subjectsData as any[] || [])
+                .filter(s => !!s.subjects && !!s.subject_id && isUUID(s.subject_id) && !!s.class_id && isUUID(s.class_id)) as unknown as FacultySubject[];
+            
+            console.log('Faculty Subjects Filter Results:', {
+                rawCount: subjectsData?.length || 0,
+                filteredCount: subjects.length,
+                sampleIds: subjects.slice(0, 3).map(s => s.subject_id)
+            });
             
             // Get unique class/section combinations to count students
             const classFilters = subjects.map(s => `(class_name.eq.${s.classes?.name},section.eq.${s.section})`).join(',');
@@ -185,7 +194,7 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
     });
 
     // 8. Fetch Faculty Profile
-    const { data: facultyProfile = null } = useQuery<FacultyProfile | null>({
+    const { data: facultyProfile = null, isLoading: isProfileLoading } = useQuery<FacultyProfile | null>({
         queryKey: ['faculty-profile', facultyId],
         queryFn: async () => {
             if (!facultyId) return null;
@@ -215,12 +224,209 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
         avgAttendance: '92%', // Mocked for now
     };
 
+    // 9. Methods for Certificates & Materials
+    const uploadCertificate = async (data: any) => {
+        const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+        console.log('Final Certificate Upload ID Check:', { subject_id: data.subject_id, valid: isUUID(data.subject_id || '') });
+        
+        if (data.subject_id && !isUUID(data.subject_id)) throw new Error('Invalid subject ID format: ' + data.subject_id);
+        if (data.class_id && !isUUID(data.class_id)) throw new Error('Invalid class ID format: ' + data.class_id);
+        
+        // Auto-fill names if missing
+        const mapping = assignedSubjects.find(s => s.subject_id === data.subject_id && s.class_id === data.class_id);
+        const finalData = {
+            ...data,
+            subject: data.subject || mapping?.subjects?.name || 'Unknown',
+            class_name: data.class_name || mapping?.classes?.name || 'Unknown',
+        };
+
+        const { error } = await supabase.from('certificates').insert(finalData);
+        if (error) throw error;
+        return true;
+    };
+
+    const uploadMaterial = async (data: any) => {
+        const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+        console.log('Final Material Upload ID Check:', { subject_id: data.subject_id, institution_id: data.institution_id });
+
+        if (data.subject_id && !isUUID(data.subject_id)) throw new Error('Invalid subject ID format: ' + data.subject_id);
+        if (data.class_id && !isUUID(data.class_id)) throw new Error('Invalid class ID format: ' + data.class_id);
+        if (data.institution_id && !isUUID(data.institution_id)) throw new Error('Invalid institution ID format: ' + data.institution_id);
+
+        // Remove subject/class_name as they don't exist in the subject_materials schema provided
+        const { subject, class_name, ...insertData } = data;
+
+        const { error } = await supabase.from('subject_materials').insert(insertData);
+        if (error) throw error;
+        return true;
+    };
+
+    // 10. Fetch Faculty's Uploaded Materials
+    const { data: myMaterials = [], isLoading: isLoadingMyMaterials, refetch: refetchMaterials } = useQuery({
+        queryKey: ['faculty-my-materials', facultyId],
+        queryFn: async () => {
+            if (!facultyId) return [];
+            const { data, error } = await supabase
+                .from('subject_materials')
+                .select('*, subjects:subject_id(name), classes:class_id(name)')
+                .eq('faculty_id', facultyId)
+                .order('created_at', { ascending: false });
+            if (error) {
+                console.error('Error fetching faculty materials:', error);
+                return [];
+            }
+            return data || [];
+        },
+        enabled: !!facultyId,
+    });
+
+    // 11. Fetch Faculty's Assignments (Hardened against Join Failures)
+    const { data: myAssignments = [], isLoading: isLoadingMyAssignments, refetch: refetchAssignments } = useQuery({
+        queryKey: ['faculty-my-assignments', facultyId],
+        queryFn: async () => {
+            if (!facultyId) return [];
+            
+            // Try with joins first
+            const { data, error } = await supabase
+                .from('assignments')
+                .select('*, subjects:subject_id(name), classes:class_id(name)')
+                .eq('teacher_id', facultyId)
+                .order('created_at', { ascending: false });
+
+            if (error) {
+                console.warn('Faculty Assignments join failed, falling back to safe fetch:', error.message);
+                // Fallback to safe fetch without joins if type mismatch occurs
+                const { data: safeData, error: safeError } = await supabase
+                    .from('assignments')
+                    .select('*')
+                    .eq('teacher_id', facultyId)
+                    .order('created_at', { ascending: false });
+                
+                if (safeError) {
+                    console.error('Safe fetch also failed:', safeError);
+                    return [];
+                }
+                
+                // Add submission counts separately for safeData if needed, 
+                // but for now just return the data to stop the spinner
+                return safeData || [];
+            }
+
+            // Manually add submission stats if not joined
+            const assignmentsWithStats = await Promise.all((data || []).map(async (a: any) => {
+                const { count } = await supabase
+                    .from('submissions')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('assignment_id', a.id);
+                return { ...a, submissionCount: count || 0 };
+            }));
+
+            return assignmentsWithStats;
+        },
+        enabled: !!facultyId,
+    });
+
+    const deleteMaterial = async (materialId: string, fileUrl?: string) => {
+        try {
+            // 1. Delete from Storage if URL is provided
+            if (fileUrl) {
+                const pathParts = fileUrl.split('/storage/v1/object/public/materials/');
+                if (pathParts.length > 1) {
+                    const filePath = decodeURIComponent(pathParts[1]);
+                    await supabase.storage.from('materials').remove([filePath]);
+                }
+            }
+            // 2. Delete from DB
+            const { error } = await supabase.from('subject_materials').delete().eq('id', materialId);
+            if (error) throw error;
+            await refetchMaterials();
+            return true;
+        } catch (error) {
+            console.error('Error deleting material:', error);
+            throw error;
+        }
+    };
+
+    const deleteAssignment = async (assignmentId: string) => {
+        const { error } = await supabase.from('assignments').delete().eq('id', assignmentId);
+        if (error) throw error;
+        await refetchAssignments();
+        return true;
+    };
+
+    const fetchSubmissions = async (assignmentId: string) => {
+        const { data, error } = await supabase
+            .from('submissions')
+            .select('*')
+            .eq('assignment_id', assignmentId);
+        if (error) throw error;
+        return data;
+    };
+
+    const fetchClassStudents = async (className: string, section?: string) => {
+        const query = supabase
+            .from('students')
+            .select('id, profiles!students_profile_id_fkey(full_name, image_url)')
+            .eq('class_name', className);
+        
+        if (section) {
+            query.eq('section', section);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+        
+        return data?.map((s: any) => ({
+            id: s.id,
+            roll_no: 'N/A',
+            full_name: s.profiles?.full_name || 'Unknown',
+            image_url: s.profiles?.image_url
+        }));
+    };
+
+    const verifySubmission = async (submissionId: string, updates: { 
+        status: 'verified' | 'rejected', 
+        grade?: number, 
+        feedback?: string
+    }) => {
+        const { error } = await (supabase.from('submissions') as any)
+            .update({
+                ...updates,
+                verified_at: new Date().toISOString(),
+                verified_by: facultyId
+            })
+            .eq('id', submissionId);
+        
+        if (error) throw error;
+
+        // Trigger notification logic could go here
+        return true;
+    };
+
     return {
         stats,
         assignedSubjects,
+        assignedStudents,
         todaySchedule,
+        pendingReviews,
+        pendingLeaves,
+        pendingGrading,
         institution,
         facultyProfile,
-        isLoading: isLoadingAssigned || isLoadingSchedule || isLoadingGrading || isLoadingLeaves || isLoadingReviews,
+        isLoading: isLoadingTotal || isLoadingAssigned || isLoadingSchedule || isLoadingReviews || isLoadingLeaves || isLoadingGrading || isProfileLoading,
+        isLoadingProfile: isProfileLoading,
+        uploadCertificate,
+        uploadMaterial,
+        myMaterials,
+        isLoadingMyMaterials,
+        refetchMaterials,
+        deleteMaterial,
+        myAssignments,
+        isLoadingMyAssignments,
+        refetchAssignments,
+        deleteAssignment,
+        fetchSubmissions,
+        fetchClassStudents,
+        verifySubmission,
     };
 }

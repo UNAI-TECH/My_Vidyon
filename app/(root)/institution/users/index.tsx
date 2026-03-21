@@ -14,7 +14,7 @@ import { useRouter } from 'expo-router';
 import { supabase } from '../../../../src/lib/supabase';
 import { useQuery } from '@tanstack/react-query';
 import * as XLSX from 'xlsx';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as Clipboard from 'expo-clipboard';
 import { Image } from 'react-native';
@@ -694,7 +694,7 @@ export default function UserManagementScreen() {
         visible={showDOBPicker}
         title="Select Date of Birth"
         initialDate={editForm.dob}
-        onSelect={(date) => setEditForm(prev => ({ ...prev, dob: date }))}
+        onSelect={(date: string) => setEditForm((prev: any) => ({ ...prev, dob: date }))}
         onClose={() => setShowDOBPicker(false)}
       />
     </View>

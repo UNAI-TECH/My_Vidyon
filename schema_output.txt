@@ -1,0 +1,10 @@
+--- Checking students Columns ---
+students Columns: id, institution_id, name, register_number, class_name, section, dob, gender, parent_name, parent_contact, email, address, created_at, parent_email, parent_phone, image_url, phone, parent_id, parent_relation, blood_group, city, zip_code, academic_year, is_active, user_id, stop_id, profile_id
+--- Checking classes Columns ---
+classes Columns: id, group_id, name, sections, created_at, class_teacher_id, academic_year
+--- Checking announcements Columns ---
+announcements Columns: id, institution_id, title, content, type, category, target_class_id, target_section, created_by, created_at
+--- Checking profiles Columns ---
+profiles Columns: id, email, full_name, role, institution_id, status, updated_at, date_of_birth, phone, staff_id, department, image_url, is_active, pickup_latitude, pickup_longitude, pickup_address, academic_year, profile_image_url, avatar_url
+--- Checking notifications Columns ---
+notifications table is empty.

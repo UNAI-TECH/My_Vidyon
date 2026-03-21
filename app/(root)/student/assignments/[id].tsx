@@ -1,0 +1,365 @@
+import React from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Platform } from 'react-native';
+import { theme } from '../../../../src/theme';
+import { PageHeader } from '../../../../src/components/common/PageHeader';
+import { useAuth } from '../../../../src/hooks/useAuth';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '../../../../src/lib/supabase';
+import { 
+  Clock, 
+  ChevronLeft,
+  FileText,
+  Upload,
+  CheckCircle,
+  AlertCircle
+} from 'lucide-react-native';
+import * as DocumentPicker from 'expo-document-picker';
+import { format } from 'date-fns';
+import { useStudentDashboard } from '../../../../src/hooks/useStudentDashboard';
+import { AlertModal } from '../../../../src/components/common/AlertModal';
+
+export default function StudentAssignmentDetails() {
+  const { id } = useLocalSearchParams();
+  const { user } = useAuth();
+  const router = useRouter();
+  const { studentProfile } = useStudentDashboard(user?.id);
+  
+  const [pickedFile, setPickedFile] = React.useState<any>(null);
+  const [isUploading, setIsUploading] = React.useState(false);
+  const [alertConfig, setAlertConfig] = React.useState({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info' as 'success' | 'error' | 'info'
+  });
+
+  // Fetch assignment details
+  const { data: assignment, isLoading: isLoadingAssignment } = useQuery<any>({
+    queryKey: ['student-assignment', id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('assignments')
+        .select('*, subjects:subject_id(name)')
+        .eq('id', id)
+        .single();
+      
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!id,
+  });
+
+  const isPastDue = assignment?.due_date ? new Date() > new Date(assignment.due_date + 'T23:59:59') : false;
+
+  // Fetch student's submission
+  const { data: mySubmission, isLoading: isLoadingSubmission, refetch } = useQuery<any>({
+    queryKey: ['student-submission', id, user?.id],
+    queryFn: async () => {
+      if (!id || !studentProfile?.id) return null;
+      const { data, error } = await supabase
+        .from('submissions')
+        .select('*')
+        .eq('assignment_id', id as string)
+        .eq('student_id', studentProfile.id)
+        .maybeSingle();
+      
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!id && !!studentProfile?.id,
+  });
+
+  const isPendingReview = mySubmission?.status === 'submitted';
+  const canResubmit = !isPendingReview && mySubmission?.status !== 'graded';
+
+  const handlePickDocument = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['*/*'],
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setPickedFile(result.assets[0]);
+      }
+    } catch (err) {
+      console.error('Error picking document:', err);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!pickedFile) {
+      setAlertConfig({
+        visible: true,
+        title: 'Selection Required',
+        message: 'Please pick a file to submit',
+        type: 'error'
+      });
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      // 1. Upload to Supabase Storage
+      const fileExt = pickedFile.name.split('.').pop();
+      const fileName = `${Date.now()}_submission_${studentProfile?.id}.${fileExt}`;
+      const filePath = `submissions/${id}/${fileName}`;
+
+      const formData = new FormData();
+      formData.append('file', {
+        uri: Platform.OS === 'ios' ? pickedFile.uri.replace('file://', '') : pickedFile.uri,
+        name: pickedFile.name,
+        type: pickedFile.mimeType || 'application/octet-stream',
+      } as any);
+
+      const { error: storageError } = await supabase.storage
+        .from('assignments')
+        .upload(filePath, formData as any);
+
+      if (storageError) throw storageError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('assignments')
+        .getPublicUrl(filePath);
+
+      // 2. Insert/Update submission
+      if (mySubmission) {
+        // Delete old file if it exists
+        if (mySubmission.file_path) {
+          const oldPath = mySubmission.file_path.split('/storage/v1/object/public/assignments/')[1];
+          if (oldPath) {
+            await supabase.storage.from('assignments').remove([decodeURIComponent(oldPath)]);
+          }
+        }
+
+        const { error: dbError } = await (supabase.from('submissions') as any)
+          .update({
+            file_path: publicUrl,
+            file_name: pickedFile.name,
+            status: 'submitted',
+            submitted_at: new Date().toISOString()
+          })
+          .eq('id', mySubmission.id);
+        if (dbError) throw dbError;
+      } else {
+        const { error: dbError } = await (supabase.from('submissions') as any).insert({
+          assignment_id: id,
+          student_id: studentProfile?.id,
+          student_name: studentProfile?.name,
+          file_path: publicUrl,
+          file_name: pickedFile.name,
+          status: 'submitted',
+        });
+        if (dbError) throw dbError;
+      }
+
+      setAlertConfig({
+        visible: true,
+        title: 'Success!',
+        message: 'Assignment submitted successfully',
+        type: 'success'
+      });
+      setPickedFile(null);
+      refetch();
+    } catch (error: any) {
+      console.error('Submission error:', error);
+      setAlertConfig({
+        visible: true,
+        title: 'Upload Failed',
+        message: error.message || 'Something went wrong during submission.',
+        type: 'error'
+      });
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  if (isLoadingAssignment || isLoadingSubmission) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+      </View>
+    );
+  }
+
+  if (!assignment) {
+    return (
+      <View style={styles.centered}>
+        <AlertCircle size={48} color={theme.colors.textMuted} {...({} as any)} />
+        <Text style={styles.emptyText}>Assignment details not found.</Text>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <PageHeader 
+        title={assignment.title} 
+        subtitle={assignment.subjects?.name || 'Subject'}
+        leftAction={
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+            <ChevronLeft size={24} color={theme.colors.text} {...({} as any)} />
+          </TouchableOpacity>
+        }
+      />
+
+      <View style={styles.card}>
+        <View style={styles.header}>
+          <View style={styles.badge}>
+            <Clock size={12} color={theme.colors.primary} {...({} as any)} />
+            <Text style={styles.badgeText}>
+              Due: {assignment.due_date ? format(new Date(assignment.due_date), 'MMM d, yyyy') : 'No deadline'}
+            </Text>
+          </View>
+          <View style={[
+            styles.statusBadge, 
+            { backgroundColor: isPastDue ? '#FEF2F2' : mySubmission?.status === 'graded' ? '#F0FDF4' : mySubmission?.status === 'submitted' ? '#EFF6FF' : '#FFFBEB' }
+          ]}>
+            <Text style={[
+              styles.statusText,
+              { color: isPastDue ? '#991B1B' : mySubmission?.status === 'graded' ? '#166534' : mySubmission?.status === 'submitted' ? '#1E40AF' : '#92400E' }
+            ]}>
+              {isPastDue && !mySubmission ? 'EXPIRED' : (mySubmission?.status || 'Pending')}
+            </Text>
+          </View>
+        </View>
+
+        <Text style={styles.description}>{assignment.description || 'No description provided.'}</Text>
+      </View>
+
+      {mySubmission?.status === 'graded' && (
+        <View style={styles.gradeCard}>
+          <Text style={styles.gradeTitle}>Result & Feedback</Text>
+          <View style={styles.gradeRow}>
+            <Text style={styles.gradeLabel}>Grade:</Text>
+            <Text style={styles.gradeValue}>{mySubmission.grade}/{assignment.total_marks || '100'}</Text>
+          </View>
+          {mySubmission.feedback && (
+            <View style={styles.feedbackBox}>
+              <Text style={styles.feedbackLabel}>Faculty Feedback:</Text>
+              <Text style={styles.feedbackText}>{mySubmission.feedback}</Text>
+            </View>
+          )}
+        </View>
+      )}
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>
+          {mySubmission ? 'Your Submission' : 'Submit Assignment'}
+        </Text>
+        
+        {mySubmission && (
+          <View style={styles.submissionBox}>
+            <View style={styles.fileInfo}>
+              <FileText size={20} color={theme.colors.primary} {...({} as any)} />
+              <View style={styles.fileTextContent}>
+                <Text style={styles.fileName}>{mySubmission.file_name}</Text>
+                <Text style={styles.fileDate}>Submitted on {format(new Date(mySubmission.submitted_at), 'MMM d, hh:mm a')}</Text>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {isPastDue && !mySubmission ? (
+          <View style={styles.expiredCard}>
+            <AlertCircle size={24} color="#EF4444" {...({} as any)} />
+            <Text style={styles.expiredText}>Due date has passed. Submissions are closed.</Text>
+          </View>
+        ) : isPendingReview ? (
+          <View style={styles.pendingCard}>
+            <Clock size={24} color="#3B82F6" {...({} as any)} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.pendingText}>Awaiting Faculty Review</Text>
+              <Text style={styles.pendingSubtext}>You cannot resubmit while your current work is being evaluated.</Text>
+            </View>
+          </View>
+        ) : (mySubmission?.status !== 'graded') && (
+          <View style={styles.uploadContainer}>
+            <TouchableOpacity 
+              style={[styles.filePicker, (isPastDue || !canResubmit) && styles.disabledPicker]} 
+              onPress={handlePickDocument}
+              disabled={isPastDue || !canResubmit}
+            >
+              <Upload size={24} color={isPastDue ? '#94A3B8' : theme.colors.primary} {...({} as any)} />
+              <Text style={styles.filePickerText}>
+                {pickedFile ? pickedFile.name : isPastDue ? 'Submissions Closed' : 'Pick a file to upload'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.submitBtn, (isUploading || !pickedFile || !canResubmit || (isPastDue && !mySubmission)) && styles.disabledBtn]} 
+              onPress={handleSubmit}
+              disabled={isUploading || !pickedFile || !canResubmit || (isPastDue && !mySubmission)}
+            >
+              {isUploading ? (
+                <ActivityIndicator color="white" />
+              ) : (
+                <>
+                  <CheckCircle size={20} color="white" {...({} as any)} />
+                  <Text style={styles.submitBtnText}>
+                    {mySubmission ? (isPastDue ? 'Late Submission' : 'Resubmit Assignment') : 'Submit Assignment'}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+            {isPastDue && mySubmission && (
+              <Text style={styles.lateNote}>Note: Any changes will be marked as late.</Text>
+            )}
+          </View>
+        )}
+      </View>
+      
+      <AlertModal 
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        onClose={() => setAlertConfig({ ...alertConfig, visible: false })}
+      />
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.colors.background },
+  content: { padding: 24 },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  card: { backgroundColor: 'white', borderRadius: 24, padding: 20, marginBottom: 24, borderWidth: 1, borderColor: '#F1F5F9' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  badge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: theme.colors.primary + '10', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  badgeText: { fontSize: 12, fontWeight: 'bold', color: theme.colors.primary },
+  statusBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
+  statusText: { fontSize: 11, fontWeight: 'bold', textTransform: 'uppercase' },
+  description: { fontSize: 14, color: theme.colors.text, lineHeight: 22 },
+  section: { marginBottom: 24 },
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: theme.colors.text, marginBottom: 16 },
+  submissionBox: { backgroundColor: 'white', borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#F1F5F9' },
+  fileInfo: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  fileTextContent: { flex: 1 },
+  fileName: { fontSize: 14, fontWeight: 'bold', color: theme.colors.text },
+  fileDate: { fontSize: 11, color: theme.colors.textMuted, marginTop: 2 },
+  uploadContainer: { gap: 16 },
+  filePicker: { borderStyle: 'dashed', borderWidth: 2, borderColor: theme.colors.primary + '40', borderRadius: 16, padding: 24, alignItems: 'center', backgroundColor: 'white', gap: 8 },
+  filePickerText: { fontSize: 14, color: theme.colors.textMuted, fontWeight: '500' },
+  submitBtn: { backgroundColor: theme.colors.primary, borderRadius: 16, padding: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  submitBtnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
+  disabledBtn: { opacity: 0.6 },
+  gradeCard: { backgroundColor: '#F0FDF4', borderRadius: 24, padding: 20, marginBottom: 24, borderWidth: 1, borderColor: '#DCFCE7' },
+  gradeTitle: { fontSize: 16, fontWeight: 'bold', color: '#166534', marginBottom: 12 },
+  gradeRow: { flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 12 },
+  gradeLabel: { fontSize: 14, color: '#166534' },
+  gradeValue: { fontSize: 18, fontWeight: 'bold', color: '#166534' },
+  feedbackBox: { backgroundColor: 'white', borderRadius: 12, padding: 12, borderLeftWidth: 4, borderLeftColor: '#10B981' },
+  feedbackLabel: { fontSize: 11, fontWeight: 'bold', color: theme.colors.textMuted, marginBottom: 4 },
+  feedbackText: { fontSize: 13, color: theme.colors.text, lineHeight: 18 },
+  backBtn: { marginRight: 4, marginLeft: -4 },
+  emptyText: { color: theme.colors.textMuted, fontSize: 14, marginTop: 12 },
+  expiredCard: { backgroundColor: '#FEF2F2', padding: 20, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderColor: '#FEE2E2' },
+  expiredText: { color: '#B91C1C', fontSize: 14, fontWeight: '600', flex: 1 },
+  pendingCard: { backgroundColor: '#EFF6FF', padding: 20, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderColor: '#DBEAFE' },
+  pendingText: { color: '#1E40AF', fontSize: 15, fontWeight: '700' },
+  pendingSubtext: { color: '#1E40AF', fontSize: 12, marginTop: 2, opacity: 0.8 },
+  disabledPicker: { opacity: 0.5, borderColor: '#CBD5E1' },
+  lateNote: { fontSize: 12, color: '#B91C1C', textAlign: 'center', marginTop: -8, fontWeight: '500' },
+});

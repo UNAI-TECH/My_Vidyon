@@ -1,0 +1,7 @@
+--- Checking Sample Student and Profile ---
+Student ID: 5d1c619b-6569-4091-ae14-dd1ae123254a
+Student Profile ID: 5d1c619b-6569-4091-ae14-dd1ae123254a
+Student User ID: null
+Student Name: Student 1
+Found Profile by profile_id: Student 1
+Found Profile by s.id: Student 1

@@ -20,14 +20,24 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../../../../src/lib/supabase';
 import { format } from 'date-fns';
 import { useFacultyDashboard } from '../../../../src/hooks/useFacultyDashboard';
+import { Trash2, Calendar as CalendarIcon } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
+import { Platform } from 'react-native';
+import { CalendarModal } from '../../../../src/components/common/CalendarPicker';
 
 export default function FacultyAssignments() {
-  const { user, institutionId } = useAuth();
+  const { user, institutionId, institutionUuid } = useAuth();
   const router = useRouter();
-  const { assignedSubjects } = useFacultyDashboard(user?.id, institutionId || undefined);
+  const { 
+    assignedSubjects, 
+    deleteAssignment, 
+    myAssignments: assignments = [], 
+    isLoadingMyAssignments: isLoading, 
+    refetchAssignments: refetch 
+  } = useFacultyDashboard(user?.id, (institutionUuid || institutionId) || undefined);
   
   const [showCreateModal, setShowCreateModal] = React.useState(false);
+  const [showDatePicker, setShowDatePicker] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [formData, setFormData] = React.useState({
     title: '',
@@ -39,33 +49,7 @@ export default function FacultyAssignments() {
     total_marks: '100',
   });
 
-  // Fetch assignments with submission counts
-  const { data: assignments = [], isLoading, refetch } = useQuery({
-    queryKey: ['faculty-assignments', user?.id],
-    queryFn: async () => {
-      if (!user?.id) return [];
-      
-      const { data: assignmentsData, error } = await supabase
-        .from('assignments')
-        .select(`
-          *,
-          subjects:subject_id(name),
-          classes:class_id(name),
-          submissions(id, status)
-        `)
-        .eq('teacher_id', user.id)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      return (assignmentsData as any[]).map(assignment => ({
-        ...assignment,
-        submissionCount: assignment.submissions?.length || 0,
-        pendingCount: assignment.submissions?.filter((s: any) => s.status === 'pending').length || 0
-      }));
-    },
-    enabled: !!user?.id,
-  });
+  // Fetching moved to hook
 
   const handleCreateAssignment = async () => {
     if (!formData.title || !formData.subject_id || !formData.class_id) {
@@ -73,17 +57,34 @@ export default function FacultyAssignments() {
       return;
     }
 
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
+    if (!isUUID(formData.subject_id) || !isUUID(formData.class_id)) {
+      Alert.alert('Data Error', 'One of the selected items has an invalid internal ID (legacy data). Please select a valid subject/class or run the cleanup script.');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
+      // Find the selected subject/class names to fill required text columns
+      const selected = assignedSubjects.find((s: any) => 
+        s.subject_id === formData.subject_id && 
+        s.class_id === formData.class_id && 
+        s.section === formData.section
+      );
+
       const { error } = await supabase
         .from('assignments')
         .insert({
-          institution_id: institutionId,
+          institution_id: institutionUuid || institutionId,
           teacher_id: user?.id,
+          created_by: user?.id, // Added to match not null constraint
           title: formData.title,
           description: formData.description,
           subject_id: formData.subject_id,
           class_id: formData.class_id,
+          subject: selected?.subjects?.name || 'Unknown',
+          class_name: selected?.classes?.name || 'Unknown',
           section: formData.section,
           due_date: formData.due_date,
           total_marks: parseInt(formData.total_marks),
@@ -109,6 +110,29 @@ export default function FacultyAssignments() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleDelete = (assignment: any) => {
+    Alert.alert(
+      'Delete Assignment',
+      `Are you sure you want to delete "${assignment.title}"? All submissions will also be deleted.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteAssignment(assignment.id);
+              Alert.alert('Success', 'Assignment deleted successfully');
+              refetch();
+            } catch (error: any) {
+              Alert.alert('Error', error.message || 'Failed to delete assignment');
+            }
+          }
+        }
+      ]
+    );
   };
 
   return (
@@ -142,9 +166,17 @@ export default function FacultyAssignments() {
                       {assignment.subjects?.name} • {assignment.classes?.name} - {assignment.section}
                     </Text>
                   </View>
-                  <TouchableOpacity style={styles.editIcon}>
-                    <FileEdit size={16} color={theme.colors.primary} {...({} as any)} />
-                  </TouchableOpacity>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <TouchableOpacity style={styles.editIcon}>
+                      <FileEdit size={16} color={theme.colors.primary} {...({} as any)} />
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                      style={[styles.editIcon, { backgroundColor: '#FEF2F2' }]}
+                      onPress={() => handleDelete(assignment)}
+                    >
+                      <Trash2 size={16} color="#EF4444" {...({} as any)} />
+                    </TouchableOpacity>
+                  </View>
                 </View>
 
                 <View style={styles.statsRow}>
@@ -172,7 +204,7 @@ export default function FacultyAssignments() {
 
                 <TouchableOpacity 
                   style={styles.reviewBtn}
-                  onPress={() => router.push(`/(root)/faculty/assignments/${assignment.id}`)}
+                  onPress={() => router.push(`/faculty/assignments/${assignment.id}`)}
                 >
                   <Send size={14} color="white" {...({} as any)} />
                   <Text style={styles.reviewBtnText}>Review Submissions</Text>
@@ -236,15 +268,18 @@ export default function FacultyAssignments() {
               <View style={styles.row}>
                 <View style={{ flex: 1, marginRight: 8 }}>
                   <Text style={styles.inputLabel}>Due Date</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="YYYY-MM-DD"
-                    value={formData.due_date}
-                    onChangeText={(text) => setFormData({...formData, due_date: text})}
-                  />
+                  <TouchableOpacity 
+                    style={styles.dateInput}
+                    onPress={() => setShowDatePicker(true)}
+                  >
+                    <CalendarIcon size={18} color={theme.colors.textMuted} {...({} as any)} />
+                    <Text style={styles.dateText}>
+                      {format(new Date(formData.due_date), 'MMM d, yyyy')}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
                 <View style={{ flex: 1, marginLeft: 8 }}>
-                  <Text style={styles.inputLabel}>Total Marks</Text>
+                  <Text style={styles.inputLabel}>Total Marks (max 100)</Text>
                   <TextInput
                     style={styles.input}
                     placeholder="100"
@@ -279,6 +314,17 @@ export default function FacultyAssignments() {
           </View>
         </View>
       </Modal>
+
+      {/* Unified Calendar Picker for Due Date */}
+      <CalendarModal
+        visible={showDatePicker}
+        onClose={() => setShowDatePicker(false)}
+        onSelect={(selectedDate: string) => {
+          setFormData({ ...formData, due_date: selectedDate });
+          setShowDatePicker(false);
+        }}
+        initialDate={formData.due_date}
+      />
     </View>
   );
 }
@@ -322,4 +368,7 @@ const styles = StyleSheet.create({
   subjectOptionTextSelected: { color: theme.colors.primary, fontWeight: 'bold' },
   submitBtn: { backgroundColor: theme.colors.primary, borderRadius: 14, padding: 18, alignItems: 'center', marginTop: 32, marginBottom: 16 },
   submitBtnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
+  
+  dateInput: { backgroundColor: '#F8FAFC', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#E2E8F0', flexDirection: 'row', alignItems: 'center', gap: 10 },
+  dateText: { fontSize: 14, color: theme.colors.text },
 });

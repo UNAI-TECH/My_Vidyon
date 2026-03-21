@@ -9,19 +9,14 @@ try {
     if (line.includes('VITE_SUPABASE_URL')) {
       supabaseUrl = line.split('=')[1].trim().replace(/['"]/g, '');
     }
-    if (line.includes('VITE_SUPABASE_ANON_KEY')) {
+    if (line.includes('SUPABASE_SERVICE_ROLE_KEY')) {
       supabaseKey = line.split('=')[1].trim().replace(/['"]/g, '');
     }
   });
 
   async function run() {
-    console.log("Fetching an institution UUID...");
-    const instRes = await fetch(`${supabaseUrl}/rest/v1/institutions?select=id&limit=1`, {
-      headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
-    });
-    const insts = await instRes.json();
-    const instUuid = insts[0].id;
-    console.log("Using UUID:", instUuid);
+    console.log("Using Institution ID: ABC-SCHOOL (known to have profiles)");
+    const instUuid = 'ABC-SCHOOL';
 
     console.log("Testing insert...");
     const res = await fetch(`${supabaseUrl}/rest/v1/announcements`, {

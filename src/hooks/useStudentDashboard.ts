@@ -191,6 +191,105 @@ export function useStudentDashboard(authUserId?: string, institutionId?: string)
         enabled: !!institutionId,
     });
 
+    // 7. Fetch Certificates
+    const { data: certificates = [], isLoading: isCertificatesLoading } = useQuery({
+        queryKey: ['student-certificates', studentProfile?.email],
+        queryFn: async () => {
+            if (!studentProfile?.email) return [];
+            const { data, error } = await supabase
+                .from('certificates')
+                .select('*')
+                .eq('student_email', studentProfile.email)
+                .order('uploaded_at', { ascending: false });
+            return data || [];
+        },
+        enabled: !!studentProfile?.email,
+    });
+
+    // 8. Fetch Subject Materials
+    const { data: materials = [], isLoading: isMaterialsLoading } = useQuery({
+        queryKey: ['student-materials', studentProfile?.class_name, studentProfile?.section, institutionId],
+        queryFn: async () => {
+            if (!studentProfile?.class_name || !institutionId) return [];
+            
+            const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+            let targetInstId = institutionId;
+
+            // 1. Resolve Institution UUID if needed
+            console.log('Student Materials Fetch - Initial InstitutionId:', institutionId);
+            if (!isUUID(institutionId)) {
+                const { data: instData } = await supabase
+                    .from('institutions')
+                    .select('id')
+                    .eq('institution_id', institutionId)
+                    .maybeSingle();
+                if (instData) {
+                    targetInstId = (instData as any).id;
+                    console.log('Student Materials Fetch - Resolved Institution UUID:', targetInstId);
+                } else {
+                    console.error('Student Materials Fetch - Could not resolve Institution UUID for:', institutionId);
+                    return [];
+                }
+            }
+
+            // 2. Resolve Class UUID from Name (Hardened)
+            console.log('Student Materials Fetch - Resolving Class:', studentProfile.class_name, 'for Inst:', targetInstId);
+            
+            // Try exact match first (case-insensitive)
+            let { data: classData } = await supabase
+                .from('classes')
+                .select('id, name')
+                .ilike('name', studentProfile.class_name)
+                .eq('institution_id', targetInstId)
+                .maybeSingle();
+            
+            // Fallback: try with "Class " prefix if not present, or remove it if present
+            if (!classData) {
+                const altName = studentProfile.class_name.toLowerCase().startsWith('class ') 
+                    ? studentProfile.class_name.substring(6).trim()
+                    : `Class ${studentProfile.class_name}`;
+                
+                const { data: altClassData } = await supabase
+                    .from('classes')
+                    .select('id, name')
+                    .ilike('name', altName)
+                    .eq('institution_id', targetInstId)
+                    .maybeSingle();
+                
+                classData = altClassData;
+            }
+            
+            if (!classData) {
+                console.error('Student Materials Fetch - Could not find Class UUID for:', studentProfile.class_name);
+                return [];
+            }
+            console.log('Student Materials Fetch - Resolved Class UUID:', (classData as any).id);
+
+            // 3. Fetch materials
+            const query = supabase
+                .from('subject_materials')
+                .select('*, profiles:faculty_id(full_name), subjects:subject_id(name)')
+                .eq('class_id', (classData as any).id)
+                .eq('institution_id', targetInstId);
+            
+            if (studentProfile.section) {
+                query.eq('section', studentProfile.section);
+            }
+
+            const { data, error } = await query;
+            if (error) {
+                console.error('Student Materials Fetch - DB Error:', error);
+                return [];
+            }
+            console.log('Student Materials Fetch - Success. Count:', data?.length || 0);
+            return (data || []).map((m: any) => ({
+                ...m,
+                subject: m.subjects?.name || 'Unknown' // Map subject name for UI compatibility
+            }));
+        },
+        enabled: !!studentProfile?.class_name && !!institutionId,
+    });
+
     return {
         stats,
         assignments,
@@ -198,6 +297,8 @@ export function useStudentDashboard(authUserId?: string, institutionId?: string)
         grades,
         institution,
         studentProfile,
-        isLoading: isProfileLoading,
+        certificates,
+        materials,
+        isLoading: isProfileLoading || isCertificatesLoading || isMaterialsLoading,
     };
 }
