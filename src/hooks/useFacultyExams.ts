@@ -4,6 +4,7 @@ import { Database } from '../types/supabase';
 
 export type Exam = Database['public']['Tables']['exams']['Row'];
 export type ExamSchedule = Database['public']['Tables']['exam_schedules']['Row'];
+export type ExamEntry = Database['public']['Tables']['exam_schedule_entries']['Row'];
 
 export function useFacultyExams(facultyId?: string, institutionId?: string) {
     // 1. Fetch upcoming exams created by or relevant to this faculty
@@ -42,16 +43,40 @@ export function useFacultyExams(facultyId?: string, institutionId?: string) {
         queryKey: ['faculty-pending-marks', facultyId],
         queryFn: async () => {
             if (!facultyId) return 0;
-            // Simplified logic: count total students needing grades in faculty's assigned subjects
-            // This is a complex query, for now returning a plausible number based on assignments
             return 45; // Placeholder
         },
         enabled: !!facultyId,
     });
 
+    // 3. Fetch Entries for those exams (to show a personal schedule)
+    const { data: scheduleEntries = [], isLoading: isLoadingEntries } = useQuery<any[]>({
+        queryKey: ['faculty-exam-entries', facultyId, exams],
+        queryFn: async () => {
+            if (!facultyId || (exams as any[]).length === 0) return [];
+            
+            const scheduleIds = (exams as any[]).map(e => e.id);
+            const { data, error } = await supabase
+                .from('exam_schedule_entries')
+                .select(`
+                    *,
+                    exam_schedules!exam_schedule_entries_exam_schedule_id_fkey (exam_display_name, class_id, section)
+                `)
+                .in('exam_schedule_id', scheduleIds)
+                .order('exam_date', { ascending: true });
+            
+            if (error) {
+                console.error("Error fetching entries:", error);
+                return [];
+            }
+            return data || [];
+        },
+        enabled: !!facultyId && (exams as any[]).length > 0,
+    });
+
     return {
         exams,
+        scheduleEntries,
         pendingMarks,
-        isLoading: isLoadingExams,
+        isLoading: isLoadingExams || isLoadingEntries,
     };
 }

@@ -24,6 +24,7 @@ import { Trash2, Calendar as CalendarIcon } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { Platform } from 'react-native';
 import { CalendarModal } from '../../../../src/components/common/CalendarPicker';
+import { AlertModal } from '../../../../src/components/common/AlertModal';
 
 export default function FacultyAssignments() {
   const { user, institutionId, institutionUuid } = useAuth();
@@ -37,6 +38,8 @@ export default function FacultyAssignments() {
   } = useFacultyDashboard(user?.id, (institutionUuid || institutionId) || undefined);
   
   const [showCreateModal, setShowCreateModal] = React.useState(false);
+  const [isEditing, setIsEditing] = React.useState(false);
+  const [editId, setEditId] = React.useState<string | null>(null);
   const [showDatePicker, setShowDatePicker] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [formData, setFormData] = React.useState({
@@ -49,18 +52,41 @@ export default function FacultyAssignments() {
     total_marks: '100',
   });
 
+  const [alertConfig, setAlertConfig] = React.useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type: 'success' | 'error' | 'info' | 'warning';
+    buttons?: { text: string; style?: 'primary' | 'secondary' | 'destructive'; onPress: () => void }[];
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info'
+  });
+
+  const showAlert = (title: string, message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info', buttons?: any[]) => {
+    setAlertConfig({
+      visible: true,
+      title,
+      message,
+      type,
+      buttons
+    });
+  };
+
   // Fetching moved to hook
 
   const handleCreateAssignment = async () => {
     if (!formData.title || !formData.subject_id || !formData.class_id) {
-      Alert.alert('Error', 'Please fill in all required fields');
+      showAlert('Error', 'Please fill in all required fields', 'error');
       return;
     }
 
     const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
     if (!isUUID(formData.subject_id) || !isUUID(formData.class_id)) {
-      Alert.alert('Data Error', 'One of the selected items has an invalid internal ID (legacy data). Please select a valid subject/class or run the cleanup script.');
+      showAlert('Data Error', 'One of the selected items has an invalid internal ID. Please select a valid subject/class.', 'error');
       return;
     }
 
@@ -73,27 +99,46 @@ export default function FacultyAssignments() {
         s.section === formData.section
       );
 
-      const { error } = await supabase
-        .from('assignments')
-        .insert({
-          institution_id: institutionUuid || institutionId,
-          teacher_id: user?.id,
-          created_by: user?.id, // Added to match not null constraint
-          title: formData.title,
-          description: formData.description,
-          subject_id: formData.subject_id,
-          class_id: formData.class_id,
-          subject: selected?.subjects?.name || 'Unknown',
-          class_name: selected?.classes?.name || 'Unknown',
-          section: formData.section,
-          due_date: formData.due_date,
-          total_marks: parseInt(formData.total_marks),
-        } as any);
+      const payload = {
+        institution_id: institutionUuid || institutionId,
+        teacher_id: user?.id,
+        created_by: user?.id,
+        title: formData.title,
+        description: formData.description,
+        subject_id: formData.subject_id,
+        class_id: formData.class_id,
+        subject: selected?.subjects?.name || 'Unknown',
+        class_name: selected?.classes?.name || 'Unknown',
+        section: formData.section,
+        due_date: formData.due_date,
+        total_marks: parseInt(formData.total_marks),
+      };
 
-      if (error) throw error;
+      const query = isEditing 
+        ? (supabase.from('assignments') as any).update(payload).eq('id', editId as string).select()
+        : (supabase.from('assignments') as any).insert(payload).select();
 
-      Alert.alert('Success', 'Assignment created successfully');
+      console.log(`UI: Performing ${isEditing ? 'UPDATE' : 'INSERT'} on assignment:`, editId || 'NEW');
+      const { data: affectedRows, error } = await query;
+
+      if (error) {
+        console.error('UI: Supabase write error:', error);
+        throw error;
+      }
+
+      if (isEditing && (!affectedRows || affectedRows.length === 0)) {
+        console.warn('UI: UPDATE executed but NO rows were affected. RLS likely blocking write.');
+        showAlert('Warning', 'Assignment was not updated. You might not have permission to edit this record.', 'error');
+        setIsSubmitting(false);
+        return;
+      }
+
+      console.log('UI: Write successful, rows affected:', affectedRows?.length);
+
+      showAlert('Success', `Assignment ${isEditing ? 'updated' : 'created'} successfully`, 'success');
       setShowCreateModal(false);
+      setIsEditing(false);
+      setEditId(null);
       setFormData({
         title: '',
         description: '',
@@ -106,28 +151,54 @@ export default function FacultyAssignments() {
       refetch();
     } catch (error: any) {
       console.error('Error creating assignment:', error);
-      Alert.alert('Error', error.message);
+      showAlert('Error', error.message, 'error');
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const handleEdit = (assignment: any) => {
+    console.log('UI: handleEdit called for assignment:', JSON.stringify(assignment, null, 2));
+    setIsEditing(true);
+    setEditId(assignment.id);
+    console.log('UI: Setting form data for edit...', assignment.title);
+    setFormData({
+      title: assignment.title,
+      description: assignment.description || '',
+      subject_id: assignment.subject_id,
+      class_id: assignment.class_id,
+      section: assignment.section,
+      due_date: assignment.due_date,
+      total_marks: (assignment.total_marks || 100).toString(),
+    });
+    setShowCreateModal(true);
+  };
+
   const handleDelete = (assignment: any) => {
-    Alert.alert(
+    showAlert(
       'Delete Assignment',
       `Are you sure you want to delete "${assignment.title}"? All submissions will also be deleted.`,
+      'warning',
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: 'Cancel', style: 'secondary', onPress: () => {} },
         { 
           text: 'Delete', 
           style: 'destructive',
           onPress: async () => {
             try {
-              await deleteAssignment(assignment.id);
-              Alert.alert('Success', 'Assignment deleted successfully');
-              refetch();
+              console.log('UI: Initiating deletion for:', assignment.id);
+              const result = await deleteAssignment(assignment.id);
+              console.log('UI: Delete operation result:', result);
+              if (result) {
+                showAlert('Success', 'Assignment and all its data deleted successfully', 'success');
+                refetch();
+              } else {
+                console.warn('UI: Deletion returned false, possibly no rows affected');
+                showAlert('Info', 'Assignment might already be deleted or permission denied', 'info');
+              }
             } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to delete assignment');
+              console.error('UI: Deletion error caught:', error);
+              showAlert('Error', error.message || 'Failed to delete assignment', 'error');
             }
           }
         }
@@ -142,7 +213,20 @@ export default function FacultyAssignments() {
 
         <TouchableOpacity 
           style={styles.createBtn}
-          onPress={() => setShowCreateModal(true)}
+          onPress={() => {
+            setIsEditing(false);
+            setEditId(null);
+            setFormData({
+              title: '',
+              description: '',
+              subject_id: '',
+              class_id: '',
+              section: '',
+              due_date: new Date().toISOString().split('T')[0],
+              total_marks: '100',
+            });
+            setShowCreateModal(true);
+          }}
         >
           <Plus size={20} color="white" {...({} as any)} />
           <Text style={styles.createBtnText}>Create New Assignment</Text>
@@ -167,7 +251,10 @@ export default function FacultyAssignments() {
                     </Text>
                   </View>
                   <View style={{ flexDirection: 'row', gap: 8 }}>
-                    <TouchableOpacity style={styles.editIcon}>
+                    <TouchableOpacity 
+                      style={styles.editIcon}
+                      onPress={() => handleEdit(assignment)}
+                    >
                       <FileEdit size={16} color={theme.colors.primary} {...({} as any)} />
                     </TouchableOpacity>
                     <TouchableOpacity 
@@ -224,7 +311,7 @@ export default function FacultyAssignments() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>New Assignment</Text>
+              <Text style={styles.modalTitle}>{isEditing ? 'Edit Assignment' : 'New Assignment'}</Text>
               <TouchableOpacity onPress={() => setShowCreateModal(false)}>
                 <X size={24} color={theme.colors.text} {...({} as any)} />
               </TouchableOpacity>
@@ -307,7 +394,9 @@ export default function FacultyAssignments() {
                 {isSubmitting ? (
                   <ActivityIndicator color="white" />
                 ) : (
-                  <Text style={styles.submitBtnText}>Create Assignment</Text>
+                  <Text style={styles.submitBtnText}>
+                    {isEditing ? 'Update Assignment' : 'Create Assignment'}
+                  </Text>
                 )}
               </TouchableOpacity>
             </ScrollView>
@@ -324,6 +413,15 @@ export default function FacultyAssignments() {
           setShowDatePicker(false);
         }}
         initialDate={formData.due_date}
+      />
+
+      <AlertModal
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        buttons={alertConfig.buttons}
+        onClose={() => setAlertConfig({ ...alertConfig, visible: false })}
       />
     </View>
   );
@@ -354,21 +452,100 @@ const styles = StyleSheet.create({
   emptyText: { color: theme.colors.textMuted, fontSize: 14 },
   
   // Modal Styles
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: 'white', borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, maxHeight: '90%' },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
-  modalTitle: { fontSize: 20, fontWeight: 'bold', color: theme.colors.text },
-  inputLabel: { fontSize: 14, fontWeight: 'bold', color: theme.colors.text, marginBottom: 8, marginTop: 16 },
-  input: { backgroundColor: '#F8FAFC', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#E2E8F0', fontSize: 14, color: theme.colors.text },
+  modalOverlay: { 
+    flex: 1, 
+    backgroundColor: 'rgba(15, 23, 42, 0.7)', 
+    justifyContent: 'flex-end' 
+  },
+  modalContent: { 
+    backgroundColor: 'white', 
+    borderTopLeftRadius: 36, 
+    borderTopRightRadius: 36, 
+    padding: 24, 
+    maxHeight: '90%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 20,
+  },
+  modalHeader: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    marginBottom: 24 
+  },
+  modalTitle: { 
+    fontSize: 22, 
+    fontWeight: '800', 
+    color: theme.colors.text,
+    letterSpacing: -0.5
+  },
+  inputLabel: { 
+    fontSize: 14, 
+    fontWeight: '700', 
+    color: theme.colors.text, 
+    marginBottom: 8, 
+    marginTop: 16,
+    marginLeft: 4
+  },
+  input: { 
+    backgroundColor: '#F8FAFC', 
+    borderRadius: 16, 
+    padding: 16, 
+    borderWidth: 1.5, 
+    borderColor: '#E2E8F0', 
+    fontSize: 15, 
+    color: theme.colors.text,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.02,
+    shadowRadius: 2,
+  },
   row: { flexDirection: 'row', marginTop: 8 },
-  subjectsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
-  subjectOption: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: '#F1F5F9', borderWidth: 1, borderColor: 'transparent' },
-  subjectOptionSelected: { backgroundColor: theme.colors.primary + '15', borderColor: theme.colors.primary },
-  subjectOptionText: { fontSize: 12, color: theme.colors.textMuted },
-  subjectOptionTextSelected: { color: theme.colors.primary, fontWeight: 'bold' },
-  submitBtn: { backgroundColor: theme.colors.primary, borderRadius: 14, padding: 18, alignItems: 'center', marginTop: 32, marginBottom: 16 },
-  submitBtnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
+  subjectsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 4 },
+  subjectOption: { 
+    paddingHorizontal: 16, 
+    paddingVertical: 10, 
+    borderRadius: 12, 
+    backgroundColor: '#F1F5F9', 
+    borderWidth: 1.5, 
+    borderColor: 'transparent' 
+  },
+  subjectOptionSelected: { 
+    backgroundColor: theme.colors.primary + '15', 
+    borderColor: theme.colors.primary,
+    shadowColor: theme.colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  subjectOptionText: { fontSize: 13, color: '#64748B', fontWeight: '500' },
+  subjectOptionTextSelected: { color: theme.colors.primary, fontWeight: '800' },
+  submitBtn: { 
+    backgroundColor: theme.colors.primary, 
+    borderRadius: 18, 
+    padding: 20, 
+    alignItems: 'center', 
+    marginTop: 32, 
+    marginBottom: 16,
+    shadowColor: theme.colors.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  submitBtnText: { color: 'white', fontWeight: '800', fontSize: 16, letterSpacing: 0.5 },
   
-  dateInput: { backgroundColor: '#F8FAFC', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#E2E8F0', flexDirection: 'row', alignItems: 'center', gap: 10 },
-  dateText: { fontSize: 14, color: theme.colors.text },
+  dateInput: { 
+    backgroundColor: '#F8FAFC', 
+    borderRadius: 16, 
+    padding: 16, 
+    borderWidth: 1.5, 
+    borderColor: '#E2E8F0', 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    gap: 12 
+  },
+  dateText: { fontSize: 15, color: theme.colors.text, fontWeight: '500' },
 });

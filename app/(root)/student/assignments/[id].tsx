@@ -4,7 +4,7 @@ import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
 import { useAuth } from '../../../../src/hooks/useAuth';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../../src/lib/supabase';
 import { 
   Clock, 
@@ -23,6 +23,7 @@ export default function StudentAssignmentDetails() {
   const { id } = useLocalSearchParams();
   const { user } = useAuth();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { studentProfile } = useStudentDashboard(user?.id);
   
   const [pickedFile, setPickedFile] = React.useState<any>(null);
@@ -71,7 +72,8 @@ export default function StudentAssignmentDetails() {
   });
 
   const isPendingReview = mySubmission?.status === 'submitted';
-  const canResubmit = !isPendingReview && mySubmission?.status !== 'graded';
+  const isFinalized = mySubmission?.status === 'graded' || mySubmission?.status === 'verified';
+  const canResubmit = !isPendingReview && !isFinalized;
 
   const handlePickDocument = async () => {
     try {
@@ -89,6 +91,16 @@ export default function StudentAssignmentDetails() {
   };
 
   const handleSubmit = async () => {
+    if (!pickedFile || !studentProfile) {
+      console.warn('Student: Submission blocked. PickedFile:', !!pickedFile, 'Profile:', !!studentProfile);
+      return;
+    }
+    
+    console.log('Student: Submit clicked. Auth UID:', user?.id);
+    console.log('Student: Profile ID (student_id):', studentProfile.id);
+    console.log('Student: Target Row to update:', mySubmission?.id);
+    
+    setIsUploading(true);
     if (!pickedFile) {
       setAlertConfig({
         visible: true,
@@ -122,36 +134,45 @@ export default function StudentAssignmentDetails() {
       const { data: { publicUrl } } = supabase.storage
         .from('assignments')
         .getPublicUrl(filePath);
+      
+      console.log('Student: Generated Public URL:', publicUrl);
 
-      // 2. Insert/Update submission
-      if (mySubmission) {
-        // Delete old file if it exists
-        if (mySubmission.file_path) {
-          const oldPath = mySubmission.file_path.split('/storage/v1/object/public/assignments/')[1];
-          if (oldPath) {
-            await supabase.storage.from('assignments').remove([decodeURIComponent(oldPath)]);
-          }
+      // 2. Upsert submission (Ensures only ONE row per student/assignment)
+      // Delete old file if it exists (only if it's a resubmission)
+      if (mySubmission && mySubmission.file_path) {
+        const oldPath = mySubmission.file_path.split('/storage/v1/object/public/assignments/')[1];
+        if (oldPath) {
+          await supabase.storage.from('assignments').remove([decodeURIComponent(oldPath)]);
         }
+      }
 
-        const { error: dbError } = await (supabase.from('submissions') as any)
-          .update({
-            file_path: publicUrl,
-            file_name: pickedFile.name,
-            status: 'submitted',
-            submitted_at: new Date().toISOString()
-          })
-          .eq('id', mySubmission.id);
-        if (dbError) throw dbError;
-      } else {
-        const { error: dbError } = await (supabase.from('submissions') as any).insert({
-          assignment_id: id,
-          student_id: studentProfile?.id,
-          student_name: studentProfile?.name,
-          file_path: publicUrl,
-          file_name: pickedFile.name,
-          status: 'submitted',
-        });
-        if (dbError) throw dbError;
+      const submissionData = {
+        assignment_id: id as string,
+        student_id: studentProfile?.id || user?.id,
+        student_name: studentProfile?.name,
+        file_path: publicUrl,
+        file_name: pickedFile.name,
+        status: 'submitted',
+        submitted_at: new Date().toISOString()
+      };
+
+      console.log('Student: Upserting submission data:', JSON.stringify(submissionData, null, 2));
+
+      // Use upsert to handle both new and resubmissions in one call
+      // We MUST include assignment_id and student_id to identify the record
+      const { data: upsertedRow, error: dbError } = await (supabase.from('submissions') as any)
+        .upsert(submissionData, { 
+          onConflict: 'assignment_id,student_id',
+          ignoreDuplicates: false 
+        })
+        .select('*');
+
+      if (dbError) throw dbError;
+      
+      console.log('Student: DB UPSERT RESULT:', JSON.stringify(upsertedRow, null, 2));
+
+      if (!upsertedRow || upsertedRow.length === 0) {
+        throw new Error('Submission failed. Check your connection or permissions.');
       }
 
       setAlertConfig({
@@ -161,6 +182,7 @@ export default function StudentAssignmentDetails() {
         type: 'success'
       });
       setPickedFile(null);
+      await queryClient.invalidateQueries({ queryKey: ['student-submission', id, user?.id] });
       refetch();
     } catch (error: any) {
       console.error('Submission error:', error);
@@ -214,11 +236,11 @@ export default function StudentAssignmentDetails() {
           </View>
           <View style={[
             styles.statusBadge, 
-            { backgroundColor: isPastDue ? '#FEF2F2' : mySubmission?.status === 'graded' ? '#F0FDF4' : mySubmission?.status === 'submitted' ? '#EFF6FF' : '#FFFBEB' }
+            { backgroundColor: isPastDue ? '#FEF2F2' : isFinalized ? '#F0FDF4' : mySubmission?.status === 'submitted' ? '#EFF6FF' : '#FFFBEB' }
           ]}>
             <Text style={[
               styles.statusText,
-              { color: isPastDue ? '#991B1B' : mySubmission?.status === 'graded' ? '#166534' : mySubmission?.status === 'submitted' ? '#1E40AF' : '#92400E' }
+              { color: isPastDue ? '#991B1B' : isFinalized ? '#166534' : mySubmission?.status === 'submitted' ? '#1E40AF' : '#92400E' }
             ]}>
               {isPastDue && !mySubmission ? 'EXPIRED' : (mySubmission?.status || 'Pending')}
             </Text>
@@ -228,7 +250,7 @@ export default function StudentAssignmentDetails() {
         <Text style={styles.description}>{assignment.description || 'No description provided.'}</Text>
       </View>
 
-      {mySubmission?.status === 'graded' && (
+      {isFinalized && (
         <View style={styles.gradeCard}>
           <Text style={styles.gradeTitle}>Result & Feedback</Text>
           <View style={styles.gradeRow}>
@@ -274,7 +296,15 @@ export default function StudentAssignmentDetails() {
               <Text style={styles.pendingSubtext}>You cannot resubmit while your current work is being evaluated.</Text>
             </View>
           </View>
-        ) : (mySubmission?.status !== 'graded') && (
+        ) : (isFinalized) ? (
+          <View style={styles.successCard}>
+            <CheckCircle size={24} color="#10B981" {...({} as any)} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.successText}>Assignment Finalized</Text>
+              <Text style={styles.successSubtext}>Your work has been verified and graded. No further changes needed.</Text>
+            </View>
+          </View>
+        ) : (
           <View style={styles.uploadContainer}>
             <TouchableOpacity 
               style={[styles.filePicker, (isPastDue || !canResubmit) && styles.disabledPicker]} 
@@ -361,5 +391,8 @@ const styles = StyleSheet.create({
   pendingText: { color: '#1E40AF', fontSize: 15, fontWeight: '700' },
   pendingSubtext: { color: '#1E40AF', fontSize: 12, marginTop: 2, opacity: 0.8 },
   disabledPicker: { opacity: 0.5, borderColor: '#CBD5E1' },
+  successCard: { backgroundColor: '#F0FDF4', padding: 20, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderColor: '#DCFCE7' },
+  successText: { color: '#166534', fontSize: 15, fontWeight: '700' },
+  successSubtext: { color: '#166534', fontSize: 12, marginTop: 2, opacity: 0.8 },
   lateNote: { fontSize: 12, color: '#B91C1C', textAlign: 'center', marginTop: -8, fontWeight: '500' },
 });

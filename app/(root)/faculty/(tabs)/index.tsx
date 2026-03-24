@@ -52,7 +52,7 @@ export default function FacultyDashboard() {
     { label: 'Leaves', icon: UserCheck, href: '/faculty/leave', color: '#10B981' },
     { label: 'Directory', icon: Contact, href: '/faculty/directory', color: '#F59E0B' },
     { label: 'Schedule', icon: Calendar, href: '/faculty/timetable', color: '#8B5CF6' },
-    { label: 'Marks', icon: FileText, href: '/faculty/exams', color: '#EF4444' },
+    { label: 'Exams', icon: FileText, href: '/faculty/exams', color: '#EF4444' },
     { label: 'Notices', icon: Megaphone, href: '/faculty/announcements', color: '#A855F7' },
     { label: 'Assignments', icon: ClipboardList, href: '/faculty/assignments', color: '#16A34A' },
     { label: 'Classes', icon: BookOpen, href: '/faculty/courses', color: '#64748B' },

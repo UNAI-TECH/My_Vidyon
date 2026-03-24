@@ -15,6 +15,7 @@ import {
 } from 'lucide-react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { useFacultyDashboard } from '../../../../src/hooks/useFacultyDashboard';
+import { AlertModal } from '../../../../src/components/common/AlertModal';
 
 export default function FacultyMaterialsUpload() {
   const { user, institutionId, institutionUuid } = useAuth();
@@ -26,6 +27,12 @@ export default function FacultyMaterialsUpload() {
   const [description, setDescription] = React.useState('');
   const [pickedFile, setPickedFile] = React.useState<any>(null);
   const [isUploading, setIsUploading] = React.useState(false);
+  const [alertConfig, setAlertConfig] = React.useState({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'success' as 'success' | 'error' | 'warning' | 'info'
+  });
 
   const handlePickDocument = async () => {
     try {
@@ -44,7 +51,12 @@ export default function FacultyMaterialsUpload() {
 
   const handleUpload = async () => {
     if (!selectedMapping || !title || !pickedFile) {
-      Alert.alert('Error', 'Please fill all required fields and pick a file');
+      setAlertConfig({
+        visible: true,
+        title: 'Required Fields',
+        message: 'Please select a class/subject, enter a title, and pick a file.',
+        type: 'warning'
+      });
       return;
     }
 
@@ -87,11 +99,21 @@ export default function FacultyMaterialsUpload() {
         file_type: pickedFile.mimeType,
       });
 
-      Alert.alert('Success', 'Study material uploaded successfully');
-      router.back();
+      setAlertConfig({
+        visible: true,
+        title: 'Success',
+        message: 'Study material uploaded successfully!',
+        type: 'success'
+      });
+      setTimeout(() => router.back(), 2000);
     } catch (error: any) {
       console.error('Upload error:', error);
-      Alert.alert('Upload Failed', error.message);
+      setAlertConfig({
+        visible: true,
+        title: 'Upload Failed',
+        message: error.message || 'There was an error uploading the material.',
+        type: 'error'
+      });
     } finally {
       setIsUploading(false);
     }
@@ -189,6 +211,14 @@ export default function FacultyMaterialsUpload() {
           )}
         </TouchableOpacity>
       </View>
+
+      <AlertModal 
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        onClose={() => setAlertConfig({ ...alertConfig, visible: false })}
+      />
     </ScrollView>
   );
 }

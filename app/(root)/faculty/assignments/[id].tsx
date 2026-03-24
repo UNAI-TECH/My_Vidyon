@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Linking, Modal, TextInput } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Linking, Modal, TextInput, RefreshControl } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
@@ -18,6 +18,7 @@ import {
   ChevronRight
 } from 'lucide-react-native';
 import { format } from 'date-fns';
+import { AlertModal } from '../../../../src/components/common/AlertModal';
 
 export default function AssignmentDetails() {
   const { id } = useLocalSearchParams();
@@ -35,6 +36,7 @@ export default function AssignmentDetails() {
   const [students, setStudents] = useState<any[]>([]);
   const [submissions, setSubmissions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   
   // Verification Modal State
   const [selectedSubmission, setSelectedSubmission] = useState<any>(null);
@@ -45,6 +47,29 @@ export default function AssignmentDetails() {
     feedback: '',
     status: 'verified' as 'verified' | 'rejected'
   });
+
+  const [alertConfig, setAlertConfig] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type: 'success' | 'error' | 'info' | 'warning';
+    buttons?: { text: string; style?: 'primary' | 'secondary' | 'destructive'; onPress: () => void }[];
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info'
+  });
+
+  const showAlert = (title: string, message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info', buttons?: any[]) => {
+    setAlertConfig({
+      visible: true,
+      title,
+      message,
+      type,
+      buttons
+    });
+  };
 
   const openVerificationModal = (submission: any, intent: 'verified' | 'rejected') => {
     setSelectedSubmission(submission);
@@ -78,10 +103,16 @@ export default function AssignmentDetails() {
       }
     } catch (error) {
       console.error('Error loading assignment details:', error);
-      Alert.alert('Error', 'Failed to load assignment details');
+      showAlert('Error', 'Failed to load assignment details', 'error');
     } finally {
       setLoading(false);
     }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
   };
 
   useEffect(() => {
@@ -99,11 +130,11 @@ export default function AssignmentDetails() {
         feedback: verificationData.feedback
       });
       
-      Alert.alert('Success', `Submission ${verificationData.status === 'verified' ? 'verified' : 'rejected'} successfully`);
+      showAlert('Success', `Submission ${verificationData.status === 'verified' ? 'verified' : 'rejected'} successfully`, 'success');
       setVerificationModal(false);
       loadData(); // Refresh
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to verify submission');
+      showAlert('Error', error.message || 'Failed to verify submission', 'error');
     } finally {
       setVerifying(false);
     }
@@ -139,7 +170,12 @@ export default function AssignmentDetails() {
 
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView 
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
         <PageHeader 
           title={assignment.title} 
           subtitle={`${assignment.subjects?.name || 'Subject'} • ${assignment.classes?.name || 'Class'} - ${assignment.section}`} 
@@ -352,6 +388,15 @@ export default function AssignmentDetails() {
           </View>
         </View>
       </Modal>
+
+      <AlertModal
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        buttons={alertConfig.buttons}
+        onClose={() => setAlertConfig({ ...alertConfig, visible: false })}
+      />
     </View>
   );
 }
@@ -400,21 +445,84 @@ const styles = StyleSheet.create({
   verifiedTagText: { fontSize: 11, color: '#059669', fontWeight: 'bold' },
   
   // Modal Styles
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 20 },
-  modalContent: { backgroundColor: 'white', borderRadius: 28, padding: 24 },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  modalTitle: { fontSize: 18, fontWeight: 'bold', color: theme.colors.text },
+  modalOverlay: { 
+    flex: 1, 
+    backgroundColor: 'rgba(15, 23, 42, 0.7)', 
+    justifyContent: 'center', 
+    padding: 20 
+  },
+  modalContent: { 
+    backgroundColor: 'white', 
+    borderRadius: 32, 
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 20,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+  },
+  modalHeader: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    marginBottom: 24 
+  },
+  modalTitle: { 
+    fontSize: 20, 
+    fontWeight: '800', 
+    color: theme.colors.text,
+    letterSpacing: -0.5
+  },
   modalBody: {},
   statusToggle: { flexDirection: 'row', gap: 12, marginBottom: 20 },
-  toggleBtn: { flex: 1, height: 44, borderRadius: 12, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center', flexDirection: 'row', gap: 8 },
+  toggleBtn: { 
+    flex: 1, 
+    height: 48, 
+    borderRadius: 14, 
+    backgroundColor: '#F8FAFC', 
+    borderWidth: 1.5, 
+    borderColor: '#E2E8F0', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    flexDirection: 'row', 
+    gap: 8 
+  },
   toggleBtnActive: { backgroundColor: '#059669', borderColor: '#059669' },
   toggleBtnRejected: { backgroundColor: '#DC2626', borderColor: '#DC2626' },
-  toggleText: { fontSize: 14, fontWeight: '600', color: '#64748B' },
+  toggleText: { fontSize: 14, fontWeight: '700', color: '#64748B' },
   toggleTextActive: { color: 'white' },
   toggleTextRejected: { color: 'white' },
-  label: { fontSize: 14, fontWeight: 'bold', color: theme.colors.text, marginBottom: 8, marginTop: 12 },
-  input: { backgroundColor: '#F8FAFC', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#E2E8F0', fontSize: 14, color: theme.colors.text },
-  finalSubmitBtn: { backgroundColor: '#1E293B', borderRadius: 14, padding: 16, alignItems: 'center', marginTop: 24 },
-  finalSubmitText: { color: 'white', fontWeight: 'bold', fontSize: 15 },
-  warningNote: { fontSize: 11, color: theme.colors.textMuted, textAlign: 'center', marginTop: 12 },
+  label: { 
+    fontSize: 14, 
+    fontWeight: '700', 
+    color: theme.colors.text, 
+    marginBottom: 8, 
+    marginTop: 16,
+    marginLeft: 4
+  },
+  input: { 
+    backgroundColor: '#F8FAFC', 
+    borderRadius: 16, 
+    padding: 16, 
+    borderWidth: 1.5, 
+    borderColor: '#E2E8F0', 
+    fontSize: 15, 
+    color: theme.colors.text 
+  },
+  finalSubmitBtn: { 
+    backgroundColor: '#1E293B', 
+    borderRadius: 18, 
+    padding: 20, 
+    alignItems: 'center', 
+    marginTop: 28,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  finalSubmitText: { color: 'white', fontWeight: '800', fontSize: 16, letterSpacing: 0.5 },
+  warningNote: { fontSize: 11, color: theme.colors.textMuted, textAlign: 'center', marginTop: 16, fontStyle: 'italic' },
 });

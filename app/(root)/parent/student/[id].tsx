@@ -142,22 +142,22 @@ export default function StudentDetail() {
           <TouchableOpacity 
             style={styles.actionButton}
             onPress={() => router.push({
-              pathname: '/(root)/parent/leaves',
-              params: { studentId: id }
+              pathname: '/(root)/parent/exams/[studentId]',
+              params: { studentId: id, name: name }
             })}
           >
-            <FileText size={20} color={theme.colors.primary} {...({} as any)} />
-            <Text style={styles.actionText}>Apply Leave</Text>
+            <Calendar size={20} color={theme.colors.primary} {...({} as any)} />
+            <Text style={styles.actionText}>Exam Timetable</Text>
           </TouchableOpacity>
           <TouchableOpacity 
             style={[styles.actionButton, { backgroundColor: '#F0FDF4' }]}
             onPress={() => router.push({
-              pathname: '/(root)/parent/stats',
+              pathname: '/(root)/parent/leaves',
               params: { studentId: id }
             })}
           >
-            <Clock size={20} color="#10B981" {...({} as any)} />
-            <Text style={[styles.actionText, { color: '#10B981' }]}>View History</Text>
+            <FileText size={20} color="#10B981" {...({} as any)} />
+            <Text style={[styles.actionText, { color: '#10B981' }]}>Apply Leave</Text>
           </TouchableOpacity>
         </View>
       </View>

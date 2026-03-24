@@ -12,8 +12,11 @@ import {
   ChevronLeft,
   AlertCircle,
   Save,
-  Send
+  Send,
+  X,
+  CheckCircle as CheckCircleIcon,
 } from 'lucide-react-native';
+import { Modal } from 'react-native';
 
 export default function ExamGrading() {
   const { id } = useLocalSearchParams();
@@ -25,19 +28,63 @@ export default function ExamGrading() {
   const [isSaving, setIsSaving] = React.useState(false);
   const [isPublishing, setIsPublishing] = React.useState(false);
 
+  // Status Modal State
+  const [modalVisible, setModalVisible] = React.useState(false);
+  const [modalType, setModalType] = React.useState<'success' | 'error' | 'confirm'>('success');
+  const [modalTitle, setModalTitle] = React.useState('');
+  const [modalMsg, setModalMsg] = React.useState('');
+  const [pendingAction, setPendingAction] = React.useState<(() => void) | null>(null);
+
+  const showStatus = (type: 'success' | 'error', title: string, msg: string) => {
+    setModalType(type);
+    setModalTitle(title);
+    setModalMsg(msg);
+    setPendingAction(null);
+    setModalVisible(true);
+  };
+
+  const showConfirm = (title: string, msg: string, onConfirm: () => void) => {
+    setModalType('confirm');
+    setModalTitle(title);
+    setModalMsg(msg);
+    setPendingAction(() => onConfirm);
+    setModalVisible(true);
+  };
+
   // Fetch exam schedule details
   const { data: exam, isLoading: isLoadingExam } = useQuery<any>({
     queryKey: ['faculty-exam-detail', id],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('exam_schedules')
-        .select('*, classes:class_id(name)')
+        .select('*')
         .eq('id', id)
         .single();
       if (error) throw error;
       return data;
     },
     enabled: !!id,
+  });
+
+  const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
+  // Fetch Class Name separately (since TEXT class_id cannot be joined directly in query)
+  const { data: classData } = useQuery({
+    queryKey: ['faculty-exam-class', exam?.class_id],
+    queryFn: async () => {
+      if (!exam?.class_id) return null;
+      // If it's a UUID, look it up. If not, it's likely already a name.
+      if (!isUUID(exam.class_id)) return { name: exam.class_id };
+      
+      const { data, error } = await supabase
+        .from('classes')
+        .select('name')
+        .eq('id', exam.class_id)
+        .single();
+      if (error) return { name: exam.class_id };
+      return data;
+    },
+    enabled: !!exam?.class_id,
   });
 
   // Fetch subjects assigned to this faculty for this class
@@ -52,7 +99,8 @@ export default function ExamGrading() {
         .eq('class_id', exam.class_id)
         .eq('section', exam.section);
       if (error) throw error;
-      return data || [];
+      // Filter out placeholders like SS1212 and ensure subjects join worked
+      return (data || []).filter((fs: any) => fs.subject_id && isUUID(fs.subject_id) && fs.subjects);
     },
     enabled: !!exam && !!user?.id,
   });
@@ -74,15 +122,20 @@ export default function ExamGrading() {
   const { data: studentMarks = [], isLoading: isLoadingMarks, refetch } = useQuery<any[]>({
     queryKey: ['exam-student-marks', id, selectedSubject?.subject_id],
     queryFn: async () => {
-      if (!id || !selectedSubject) return [];
+      if (!id || !selectedSubject?.subject_id || !isUUID(selectedSubject.subject_id)) return [];
       
       // 1. Get all students in this class/section
-      const { data: students } = await supabase
+      const { data: students, error: studentError } = await supabase
         .from('students')
         .select('id, name, register_number')
-        .eq('class_name', exam.classes?.name)
+        .eq('class_name', classData?.name || exam.class_id)
         .eq('section', exam.section)
         .order('name');
+      
+      if (studentError) {
+        console.error("Error fetching students:", studentError);
+        return [];
+      }
 
       // 2. Get existing marks
       const { data: existingResults } = await supabase
@@ -111,8 +164,10 @@ export default function ExamGrading() {
       setMarks(initialMarks);
       return mapped;
     },
-    enabled: !!exam && !!selectedSubject,
+    enabled: !!exam && !!selectedSubject?.subject_id && isUUID(selectedSubject.subject_id) && !!classData,
   });
+
+  const isPublished = studentMarks.some(s => s.existing?.status === 'PUBLISHED');
 
   const updateMark = (studentId: string, field: 'internal' | 'external' | 'remarks', value: string) => {
     setMarks(prev => ({
@@ -138,54 +193,56 @@ export default function ExamGrading() {
         staff_id: user?.id,
         class_id: exam.class_id,
         section: exam.section,
-        status: 'draft',
-      }));
+        status: 'DRAFT',
+      })).filter(r => r.subject_id && r.subject_id.includes('-')); // Only subject_id remains strict UUID
+
+      if (records.length === 0) {
+        showStatus('error', 'No Valid Data', 'No students or valid subject found to save.');
+        setIsSaving(false);
+        return;
+      }
 
       const { error } = await supabase
         .from('exam_results')
         .upsert(records as any, { onConflict: 'exam_id,student_id,subject_id' });
 
       if (error) throw error;
-      Alert.alert('Success', 'Marks saved as draft');
+      showStatus('success', 'Marks Saved', 'The grades have been stored as draft.');
       refetch();
     } catch (error: any) {
       console.error('Error saving marks:', error);
-      Alert.alert('Error', error.message);
+      showStatus('error', 'Save Failed', error.message || 'An error occurred while saving.');
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handlePublishMarks = async () => {
+  const executePublish = async () => {
     if (!selectedSubject || !exam) return;
-    
-    Alert.alert(
+    setIsPublishing(true);
+    setModalVisible(false);
+    try {
+      const { error } = await supabase
+        .from('exam_results')
+        .update({ status: 'PUBLISHED' } as any)
+        .eq('exam_id', id)
+        .eq('subject_id', selectedSubject.subject_id);
+
+      if (error) throw error;
+      showStatus('success', 'Published!', 'Marks are now visible to students and parents.');
+      refetch();
+    } catch (error: any) {
+      showStatus('error', 'Publish Failed', error.message);
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
+  const handlePublishMarks = async () => {
+    showConfirm(
       'Confirm Publishing',
       'Once published, students and parents can view these marks. Are you sure?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Publish', 
-          onPress: async () => {
-            setIsPublishing(true);
-            try {
-              const { error } = await supabase
-                .from('exam_results')
-                .update({ status: 'published' } as any)
-                .eq('exam_id', id)
-                .eq('subject_id', selectedSubject.subject_id);
-
-              if (error) throw error;
-              Alert.alert('Success', 'Marks published successfully');
-              refetch();
-            } catch (error: any) {
-              Alert.alert('Error', error.message);
-            } finally {
-              setIsPublishing(false);
-            }
-          }
-        }
-      ]
+      executePublish
     );
   };
 
@@ -201,7 +258,7 @@ export default function ExamGrading() {
     <View style={styles.container}>
       <PageHeader 
         title={exam?.exam_display_name || 'Grading'} 
-        subtitle={`Class ${exam?.classes?.name} - ${exam?.section}`}
+        subtitle={`Class ${classData?.name || (exam?.class_id || 'Class')} - ${exam?.section || '?'}`}
         leftAction={
           <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
             <ChevronLeft size={24} color={theme.colors.text} {...({} as any)} />
@@ -252,16 +309,18 @@ export default function ExamGrading() {
               {selectedSubject?.subjects?.name} Marks
             </Text>
             <View style={styles.headerActions}>
-              <TouchableOpacity 
-                style={styles.saveBtn} 
-                onPress={handleSaveMarks}
-                disabled={isSaving}
-              >
-                <Save size={16} color="white" {...({} as any)} />
-                <Text style={styles.saveBtnText}>{isSaving ? '...' : 'Save'}</Text>
-              </TouchableOpacity>
+              {!isPublished && (
+                <TouchableOpacity 
+                  style={styles.saveBtn} 
+                  onPress={handleSaveMarks}
+                  disabled={isSaving}
+                >
+                  <Save size={16} color="white" {...({} as any)} />
+                  <Text style={styles.saveBtnText}>{isSaving ? '...' : 'Save'}</Text>
+                </TouchableOpacity>
+              )}
               
-              {isClassTeacher && (
+              {!isPublished && (
                 <TouchableOpacity 
                   style={[styles.saveBtn, { backgroundColor: '#166534' }]} 
                   onPress={handlePublishMarks}
@@ -287,9 +346,9 @@ export default function ExamGrading() {
                     <Text style={styles.studentName}>{student.name}</Text>
                     <Text style={styles.regNo}>#{student.register_number}</Text>
                   </View>
-                  {student.existing?.status === 'published' && (
+                  {student.existing?.status === 'PUBLISHED' && (
                     <View style={styles.publishedBadge}>
-                      <CheckCircle size={10} color="#166534" {...({} as any)} />
+                      <CheckCircleIcon size={10} color="#166534" {...({} as any)} />
                       <Text style={styles.publishedText}>Published</Text>
                     </View>
                   )}
@@ -299,21 +358,23 @@ export default function ExamGrading() {
                   <View style={styles.markInputGroup}>
                     <Text style={styles.inputLabel}>Internal</Text>
                     <TextInput
-                      style={styles.input}
+                      style={[styles.input, isPublished && styles.disabledInput]}
                       keyboardType="numeric"
                       value={marks[student.id]?.internal}
                       onChangeText={(v) => updateMark(student.id, 'internal', v)}
                       placeholder="0"
+                      editable={!isPublished}
                     />
                   </View>
                   <View style={styles.markInputGroup}>
                     <Text style={styles.inputLabel}>External</Text>
                     <TextInput
-                      style={styles.input}
+                      style={[styles.input, isPublished && styles.disabledInput]}
                       keyboardType="numeric"
                       value={marks[student.id]?.external}
                       onChangeText={(v) => updateMark(student.id, 'external', v)}
                       placeholder="0"
+                      editable={!isPublished}
                     />
                   </View>
                   <View style={styles.totalGroup}>
@@ -327,16 +388,69 @@ export default function ExamGrading() {
                 </View>
 
                 <TextInput
-                  style={styles.remarksInput}
+                  style={[styles.remarksInput, isPublished && styles.disabledInput]}
                   placeholder="Remarks..."
                   value={marks[student.id]?.remarks}
                   onChangeText={(v) => updateMark(student.id, 'remarks', v)}
+                  editable={!isPublished}
                 />
               </View>
             ))
           )}
         </View>
       </ScrollView>
+
+      {/* CUSTOM THEMED MODAL */}
+      <Modal
+        visible={modalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={[styles.modalIconWrap, { 
+              backgroundColor: modalType === 'error' ? '#FEF2F2' : (modalType === 'confirm' ? '#FFFBEB' : '#F0FDF4') 
+            }]}>
+              {modalType === 'error' ? (
+                <AlertCircle size={32} color="#EF4444" {...({} as any)} />
+              ) : modalType === 'confirm' ? (
+                <AlertCircle size={32} color="#F59E0B" {...({} as any)} />
+              ) : (
+                <CheckCircleIcon size={32} color="#10B981" {...({} as any)} />
+              )}
+            </View>
+            <Text style={styles.modalTitle}>{modalTitle}</Text>
+            <Text style={styles.modalMsg}>{modalMsg}</Text>
+            
+            <View style={styles.modalActions}>
+              {modalType === 'confirm' ? (
+                <>
+                  <TouchableOpacity 
+                    style={[styles.modalBtn, styles.cancelBtn]} 
+                    onPress={() => setModalVisible(false)}
+                  >
+                    <Text style={styles.cancelBtnText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[styles.modalBtn, styles.confirmBtn]} 
+                    onPress={() => pendingAction?.()}
+                  >
+                    <Text style={styles.confirmBtnText}>Yes, Publish</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <TouchableOpacity 
+                  style={[styles.modalBtn, { backgroundColor: theme.colors.primary }]} 
+                  onPress={() => setModalVisible(false)}
+                >
+                  <Text style={{ color: 'white', fontWeight: 'bold' }}>Close</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -376,5 +490,19 @@ const styles = StyleSheet.create({
   publishedBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#F0FDF4', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   publishedText: { fontSize: 10, fontWeight: '700', color: '#166534' },
   emptyText: { textAlign: 'center', color: theme.colors.textMuted, marginTop: 40 },
-  section: { marginBottom: 32 }
+  section: { marginBottom: 32 },
+  disabledInput: { backgroundColor: '#F1F5F9', color: theme.colors.textMuted },
+
+  // Modal Styles
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  modalContent: { backgroundColor: 'white', borderRadius: 24, padding: 24, width: '100%', alignItems: 'center', elevation: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.1, shadowRadius: 20 },
+  modalIconWrap: { width: 64, height: 64, borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
+  modalTitle: { fontSize: 18, fontWeight: 'bold', color: theme.colors.text, marginBottom: 8 },
+  modalMsg: { fontSize: 14, color: theme.colors.textMuted, textAlign: 'center', marginBottom: 24, lineHeight: 20 },
+  modalActions: { flexDirection: 'row', gap: 12, width: '100%' },
+  modalBtn: { flex: 1, height: 48, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  cancelBtn: { backgroundColor: '#F1F5F9' },
+  confirmBtn: { backgroundColor: theme.colors.primary },
+  cancelBtnText: { color: theme.colors.textMuted, fontWeight: '600' },
+  confirmBtnText: { color: 'white', fontWeight: 'bold' }
 });

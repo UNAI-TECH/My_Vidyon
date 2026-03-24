@@ -235,42 +235,35 @@ export function useStudentDashboard(authUserId?: string, institutionId?: string)
             // 2. Resolve Class UUID from Name (Hardened)
             console.log('Student Materials Fetch - Resolving Class:', studentProfile.class_name, 'for Inst:', targetInstId);
             
-            // Try exact match first (case-insensitive)
-            let { data: classData } = await supabase
+            // Try exact, alternative, and then fuzzy match
+            const { data: potentialClasses, error: classError } = await supabase
                 .from('classes')
-                .select('id, name')
-                .ilike('name', studentProfile.class_name)
-                .eq('institution_id', targetInstId)
-                .maybeSingle();
+                .select('id, name');
             
-            // Fallback: try with "Class " prefix if not present, or remove it if present
-            if (!classData) {
-                const altName = studentProfile.class_name.toLowerCase().startsWith('class ') 
-                    ? studentProfile.class_name.substring(6).trim()
-                    : `Class ${studentProfile.class_name}`;
-                
-                const { data: altClassData } = await supabase
-                    .from('classes')
-                    .select('id, name')
-                    .ilike('name', altName)
-                    .eq('institution_id', targetInstId)
-                    .maybeSingle();
-                
-                classData = altClassData;
-            }
-            
-            if (!classData) {
-                console.error('Student Materials Fetch - Could not find Class UUID for:', studentProfile.class_name);
+            if (classError) {
+                console.error('Student Materials Fetch - Error fetching classes:', classError);
                 return [];
             }
-            console.log('Student Materials Fetch - Resolved Class UUID:', (classData as any).id);
+
+            const classMatch = (potentialClasses || []).find(c => 
+                c.name.toLowerCase() === studentProfile.class_name.toLowerCase() ||
+                c.name.toLowerCase() === `class ${studentProfile.class_name.toLowerCase()}` ||
+                c.name.toLowerCase().includes(studentProfile.class_name.toLowerCase()) ||
+                studentProfile.class_name.toLowerCase().includes(c.name.toLowerCase())
+            );
+            
+            if (!classMatch) {
+                console.error('Student Materials Fetch - Could not find Class for:', studentProfile.class_name, 'among', potentialClasses?.length, 'classes');
+                return [];
+            }
+            console.log('Student Materials Fetch - Resolved Class UUID:', classMatch.id, '(', classMatch.name, ')');
+            const classData = classMatch;
 
             // 3. Fetch materials
             const query = supabase
                 .from('subject_materials')
                 .select('*, profiles:faculty_id(full_name), subjects:subject_id(name)')
-                .eq('class_id', (classData as any).id)
-                .eq('institution_id', targetInstId);
+                .eq('class_id', (classData as any).id);
             
             if (studentProfile.section) {
                 query.eq('section', studentProfile.section);

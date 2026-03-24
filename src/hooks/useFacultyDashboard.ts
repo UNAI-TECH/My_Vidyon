@@ -348,10 +348,92 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
     };
 
     const deleteAssignment = async (assignmentId: string) => {
-        const { error } = await supabase.from('assignments').delete().eq('id', assignmentId);
-        if (error) throw error;
-        await refetchAssignments();
-        return true;
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            console.log('Hook: Current Auth User ID:', user?.id);
+            
+            // diagnostic check
+            const { data: currentAssignment } = await supabase
+                .from('assignments')
+                .select('id, teacher_id, created_by')
+                .eq('id', assignmentId)
+                .maybeSingle();
+            console.log('Hook: Assignment metadata before delete:', currentAssignment);
+
+            console.log('Hook: Starting robust deletion for:', assignmentId);
+            // 1. Fetch all submissions to get file paths
+            const { data: submissions, error: subError } = await supabase
+                .from('submissions')
+                .select('file_path')
+                .eq('assignment_id', assignmentId);
+            
+            if (subError) {
+                console.error('Hook: Error fetching submissions:', subError);
+                throw subError;
+            }
+
+            console.log(`Hook: Found ${submissions?.length || 0} submissions to clean up`);
+
+            // 2. Delete files from Storage
+            if (submissions && submissions.length > 0) {
+                const filesToRemove = [];
+                for (const sub of (submissions as any[])) {
+                    if (sub.file_path) {
+                        const pathParts = (sub.file_path as string).split('/storage/v1/object/public/assignments/');
+                        if (pathParts.length > 1) {
+                            filesToRemove.push(decodeURIComponent(pathParts[1]));
+                        }
+                    }
+                }
+                
+                if (filesToRemove.length > 0) {
+                    console.log('Hook: Removing files from storage:', filesToRemove);
+                    const { error: storageError } = await supabase.storage
+                        .from('assignments')
+                        .remove(filesToRemove);
+                    
+                    if (storageError) {
+                        console.warn('Hook: Could not delete some files from storage:', storageError.message);
+                    }
+                }
+            }
+
+            // 3. Delete submissions from DB
+            console.log('Hook: Deleting submissions from DB...');
+            const { error: subDeleteError } = await supabase
+                .from('submissions')
+                .delete()
+                .eq('assignment_id', assignmentId);
+            if (subDeleteError) {
+                console.error('Hook: Submission delete error:', subDeleteError);
+                throw subDeleteError;
+            }
+
+            // 4. Delete assignment from DB
+            console.log('Hook: Deleting assignment from DB...', assignmentId);
+            const { error, data: deletedRows } = await supabase
+                .from('assignments')
+                .delete()
+                .eq('id', assignmentId)
+                .select(); // Ask for deleted rows back to verify
+
+            if (error) {
+                console.error('Hook: Assignment delete error:', error);
+                throw error;
+            }
+
+            if (!deletedRows || deletedRows.length === 0) {
+                console.warn('Hook: DELETE executed but NO rows were affected. Potential RLS issue or ID mismatch.');
+                return false;
+            }
+
+            console.log('Hook: Assignment deleted successfully, rows affected:', deletedRows.length);
+            await refetchAssignments();
+            return true;
+        } catch (error) {
+            console.error('Hook: Error in deleteAssignment:', error);
+            throw error;
+        }
     };
 
     const fetchSubmissions = async (assignmentId: string) => {

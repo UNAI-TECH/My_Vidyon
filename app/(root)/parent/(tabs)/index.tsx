@@ -44,10 +44,10 @@ export default function ParentDashboard() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Child Services</Text>
         <ShortcutGrid items={[
+          { label: 'Exam Schedule', icon: Calendar, href: '/(root)/parent/student', color: '#8B5CF6' },
           { label: 'Fee Gateway', icon: CreditCard, href: '/(root)/parent/fee-gateway', color: '#3B82F6' },
           { label: 'Safety Hub', icon: ShieldAlert, href: '/(root)/parent/safety', color: '#EF4444' },
-          { label: 'Leave Apply', icon: Calendar, href: '/(root)/parent/leaves', color: '#A855F7' },
-          { label: 'Child Stats', icon: Users, href: '/(root)/parent/stats', color: '#10B981' },
+          { label: 'Leave Apply', icon: Calendar, href: '/(root)/parent/leaves', color: '#F59E0B' },
         ]} />
       </View>
 

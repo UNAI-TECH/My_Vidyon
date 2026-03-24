@@ -19,7 +19,8 @@ import {
   UserCheck,
   Clock,
   ChevronDown,
-  Bell
+  Bell,
+  ClipboardList
 } from 'lucide-react-native';
 import { ShortcutGrid } from '../../../src/components/common/ShortcutGrid';
 import { LineChart, PieChart } from 'react-native-chart-kit';
@@ -39,6 +40,7 @@ export default function InstitutionDashboard() {
     { label: 'Add User', icon: GraduationCap, href: '/(root)/institution/students/add', color: '#14B8A6' },
     { label: 'Leave Ops', icon: FileText, href: '/(root)/institution/leaves', color: '#EF4444' },
     { label: 'Timetable', icon: Clock, href: '/(root)/institution/timetable', color: '#F59E0B' },
+    { label: 'Exams', icon: ClipboardList, href: '/(root)/institution/exams', color: '#F87171' },
     { label: 'Communication', icon: Bell, href: '/(root)/institution/communication', color: '#F43F5E' },
     { label: 'Staff Assigning', icon: UserCheck, href: '/(root)/institution/faculty/assign', color: '#10B981' },
     { label: 'Analytics', icon: TrendingUp, href: '/(root)/institution/analytics', color: '#10B981' },

@@ -55,6 +55,7 @@ export default function StudentDashboard() {
     { label: 'Courses', icon: BookOpen, href: '/student/courses', color: '#F97316' },
     { label: 'Assignments', icon: ClipboardList, href: '/student/assignments', color: '#10B981' },
     { label: 'AI Tutor', icon: Sparkles, href: '/student/ai-tutor', color: '#A855F7' },
+    { label: 'Exams', icon: ClipboardList, href: '/student/exams', color: '#F87171' },
     { label: 'Leave', icon: FileText, href: '/student/leave', color: '#EF4444' },
     { label: 'Grades', icon: TrendingUp, href: '/student/grades', color: '#F59E0B' },
     { label: 'Certificates', icon: Award, href: '/student/certificates', color: '#6366F1' },

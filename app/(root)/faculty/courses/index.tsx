@@ -8,23 +8,21 @@ import {
   BookOpen, 
   Users, 
   FileEdit,
-  Upload
+  Upload,
+  ClipboardList
 } from 'lucide-react-native';
 import { useFacultyDashboard } from '../../../../src/hooks/useFacultyDashboard';
 import { ActivityIndicator } from 'react-native';
+import { useRouter } from 'expo-router';
 
 export default function FacultyCourses() {
   const { user, institutionId } = useAuth();
+  const router = useRouter();
   const { assignedSubjects, isLoading } = useFacultyDashboard(user?.id, institutionId || undefined);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <PageHeader title="Course Administration" subtitle="Manage subjects and content" />
-
-      <TouchableOpacity style={styles.createBtn}>
-        <Plus size={20} color="white" {...({} as any)} />
-        <Text style={styles.createBtnText}>Create New Subject</Text>
-      </TouchableOpacity>
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Your Assigned Subjects</Text>
@@ -57,13 +55,19 @@ export default function FacultyCourses() {
               <View style={styles.divider} />
               
               <View style={styles.actionRow}>
-                <TouchableOpacity style={styles.miniBtn}>
-                  <FileEdit size={14} color={theme.colors.primary} {...({} as any)} />
-                  <Text style={styles.miniBtnText}>Edit Syllabus</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.miniBtn}>
+                <TouchableOpacity 
+                  style={styles.miniBtn}
+                  onPress={() => router.push('/faculty/materials/upload')}
+                >
                   <Upload size={14} color={theme.colors.primary} {...({} as any)} />
                   <Text style={styles.miniBtnText}>Add Material</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.miniBtn, { backgroundColor: theme.colors.primary + '10' }]}
+                  onPress={() => router.push('/faculty/assignments')}
+                >
+                  <ClipboardList size={14} color={theme.colors.primary} {...({} as any)} />
+                  <Text style={styles.miniBtnText}>Add Assignment</Text>
                 </TouchableOpacity>
               </View>
             </View>

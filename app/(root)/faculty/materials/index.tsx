@@ -7,13 +7,20 @@ import { useFacultyDashboard } from '../../../../src/hooks/useFacultyDashboard';
 import { BookOpen, FileText, Trash2, Plus, Download, ChevronLeft } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { downloadAndShareFile } from '../../../../src/utils/fileUtils';
+import { AlertModal } from '../../../../src/components/common/AlertModal';
 
 export default function FacultyMaterialsManagement() {
   const { user, institutionId, institutionUuid } = useAuth();
   const router = useRouter();
   const { myMaterials, isLoadingMyMaterials, refetchMaterials, deleteMaterial } = useFacultyDashboard(user?.id, (institutionUuid || institutionId) || undefined);
-
+  
   const [isDeleting, setIsDeleting] = React.useState<string | null>(null);
+  const [alertConfig, setAlertConfig] = React.useState({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'success' as 'success' | 'error' | 'warning' | 'info'
+  });
 
   const handleDelete = (material: any) => {
     Alert.alert(
@@ -28,9 +35,19 @@ export default function FacultyMaterialsManagement() {
             setIsDeleting(material.id);
             try {
               await deleteMaterial(material.id, material.file_url);
-              Alert.alert('Success', 'Material deleted successfully');
+              setAlertConfig({
+                visible: true,
+                title: 'Deleted',
+                message: 'Study material has been removed successfully.',
+                type: 'success'
+              });
             } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to delete material');
+              setAlertConfig({
+                visible: true,
+                title: 'Error',
+                message: error.message || 'Failed to delete material',
+                type: 'error'
+              });
             } finally {
               setIsDeleting(null);
             }
@@ -84,7 +101,7 @@ export default function FacultyMaterialsManagement() {
               <View style={styles.content}>
                 <Text style={styles.title} numberOfLines={1}>{item.title}</Text>
                 <Text style={styles.meta}>
-                  {item.subjects?.name || 'Unknown'} • {item.classes?.name || 'Class'}
+                  {item.subjects?.name || 'Unknown'} • {item.classes?.name || 'Class'} • {item.section || 'All'}
                 </Text>
                 {item.description && (
                   <Text style={styles.description} numberOfLines={2}>{item.description}</Text>
@@ -129,6 +146,14 @@ export default function FacultyMaterialsManagement() {
             </TouchableOpacity>
           </View>
         }
+      />
+      
+      <AlertModal 
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        onClose={() => setAlertConfig({ ...alertConfig, visible: false })}
       />
     </View>
   );
