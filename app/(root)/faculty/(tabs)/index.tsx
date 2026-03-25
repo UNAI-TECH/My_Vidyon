@@ -4,6 +4,7 @@ import { NotificationBell } from '../../../../src/components/common/Notification
 import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
 import { StatCard } from '../../../../src/components/common/StatCard';
+import { AdCard } from '../../../../src/components/common/AdCard';
 import { ShortcutGrid } from '../../../../src/components/common/ShortcutGrid';
 import { useAuth } from '../../../../src/hooks/useAuth';
 import { useFacultyDashboard } from '../../../../src/hooks/useFacultyDashboard';
@@ -70,6 +71,13 @@ export default function FacultyDashboard() {
         userSubtitle={facultyProfile?.department || undefined}
         actions={<NotificationBell />}
       />
+
+      <View style={{ paddingBottom: 16 }}>
+        <AdCard 
+          title="Upgrade your Classroom!" 
+          description="Access premium interactive tools for teachers. Click to explore."
+        />
+      </View>
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Quick Actions</Text>

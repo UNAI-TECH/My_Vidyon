@@ -15,7 +15,8 @@ import {
   BarChart3,
   TrendingUp,
   FileText,
-  MessageSquare
+  MessageSquare,
+  CalendarRange
 } from 'lucide-react-native';
 import { ShortcutGrid } from '../../../src/components/common/ShortcutGrid';
 import { ProgressChart } from 'react-native-chart-kit';
@@ -56,6 +57,7 @@ export default function AdminDashboard() {
           { label: 'Add Institution', icon: Building2, href: '/(root)/admin/onboarding', color: '#3B82F6' },
           { label: 'Broadcast', icon: MessageSquare, href: '/(root)/admin/communication', color: '#10B981' },
           { label: 'View Reports', icon: BarChart3, href: '/(root)/admin/revenue', color: '#F97316' },
+          { label: 'Promotions', icon: CalendarRange, href: '/(root)/admin/promotions', color: '#EAB308' },
           { label: 'Config', icon: Shield, href: '/(root)/admin/settings', color: '#A855F7' },
         ]} />
       </View>

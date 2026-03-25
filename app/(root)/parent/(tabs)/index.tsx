@@ -4,6 +4,7 @@ import { NotificationBell } from '../../../../src/components/common/Notification
 import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
 import { StatCard } from '../../../../src/components/common/StatCard';
+import { AdCard } from '../../../../src/components/common/AdCard';
 import { useAuth } from '../../../../src/hooks/useAuth';
 import { 
   Users, 
@@ -40,6 +41,13 @@ export default function ParentDashboard() {
         userSubtitle={`${children.length} Children Enrolled`}
         actions={<NotificationBell />}
       />
+
+      <View style={{ paddingBottom: 16 }}>
+        <AdCard 
+          title="Secure Your Child's Future" 
+          description="Discover premium educational plans for smart parenting. Learn more."
+        />
+      </View>
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Child Services</Text>

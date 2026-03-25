@@ -15,7 +15,10 @@ import {
   Settings2,
   ShieldCheck,
   ChevronRight,
-  LogOut
+  LogOut,
+  ArrowUpRight,
+  CalendarRange,
+  Clock
 } from 'lucide-react-native';
 import { AlertModal } from '../../../src/components/common/AlertModal';
 import * as ImagePicker from 'expo-image-picker';
@@ -63,6 +66,62 @@ export default function InstitutionSettingsScreen() {
       return data;
     },
     enabled: !!institutionId
+  });
+
+  // Fetch pending promotion request
+  const { data: pendingPromotion, isLoading: loadingPromotion } = useQuery({
+    queryKey: ['pending-promotion', institutionId],
+    queryFn: async () => {
+      if (!institutionId) return null;
+      const { data, error } = await (supabase
+        .from('promotion_requests') as any)
+        .select('*')
+        .eq('institution_id', institutionId)
+        .eq('status', 'pending')
+        .maybeSingle();
+      if (error && error.code !== 'PGRST116') throw error;
+      return data;
+    },
+    enabled: !!institutionId
+  });
+
+  // Calculate next year
+  const calculateNextYear = (currentYear: string) => {
+    if (!currentYear) return '';
+    try {
+      const parts = currentYear.split('-');
+      if (parts.length === 2) {
+        const start = parseInt(parts[0]);
+        const end = parseInt(parts[1]);
+        if (!isNaN(start) && !isNaN(end)) {
+          return `${start + 1}-${(end + 1).toString().padStart(2, '0')}`;
+        }
+      }
+    } catch(e) {}
+    return 'Next Year';
+  };
+
+  // Promotion mutation
+  const requestPromotionMutation = useMutation({
+    mutationFn: async ({ fromYear, toYear }: { fromYear: string, toYear: string }) => {
+      if (!institutionId) throw new Error('No institution ID');
+      const { error } = await (supabase
+        .from('promotion_requests') as any)
+        .insert([{
+          institution_id: institutionId,
+          from_year: fromYear,
+          to_year: toYear,
+          status: 'pending'
+        }]);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pending-promotion'] });
+      showAlert('Success', 'Promotion request sent to admin for approval.', 'success');
+    },
+    onError: (error: any) => {
+      showAlert('Error', error.message || 'Failed to request promotion', 'error');
+    }
   });
 
   // Sync form with fetched data
@@ -334,6 +393,68 @@ export default function InstitutionSettingsScreen() {
               )}
               <Text style={styles.saveBtnText}>{(updateMutation.isPending || isUploading) ? 'Saving...' : 'Save Changes'}</Text>
             </TouchableOpacity>
+
+            {/* Academic Year Promotion */}
+            <View style={[styles.section, { marginTop: 32 }]}>
+              <Text style={styles.sectionTitle}>Academic Operations</Text>
+              
+              <View style={[styles.card, { padding: 16 }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                  <View style={{ backgroundColor: '#F3E8FF', padding: 12, borderRadius: 12 }}>
+                    <CalendarRange size={24} color="#9333EA" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 16, fontWeight: 'bold', color: theme.colors.text }}>Promote Academic Year</Text>
+                    <Text style={{ fontSize: 13, color: theme.colors.textMuted, marginTop: 2 }}>
+                      Advance all students, staff, and classes to {calculateNextYear(academicYear)}
+                    </Text>
+                  </View>
+                </View>
+
+                {loadingPromotion ? (
+                  <ActivityIndicator size="small" color={theme.colors.primary} />
+                ) : pendingPromotion ? (
+                  <View style={{ backgroundColor: '#FEF3C7', padding: 12, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Clock size={16} color="#B45309" />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: '#B45309', fontWeight: 'bold', fontSize: 13 }}>Promotion Request Pending</Text>
+                      <Text style={{ color: '#D97706', fontSize: 12, marginTop: 2 }}>
+                        Admin is reviewing your request to move to {pendingPromotion.to_year}.
+                      </Text>
+                    </View>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={{ backgroundColor: '#9333EA', padding: 14, borderRadius: 12, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 }}
+                    onPress={() => {
+                      const nextYear = calculateNextYear(academicYear);
+                      Alert.alert(
+                        'Confirm Promotion Request',
+                        `Are you sure you want to request moving from ${academicYear} to ${nextYear}? This will advance all students and archive previous records.`,
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          { 
+                            text: 'Request Promotion', 
+                            style: 'default',
+                            onPress: () => requestPromotionMutation.mutate({ fromYear: academicYear, toYear: nextYear })
+                          }
+                        ]
+                      );
+                    }}
+                    disabled={requestPromotionMutation.isPending || !academicYear}
+                  >
+                    {requestPromotionMutation.isPending ? (
+                      <ActivityIndicator size="small" color="white" />
+                    ) : (
+                      <>
+                        <ArrowUpRight size={18} color="white" />
+                        <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 15 }}>Request Promotion to {calculateNextYear(academicYear)}</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
           </>
         )}
 

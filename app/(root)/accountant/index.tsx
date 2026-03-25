@@ -4,6 +4,7 @@ import { NotificationBell } from '../../../src/components/common/NotificationBel
 import { theme } from '../../../src/theme';
 import { PageHeader } from '../../../src/components/common/PageHeader';
 import { StatCard } from '../../../src/components/common/StatCard';
+import { AdCard } from '../../../src/components/common/AdCard';
 import { useAuth } from '../../../src/hooks/useAuth';
 import { useAccountantDashboard } from '../../../src/hooks/useAccountantDashboard';
 import {
@@ -48,6 +49,13 @@ export default function AccountantDashboard() {
           </View>
         }
       />
+
+      <View style={{ paddingBottom: 16 }}>
+        <AdCard 
+          title="Streamline Your Finances" 
+          description="Explore our automated fee collection and reconciliation tools."
+        />
+      </View>
 
       <View style={styles.section2}>
         <Text style={styles.sectionTitle}>Financial Console</Text>

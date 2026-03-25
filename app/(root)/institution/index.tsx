@@ -5,6 +5,7 @@ import { theme } from '../../../src/theme';
 import { PageHeader } from '../../../src/components/common/PageHeader';
 import { useNotifications } from '../../../src/hooks/useNotifications';
 import { StatCard } from '../../../src/components/common/StatCard';
+import { AdCard } from '../../../src/components/common/AdCard';
 import { useAuth } from '../../../src/hooks/useAuth';
 import { useInstitutionData } from '../../../src/hooks/useInstitutionData';
 import { 
@@ -75,6 +76,13 @@ export default function InstitutionDashboard() {
           </View>
         }
       />
+
+      <View style={{ paddingBottom: 16 }}>
+        <AdCard 
+          title="Premium Institution Features" 
+          description="Unlock advanced analytics and seamless integrations for your school."
+        />
+      </View>
 
       {/* Shortcuts - Moved to Top */}
       <View style={styles.section}>

@@ -4,6 +4,7 @@ import { NotificationBell } from '../../../src/components/common/NotificationBel
 import { theme } from '../../../src/theme';
 import { PageHeader } from '../../../src/components/common/PageHeader';
 import { StatCard } from '../../../src/components/common/StatCard';
+import { AdCard } from '../../../src/components/common/AdCard';
 import { ShortcutGrid } from '../../../src/components/common/ShortcutGrid';
 import { useAuth } from '../../../src/hooks/useAuth';
 import { useStudentDashboard } from '../../../src/hooks/useStudentDashboard';
@@ -82,6 +83,13 @@ export default function StudentDashboard() {
         userSubtitle={studentProfile ? `Class ${studentProfile.class_name} - ${studentProfile.section}` : undefined}
         actions={<NotificationBell />}
       />
+
+      <View style={{ paddingBottom: 16 }}>
+        <AdCard 
+          title="Master Your Subjects!" 
+          description="Try UNAI Tech's premium AI Tutor exclusively. Click here to learn more."
+        />
+      </View>
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Quick Services</Text>

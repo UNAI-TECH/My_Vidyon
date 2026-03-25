@@ -495,20 +495,20 @@ export default function InstitutionOnboarding() {
         id: 'primary',
         name: 'Primary',
         classes: [
-          { id: 'c1', name: '1st', sections: ['A', 'B', 'C', 'D', 'E'] },
-          { id: 'c2', name: '2nd', sections: ['A', 'B', 'C', 'D', 'E'] },
-          { id: 'c3', name: '3rd', sections: ['A', 'B', 'C', 'D', 'E'] },
-          { id: 'c4', name: '4th', sections: ['A', 'B', 'C', 'D', 'E'] },
-          { id: 'c5', name: '5th', sections: ['A', 'B', 'C', 'D', 'E'] },
+          { id: 'c1', name: '1st', class_order: 1, is_final_class: false, sections: ['A', 'B', 'C', 'D', 'E'] },
+          { id: 'c2', name: '2nd', class_order: 2, is_final_class: false, sections: ['A', 'B', 'C', 'D', 'E'] },
+          { id: 'c3', name: '3rd', class_order: 3, is_final_class: false, sections: ['A', 'B', 'C', 'D', 'E'] },
+          { id: 'c4', name: '4th', class_order: 4, is_final_class: false, sections: ['A', 'B', 'C', 'D', 'E'] },
+          { id: 'c5', name: '5th', class_order: 5, is_final_class: false, sections: ['A', 'B', 'C', 'D', 'E'] },
         ]
       },
       {
         id: 'secondary',
         name: 'Secondary',
         classes: [
-          { id: 'c6', name: '6th', sections: ['A', 'B', 'C', 'D', 'E'] },
-          { id: 'c7', name: '7th', sections: ['A', 'B', 'C', 'D', 'E'] },
-          { id: 'c8', name: '8th', sections: ['A', 'B', 'C', 'D', 'E'] },
+          { id: 'c6', name: '6th', class_order: 6, is_final_class: false, sections: ['A', 'B', 'C', 'D', 'E'] },
+          { id: 'c7', name: '7th', class_order: 7, is_final_class: false, sections: ['A', 'B', 'C', 'D', 'E'] },
+          { id: 'c8', name: '8th', class_order: 8, is_final_class: false, sections: ['A', 'B', 'C', 'D', 'E'] },
         ]
       }
     ]);
@@ -527,9 +527,10 @@ export default function InstitutionOnboarding() {
   };
 
   const addClass = (groupId: string) => {
+    const nextOrder = structure.flatMap(g => g.classes).length + 1;
     setStructure(structure.map(g =>
       g.id === groupId
-        ? { ...g, classes: [...g.classes, { id: Date.now().toString(), name: '', sections: [] }] }
+        ? { ...g, classes: [...g.classes, { id: Date.now().toString(), name: '', class_order: nextOrder, is_final_class: false, sections: [] }] }
         : g
     ));
   };
@@ -561,6 +562,23 @@ export default function InstitutionOnboarding() {
               : c
           )
         }
+        : g
+    ));
+  };
+
+  const updateClassOrder = (groupId: string, classId: string, orderStr: string) => {
+    const class_order = parseInt(orderStr) || 0;
+    setStructure(structure.map(g =>
+      g.id === groupId
+        ? { ...g, classes: g.classes.map((c: any) => c.id === classId ? { ...c, class_order } : c) }
+        : g
+    ));
+  };
+
+  const toggleFinalClass = (groupId: string, classId: string) => {
+    setStructure(structure.map(g =>
+      g.id === groupId
+        ? { ...g, classes: g.classes.map((c: any) => c.id === classId ? { ...c, is_final_class: !c.is_final_class } : c) }
         : g
     ));
   };
@@ -633,12 +651,29 @@ export default function InstitutionOnboarding() {
               <View style={{ padding: 16, gap: 16 }}>
                 {group.classes.map((classItem: any) => (
                   <View key={classItem.id} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
-                    <TextInput
-                      style={{ width: 100, backgroundColor: '#F1F5F9', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, fontWeight: '500' }}
-                      value={classItem.name}
-                      onChangeText={(v) => updateClass(group.id, classItem.id, v)}
-                      placeholder="Class name"
-                    />
+                    <View style={{ flex: 1, flexDirection: 'row', gap: 8 }}>
+                      <TextInput
+                        style={{ flex: 2, backgroundColor: '#F1F5F9', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, fontWeight: '500' }}
+                        value={classItem.name}
+                        onChangeText={(v) => updateClass(group.id, classItem.id, v)}
+                        placeholder="Class name"
+                      />
+                      <TextInput
+                        style={{ flex: 1, backgroundColor: '#F1F5F9', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, textAlign: 'center' }}
+                        value={classItem.class_order?.toString() || ''}
+                        onChangeText={(v) => updateClassOrder(group.id, classItem.id, v)}
+                        placeholder="Order (e.g. 1)"
+                        keyboardType="numeric"
+                      />
+                      <TouchableOpacity 
+                        style={{ backgroundColor: classItem.is_final_class ? '#10B981' : '#F1F5F9', paddingHorizontal: 10, borderRadius: 8, justifyContent: 'center', alignItems: 'center' }}
+                        onPress={() => toggleFinalClass(group.id, classItem.id)}
+                      >
+                        <Text style={{ fontSize: 10, fontWeight: 'bold', color: classItem.is_final_class ? 'white' : theme.colors.textMuted }}>
+                          {classItem.is_final_class ? 'FINAL CLASS' : 'Mark Final'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
                     <View style={{ flex: 1 }}>
                       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
                         {classItem.sections.map((section: string) => (
@@ -1116,7 +1151,10 @@ export default function InstitutionOnboarding() {
             const classesToInsert = group.classes.map((c: any) => ({
               group_id: gData.id,
               name: typeof c === 'string' ? c : c.name,
-              sections: c.sections || ['A', 'B']
+              sections: c.sections || ['A', 'B'],
+              class_order: c.class_order || 0,
+              is_final_class: c.is_final_class || false,
+              academic_year: basicInfo.academic_year
             }));
             await (supabase.from('classes') as any).insert(classesToInsert);
           }

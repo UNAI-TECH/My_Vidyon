@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, FlatList, Alert }
 import { NotificationBell } from '../../../src/components/common/NotificationBell';
 import { theme } from '../../../src/theme';
 import { PageHeader } from '../../../src/components/common/PageHeader';
+import { AdCard } from '../../../src/components/common/AdCard';
 import { useAuth } from '../../../src/hooks/useAuth';
 import { useCanteenDashboard } from '../../../src/hooks/useCanteenDashboard';
 import { supabase } from '../../../src/lib/supabase';
@@ -68,6 +69,13 @@ export default function CanteenDashboard() {
         userSubtitle="Canteen Admin"
         actions={<NotificationBell />}
       />
+
+      <View style={{ paddingHorizontal: 24, paddingBottom: 16 }}>
+        <AdCard 
+          title="Upgrade your Canteen!" 
+          description="Get premium inventory and reporting tools from UNAI Tech."
+        />
+      </View>
       
       <View style={styles.classSelector}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipScroll}>
