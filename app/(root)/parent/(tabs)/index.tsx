@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Linking } from 'react-native';
 import { NotificationBell } from '../../../../src/components/common/NotificationBell';
 import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
@@ -44,7 +44,6 @@ export default function ParentDashboard() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Child Services</Text>
         <ShortcutGrid items={[
-          { label: 'Exam Schedule', icon: Calendar, href: '/(root)/parent/student', color: '#8B5CF6' },
           { label: 'Fee Gateway', icon: CreditCard, href: '/(root)/parent/fee-gateway', color: '#3B82F6' },
           { label: 'Safety Hub', icon: ShieldAlert, href: '/(root)/parent/safety', color: '#EF4444' },
           { label: 'Leave Apply', icon: Calendar, href: '/(root)/parent/leaves', color: '#F59E0B' },
@@ -65,7 +64,11 @@ export default function ParentDashboard() {
             >
               <View style={styles.childInfo}>
                 <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>{child.name.substring(0, 2).toUpperCase()}</Text>
+                  {child.image_url ? (
+                    <Image source={{ uri: child.image_url }} style={styles.avatarImage} />
+                  ) : (
+                    <Text style={styles.avatarText}>{child.name.substring(0, 2).toUpperCase()}</Text>
+                  )}
                 </View>
                 <View style={{ flex: 1, marginRight: 8 }}>
                   <Text style={styles.childName} numberOfLines={1}>{child.name}</Text>
@@ -102,6 +105,7 @@ export default function ParentDashboard() {
           iconColor="#EF4444"
           change="Pay Now"
           changeType="negative"
+          onPress={() => router.push('/(root)/parent/fee-gateway')}
         />
         <StatCard 
           title="Overview" 
@@ -118,15 +122,24 @@ export default function ParentDashboard() {
           <Text style={styles.safetyTitle}>Safety & Security</Text>
         </View>
         <View style={styles.contactRow}>
-          <TouchableOpacity style={styles.contactButton}>
+          <TouchableOpacity 
+            style={styles.contactButton}
+            onPress={() => (institution?.office_phone || institution?.phone) && Linking.openURL(`tel:${institution.office_phone || institution.phone}`)}
+          >
             <Phone size={16} color="white" {...({} as any)} />
             <Text style={styles.contactText}>School Office</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.contactButton, { backgroundColor: '#EF4444' }]}>
+          <TouchableOpacity 
+            style={[styles.contactButton, { backgroundColor: '#EF4444' }]}
+            onPress={() => (institution?.guard_phone || institution?.phone) && Linking.openURL(`tel:${institution.guard_phone || institution.phone}`)}
+          >
             <Phone size={16} color="white" {...({} as any)} />
             <Text style={styles.contactText}>Main Guard</Text>
           </TouchableOpacity>
         </View>
+      </View>
+      <View style={{ alignItems: 'center', marginVertical: 40, opacity: 0.4 }}>
+        <Image source={require('../../../../assets/logo.png')} style={{ width: 100, height: 30, resizeMode: 'contain' }} />
       </View>
     </ScrollView>
   );
@@ -152,7 +165,8 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   childInfo: { flex: 1, flexDirection: 'row', alignItems: 'center' },
-  avatar: { width: 44, height: 44, borderRadius: 14, backgroundColor: theme.colors.primary + '20', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  avatar: { width: 44, height: 44, borderRadius: 14, backgroundColor: theme.colors.primary + '20', justifyContent: 'center', alignItems: 'center', marginRight: 12, overflow: 'hidden' },
+  avatarImage: { width: '100%', height: '100%' },
   avatarText: { fontWeight: 'bold', color: theme.colors.primary },
   childName: { fontSize: 16, fontWeight: 'bold', color: theme.colors.text },
   childMeta: { fontSize: 12, color: theme.colors.textMuted },

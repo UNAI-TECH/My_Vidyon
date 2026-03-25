@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { theme } from '../../theme';
 import { LucideIcon } from 'lucide-react-native';
 
@@ -10,16 +10,17 @@ interface StatCardProps {
   iconColor?: string;
   change?: string;
   changeType?: 'positive' | 'negative' | 'neutral';
+  onPress?: () => void;
 }
 
-export const StatCard = ({ title, value, icon: Icon, iconColor, change, changeType = 'neutral' }: StatCardProps) => {
+export const StatCard = ({ title, value, icon: Icon, iconColor, change, changeType = 'neutral', onPress }: StatCardProps) => {
   const getChangeColor = () => {
     if (changeType === 'positive') return '#10B981';
     if (changeType === 'negative') return '#EF4444';
     return theme.colors.textMuted;
   };
 
-  return (
+  const CardView = (
     <View style={styles.card}>
       <View style={styles.header}>
         <View style={[styles.iconWrapper, { backgroundColor: iconColor ? `${iconColor}20` : `${theme.colors.primary}20` }]}>
@@ -35,6 +36,16 @@ export const StatCard = ({ title, value, icon: Icon, iconColor, change, changeTy
       )}
     </View>
   );
+
+  if (onPress) {
+    return (
+      <TouchableOpacity onPress={onPress} activeOpacity={0.7} style={{ width: '48%' }}>
+        {CardView}
+      </TouchableOpacity>
+    );
+  }
+
+  return <View style={{ width: '48%' }}>{CardView}</View>;
 };
 
 const styles = StyleSheet.create({
@@ -42,7 +53,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderRadius: 20,
     padding: 16,
-    width: '48%', // Approx for 2 per row
     marginBottom: 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',

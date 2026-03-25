@@ -43,6 +43,9 @@ export default function InstitutionSettingsScreen() {
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [academicYear, setAcademicYear] = useState('');
+  const [officePhone, setOfficePhone] = useState('');
+  const [guardPhone, setGuardPhone] = useState('');
+  const [transportPhone, setTransportPhone] = useState('');
   const [logo, setLogo] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
@@ -70,6 +73,9 @@ export default function InstitutionSettingsScreen() {
       setPhone(institution.phone || '');
       setAddress(institution.address || '');
       setAcademicYear(institution.current_academic_year || '');
+      setOfficePhone(institution.office_phone || '');
+      setGuardPhone(institution.guard_phone || '');
+      setTransportPhone(institution.transport_phone || '');
       setLogo(institution.logo_url || null);
     }
   }, [institution]);
@@ -145,6 +151,10 @@ export default function InstitutionSettingsScreen() {
         phone,
         address,
         current_academic_year: academicYear,
+        academic_year: academicYear,
+        office_phone: officePhone,
+        guard_phone: guardPhone,
+        transport_phone: transportPhone,
         logo_url: finalLogoUrl
       });
     } catch (err: any) {
@@ -257,17 +267,56 @@ export default function InstitutionSettingsScreen() {
                     placeholderTextColor={theme.colors.textMuted}
                   />
                 </View>
+                <View style={[styles.fieldRow, { borderBottomWidth: 0 }]}>
+                    <Text style={styles.fieldLabel}>Address</Text>
+                    <TextInput
+                      style={[styles.input, { height: 60, textAlignVertical: 'top' }]}
+                      value={address}
+                      onChangeText={setAddress}
+                      placeholder="Full address"
+                      multiline
+                      placeholderTextColor={theme.colors.textMuted}
+                    />
+                </View>
+
                 <View style={styles.divider} />
                 <View style={styles.fieldRow}>
-                  <Text style={styles.fieldLabel}>Address</Text>
+                  <Text style={styles.fieldLabel}>School Office Phone</Text>
                   <TextInput
-                    style={[styles.input, { height: 60, textAlignVertical: 'top' }]}
-                    value={address}
-                    onChangeText={setAddress}
-                    placeholder="Full address"
-                    multiline
+                    style={styles.input}
+                    value={officePhone}
+                    onChangeText={setOfficePhone}
+                    placeholder="+91 00000 00000"
+                    keyboardType="phone-pad"
                     placeholderTextColor={theme.colors.textMuted}
                   />
+                </View>
+
+                <View style={styles.divider} />
+                <View style={[styles.fieldRow, { flexDirection: 'row', gap: 20 }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.fieldLabel}>Main Guard Deck</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={guardPhone}
+                      onChangeText={setGuardPhone}
+                      placeholder="+91 00000 00000"
+                      keyboardType="phone-pad"
+                      placeholderTextColor={theme.colors.textMuted}
+                    />
+                  </View>
+                  <View style={{ width: 1, backgroundColor: '#F1F5F9' }} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.fieldLabel}>Transport Dept</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={transportPhone}
+                      onChangeText={setTransportPhone}
+                      placeholder="+91 00000 00000"
+                      keyboardType="phone-pad"
+                      placeholderTextColor={theme.colors.textMuted}
+                    />
+                  </View>
                 </View>
               </View>
             </View>

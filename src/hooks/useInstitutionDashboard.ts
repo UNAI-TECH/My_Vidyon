@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { Database } from '../types/supabase';
@@ -12,7 +13,7 @@ export interface InstitutionDashboardStats {
 
 export function useInstitutionDashboard(institutionId?: string) {
     // 1. Total Students
-    const { data: totalStudents = 0 } = useQuery({
+    const { data: totalStudents = 0, refetch: refetchStudents } = useQuery({
         queryKey: ['institution-total-students', institutionId],
         queryFn: async () => {
             if (!institutionId) return 0;
@@ -26,7 +27,7 @@ export function useInstitutionDashboard(institutionId?: string) {
     });
 
     // 2. Total Staff
-    const { data: totalStaff = 0 } = useQuery({
+    const { data: totalStaff = 0, refetch: refetchStaff } = useQuery({
         queryKey: ['institution-total-staff', institutionId],
         queryFn: async () => {
             if (!institutionId) return 0;
@@ -41,7 +42,7 @@ export function useInstitutionDashboard(institutionId?: string) {
     });
 
     // 3. Today's Attendance
-    const { data: attendanceStats = { present: 0, total: 0 } } = useQuery({
+    const { data: attendanceStats = { present: 0, total: 0 }, refetch: refetchAttendance } = useQuery({
         queryKey: ['institution-attendance-today', institutionId],
         queryFn: async () => {
             if (!institutionId) return { present: 0, total: 0 };
@@ -63,7 +64,7 @@ export function useInstitutionDashboard(institutionId?: string) {
     });
 
     // 4. Total Revenue (YTD)
-    const { data: totalRevenue = 0 } = useQuery({
+    const { data: totalRevenue = 0, refetch: refetchRevenue } = useQuery({
         queryKey: ['institution-revenue', institutionId],
         queryFn: async () => {
             if (!institutionId) return 0;
@@ -78,7 +79,7 @@ export function useInstitutionDashboard(institutionId?: string) {
     });
 
     // 5. Pending Leaves
-    const { data: pendingLeaves = 0 } = useQuery({
+    const { data: pendingLeaves = 0, refetch: refetchLeaves } = useQuery({
         queryKey: ['institution-pending-leaves', institutionId],
         queryFn: async () => {
             if (!institutionId) return 0;
@@ -97,6 +98,22 @@ export function useInstitutionDashboard(institutionId?: string) {
         },
         enabled: !!institutionId,
     });
+
+    // 6. Real-time Subscriptions
+    useEffect(() => {
+        if (!institutionId) return;
+
+        const channel = supabase.channel(`institution-dashboard-${institutionId}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'students', filter: `institution_id=eq.${institutionId}` }, () => refetchStudents())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles', filter: `institution_id=eq.${institutionId}` }, () => refetchStaff())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'student_attendance', filter: `institution_id=eq.${institutionId}` }, () => refetchAttendance())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'fee_payments', filter: `institution_id=eq.${institutionId}` }, () => refetchRevenue())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'leave_requests' }, () => refetchLeaves())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'staff_leaves', filter: `institution_id=eq.${institutionId}` }, () => refetchLeaves())
+            .subscribe();
+
+        return () => { channel.unsubscribe(); };
+    }, [institutionId]);
 
     const stats: InstitutionDashboardStats = {
         totalStudents,

@@ -28,7 +28,7 @@ export function useExamTimetable(options: {
                 query = query.eq('class_id', classId);
             }
             if (section) {
-                query = query.eq('section', section);
+                query = query.or(`section.eq.${section},section.is.null`);
             }
 
             const { data, error } = await query.order('created_at', { ascending: false });

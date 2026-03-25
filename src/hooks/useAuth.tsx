@@ -8,6 +8,7 @@ type AuthContextType = {
   role: 'admin' | 'faculty' | 'student' | 'parent' | 'institution' | 'accountant' | 'canteen' | 'superadmin' | null;
   institutionId: string | null;
   institutionUuid: string | null;
+  academicYear: string | null;
   loading: boolean;
   signOut: () => Promise<void>;
 };
@@ -18,6 +19,7 @@ const AuthContext = createContext<AuthContextType>({
   role: null,
   institutionId: null,
   institutionUuid: null,
+  academicYear: null,
   loading: true,
   signOut: async () => {},
 });
@@ -28,6 +30,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [role, setRole] = useState<AuthContextType['role']>(null);
   const [institutionId, setInstitutionId] = useState<string | null>(null);
   const [institutionUuid, setInstitutionUuid] = useState<string | null>(null);
+  const [academicYear, setAcademicYear] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const signOut = async () => {
@@ -73,16 +76,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setRole(data.role as any);
         setInstitutionId(data.institution_id);
 
-        // Fetch the proper UUID if we have a slug
+        // Fetch the proper UUID and Academic Year if we have a slug
         if (data.institution_id) {
           const { data: instData } = await supabase
             .from('institutions')
-            .select('id')
+            .select('id, academic_year, current_academic_year')
             .eq('institution_id', data.institution_id)
             .maybeSingle();
           
           if (instData) {
             setInstitutionUuid((instData as any).id);
+            setAcademicYear((instData as any).current_academic_year || (instData as any).academic_year || null);
           }
         }
       } else {
@@ -102,7 +106,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ session, user, role, institutionId, institutionUuid, loading, signOut }}>
+    <AuthContext.Provider value={{ session, user, role, institutionId, institutionUuid, academicYear, loading, signOut }}>
       {children}
     </AuthContext.Provider>
   );

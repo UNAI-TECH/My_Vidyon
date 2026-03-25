@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { Database } from '../types/supabase';
@@ -59,7 +60,7 @@ export function useStudentDashboard(authUserId?: string, institutionId?: string)
     const studentId = studentProfile?.id;
 
     // 1. Fetch Assignments for student's class
-    const { data: assignments = [], isLoading: isAssignmentsLoading } = useQuery({
+    const { data: assignments = [], refetch: refetchAssignments } = useQuery({
         queryKey: ['student-assignments', studentId, studentProfile?.class_name],
         queryFn: async () => {
             if (!studentId || !studentProfile) return [];
@@ -107,7 +108,7 @@ export function useStudentDashboard(authUserId?: string, institutionId?: string)
     });
 
     // 2. Fetch Attendance
-    const { data: attendanceRecords = [], isLoading: isAttendanceLoading } = useQuery({
+    const { data: attendanceRecords = [], refetch: refetchAttendance } = useQuery({
         queryKey: ['student-attendance', studentId],
         queryFn: async () => {
             if (!studentId) return [];
@@ -122,7 +123,7 @@ export function useStudentDashboard(authUserId?: string, institutionId?: string)
     });
 
     // 3. Fetch Grades
-    const { data: grades = [], isLoading: isGradesLoading } = useQuery({
+    const { data: grades = [], refetch: refetchGrades } = useQuery({
         queryKey: ['student-grades', studentId],
         queryFn: async () => {
             if (!studentId) return [];
@@ -136,7 +137,7 @@ export function useStudentDashboard(authUserId?: string, institutionId?: string)
     });
 
     // 4. Fetch Fees
-    const { data: fees = [], isLoading: isFeesLoading } = useQuery({
+    const { data: fees = [], refetch: refetchFees } = useQuery({
         queryKey: ['student-fees', studentId],
         queryFn: async () => {
             if (!studentId) return [];
@@ -150,7 +151,7 @@ export function useStudentDashboard(authUserId?: string, institutionId?: string)
     });
 
     // 5. Fetch Upcoming Events
-    const { data: eventsCount = 0, isLoading: isEventsLoading } = useQuery({
+    const { data: eventsCount = 0 } = useQuery({
         queryKey: ['upcoming-events', institutionId],
         queryFn: async () => {
             const now = new Date().toISOString().split('T')[0];
@@ -216,7 +217,6 @@ export function useStudentDashboard(authUserId?: string, institutionId?: string)
             let targetInstId = institutionId;
 
             // 1. Resolve Institution UUID if needed
-            console.log('Student Materials Fetch - Initial InstitutionId:', institutionId);
             if (!isUUID(institutionId)) {
                 const { data: instData } = await supabase
                     .from('institutions')
@@ -225,38 +225,22 @@ export function useStudentDashboard(authUserId?: string, institutionId?: string)
                     .maybeSingle();
                 if (instData) {
                     targetInstId = (instData as any).id;
-                    console.log('Student Materials Fetch - Resolved Institution UUID:', targetInstId);
                 } else {
-                    console.error('Student Materials Fetch - Could not resolve Institution UUID for:', institutionId);
                     return [];
                 }
             }
 
-            // 2. Resolve Class UUID from Name (Hardened)
-            console.log('Student Materials Fetch - Resolving Class:', studentProfile.class_name, 'for Inst:', targetInstId);
-            
-            // Try exact, alternative, and then fuzzy match
-            const { data: potentialClasses, error: classError } = await supabase
+            // 2. Resolve Class UUID from Name
+            const { data: potentialClasses } = await supabase
                 .from('classes')
                 .select('id, name');
             
-            if (classError) {
-                console.error('Student Materials Fetch - Error fetching classes:', classError);
-                return [];
-            }
-
-            const classMatch = (potentialClasses || []).find(c => 
+            const classMatch = (potentialClasses as any[] || []).find((c: any) => 
                 c.name.toLowerCase() === studentProfile.class_name.toLowerCase() ||
-                c.name.toLowerCase() === `class ${studentProfile.class_name.toLowerCase()}` ||
-                c.name.toLowerCase().includes(studentProfile.class_name.toLowerCase()) ||
-                studentProfile.class_name.toLowerCase().includes(c.name.toLowerCase())
+                c.name.toLowerCase() === `class ${studentProfile.class_name.toLowerCase()}`
             );
             
-            if (!classMatch) {
-                console.error('Student Materials Fetch - Could not find Class for:', studentProfile.class_name, 'among', potentialClasses?.length, 'classes');
-                return [];
-            }
-            console.log('Student Materials Fetch - Resolved Class UUID:', classMatch.id, '(', classMatch.name, ')');
+            if (!classMatch) return [];
             const classData = classMatch;
 
             // 3. Fetch materials
@@ -269,19 +253,54 @@ export function useStudentDashboard(authUserId?: string, institutionId?: string)
                 query.eq('section', studentProfile.section);
             }
 
-            const { data, error } = await query;
-            if (error) {
-                console.error('Student Materials Fetch - DB Error:', error);
-                return [];
-            }
-            console.log('Student Materials Fetch - Success. Count:', data?.length || 0);
+            const { data } = await query;
             return (data || []).map((m: any) => ({
                 ...m,
-                subject: m.subjects?.name || 'Unknown' // Map subject name for UI compatibility
+                subject: m.subjects?.name || 'Unknown'
             }));
         },
         enabled: !!studentProfile?.class_name && !!institutionId,
     });
+
+    // 9. Real-time Subscriptions
+    useEffect(() => {
+        if (!studentId) return;
+
+        const channel = supabase.channel(`student-dashboard-${studentId}`)
+            .on('postgres_changes', { 
+                event: '*', 
+                schema: 'public', 
+                table: 'assignments', 
+                filter: `class_name=eq.${studentProfile?.class_name}` 
+            }, () => refetchAssignments())
+            .on('postgres_changes', { 
+                event: '*', 
+                schema: 'public', 
+                table: 'submissions', 
+                filter: `student_id=eq.${studentId}` 
+            }, () => refetchAssignments())
+            .on('postgres_changes', { 
+                event: '*', 
+                schema: 'public', 
+                table: 'student_attendance', 
+                filter: `student_id=eq.${studentId}` 
+            }, () => refetchAttendance())
+            .on('postgres_changes', { 
+                event: '*', 
+                schema: 'public', 
+                table: 'grades', 
+                filter: `student_id=eq.${studentId}` 
+            }, () => refetchGrades())
+            .on('postgres_changes', { 
+                event: '*', 
+                schema: 'public', 
+                table: 'student_fees', 
+                filter: `student_id=eq.${studentId}` 
+            }, () => refetchFees())
+            .subscribe();
+
+        return () => { channel.unsubscribe(); };
+    }, [studentId, studentProfile?.class_name]);
 
     return {
         stats,

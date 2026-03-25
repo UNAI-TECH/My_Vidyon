@@ -16,6 +16,7 @@ import {
   Download,
   ClipboardList
 } from 'lucide-react-native';
+import { useExamTimetable } from '../../../../src/hooks/useExamTimetable';
 import { downloadAndShareFile } from '../../../../src/utils/fileUtils';
 
 export default function ParentStudentExams() {
@@ -24,7 +25,13 @@ export default function ParentStudentExams() {
   const { user } = useAuth();
 
   // 1. Fetch Student Details to get Class/Section
-  const { data: student, isLoading: isStudentLoading } = useQuery({
+  const { data: student, isLoading: isStudentLoading } = useQuery<{
+    id: string;
+    name: string;
+    class_name: string;
+    section: string;
+    institution_id: string;
+  }>({
     queryKey: ['parent-exam-student', studentId],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -33,27 +40,43 @@ export default function ParentStudentExams() {
         .eq('id', studentId)
         .single();
       if (error) throw error;
-      return data;
+      return data as any;
     },
     enabled: !!studentId
   });
 
-  // 2. Fetch Exam Schedules for this Class/Section
-  const { data: schedules = [], isLoading: isExamsLoading } = useQuery({
-    queryKey: ['parent-exams', student?.class_name, student?.section],
+  // 2. Resolve Class ID from Class Name
+  const { data: resolvedClassId } = useQuery({
+    queryKey: ['resolve-class-id', student?.class_name, student?.institution_id],
     queryFn: async () => {
-      if (!student) return [] as any[];
-      const { data, error } = await supabase
-        .from('exam_schedules')
-        .select('*')
-        .eq('class_id', (student as any).class_name) // Testing with class_name first as per schema
-        .eq('section', (student as any).section)
-        .order('created_at', { ascending: false });
+      if (!student?.class_name) return null;
+      const { data: potentialClasses } = await supabase
+        .from('classes')
+        .select('id, name')
+        .eq('institution_id', student.institution_id);
       
-      if (error) throw error;
-      return data || [];
+      if (!potentialClasses) return null;
+
+      const match = (potentialClasses as any[]).find(c => {
+         const name = (c.name || '').toLowerCase();
+         const studentClass = student.class_name.toLowerCase();
+         if (name === studentClass) return true;
+         try {
+           const parsed = JSON.parse(c.name);
+           if (parsed.name && parsed.name.toLowerCase() === studentClass) return true;
+         } catch (e) {}
+         return name.includes(studentClass) || studentClass.includes(name);
+      });
+      return (match as any)?.id || null;
     },
-    enabled: !!student
+    enabled: !!student?.class_name
+  });
+
+  // 3. Fetch Exam Schedules for this Class/Section using the standardized hook
+  const { schedules, isLoadingSchedules: isExamsLoading } = useExamTimetable({
+    institutionId: student?.institution_id,
+    classId: resolvedClassId || undefined,
+    section: student?.section || undefined
   });
 
   const [selectedSchedule, setSelectedSchedule] = useState<any>(null);
@@ -66,7 +89,7 @@ export default function ParentStudentExams() {
       const { data, error } = await supabase
         .from('exam_schedule_entries')
         .select('*')
-        .eq('schedule_id', scheduleId)
+        .eq('exam_schedule_id', scheduleId) // Fixed column name
         .order('exam_date', { ascending: true })
         .order('start_time', { ascending: true });
       
@@ -115,6 +138,16 @@ export default function ParentStudentExams() {
     }
   }, [selectedSchedule]);
 
+  const checkIsEnded = (date: string, endTime?: string) => {
+    try {
+      // Formats expected: date "YYYY-MM-DD", endTime "HH:MM" or "HH:MM:SS"
+      const examDateTime = new Date(`${date}T${endTime || '23:59:00'}`);
+      return examDateTime < new Date();
+    } catch (e) {
+      return false;
+    }
+  };
+
   if (isStudentLoading || isExamsLoading) {
     return (
       <View style={styles.centered}>
@@ -147,9 +180,14 @@ export default function ParentStudentExams() {
                     <BookOpen size={18} color={theme.colors.primary} {...({} as any)} />
                     <Text style={styles.subjectName}>{entry.subject}</Text>
                   </View>
-                  <View style={styles.dateBadge}>
+                  <View style={[
+                    styles.dateBadge, 
+                    checkIsEnded(entry.exam_date, entry.end_time) && { backgroundColor: '#EF4444' }
+                  ]}>
                     <Calendar size={12} color="white" {...({} as any)} />
-                    <Text style={styles.dateText}>{entry.exam_date}</Text>
+                    <Text style={styles.dateText}>
+                      {entry.exam_date} {checkIsEnded(entry.exam_date, entry.end_time) && " (Ended)"}
+                    </Text>
                   </View>
                 </View>
 
@@ -292,8 +330,9 @@ const styles = StyleSheet.create({
   materialCard: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#F1F5F9', padding: 8, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0' },
   materialName: { flex: 1, fontSize: 11, fontWeight: '600', color: theme.colors.text },
 
-  empty: { alignItems: 'center', marginTop: 100, gap: 12 },
-  emptySub: { fontSize: 14, color: theme.colors.textMuted, textAlign: 'center' },
+  empty: { alignItems: 'center', marginTop: 100, gap: 16 },
+  emptyTitle: { fontSize: 20, fontWeight: 'bold', color: theme.colors.text },
+  emptySub: { fontSize: 14, color: theme.colors.textMuted, textAlign: 'center', paddingHorizontal: 40 },
 
   resultContainer: { marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: '#F1F5F9' },
   resultHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },

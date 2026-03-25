@@ -5,8 +5,9 @@ import { PageHeader } from '../../../../src/components/common/PageHeader';
 import { useAuth } from '../../../../src/hooks/useAuth';
 import { useInstitutionUsers } from '../../../../src/hooks/useInstitutionUsers';
 import { 
-  Users, Search, Plus, UserMinus, UserCheck, ChevronRight, Filter, Download, X, Edit2, Save, ChevronDown, Copy, Check, CheckCircle
+  Users, Search, Plus, UserMinus, UserCheck, ChevronRight, Filter, Download, X, Edit2, Save, ChevronDown, Copy, Check, CheckCircle, Camera
 } from 'lucide-react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { Badge } from '../../../../src/components/common/Badge';
 import { AlertModal } from '../../../../src/components/common/AlertModal';
 import { CalendarModal } from '../../../../src/components/common/CalendarPicker';
@@ -31,8 +32,11 @@ export default function UserManagementScreen() {
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isPhotoUploading, setIsPhotoUploading] = useState(false);
   const [editForm, setEditForm] = useState<any>({});
   const [copied, setCopied] = useState(false);
+  const [pendingPhoto, setPendingPhoto] = useState<string | null>(null);
+  const [showPhotoPreview, setShowPhotoPreview] = useState(false);
 
   const [availableClasses, setAvailableClasses] = useState<any[]>([]);
   const [availableDepartments, setAvailableDepartments] = useState<string[]>([]);
@@ -211,6 +215,86 @@ export default function UserManagementScreen() {
     setIsModalVisible(true);
   };
 
+  const handlePhotoUpdate = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: false,
+        quality: 0.7,
+      });
+
+      if (result.canceled || !result.assets[0]) return;
+
+      // Show preview modal instead of directly uploading
+      setPendingPhoto(result.assets[0].uri);
+      setShowPhotoPreview(true);
+    } catch (error: any) {
+      console.error('Photo pick error:', error);
+      showAlert("Error", "Failed to pick photo: " + error.message, "error");
+    }
+  };
+
+  const confirmPhotoUpload = async () => {
+    if (!pendingPhoto) return;
+    setShowPhotoPreview(false);
+
+    try {
+      setIsPhotoUploading(true);
+      const uri = pendingPhoto;
+      const fileExt = uri.split('.').pop();
+      const fileName = `${selectedUser.id}_${Date.now()}.${fileExt}`;
+      const filePath = `avatars/${activeTab}/${fileName}`;
+
+      const formData = new FormData();
+      formData.append('file', {
+        uri,
+        name: fileName,
+        type: `image/${fileExt}`,
+      } as any);
+
+      // 1. Upload new image
+      const { data, error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, formData);
+
+      if (uploadError) throw uploadError;
+
+      // 2. Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(filePath);
+
+      // 3. Delete old image if it exists in our storage
+      const oldUrl = editForm.image_url;
+      if (oldUrl && oldUrl.includes('supabase.co')) {
+        try {
+          const urlParts = oldUrl.split('avatars/');
+          if (urlParts.length > 1) {
+            const oldPath = urlParts[1].split('?')[0];
+            await supabase.storage.from('avatars').remove([oldPath]);
+            console.log('Cleaned up old avatar:', oldPath);
+          }
+        } catch (cleanupErr) {
+          console.error('Failed to cleanup old avatar:', cleanupErr);
+        }
+      }
+
+      setEditForm({ ...editForm, image_url: publicUrl });
+      showAlert("Success", "Photo uploaded! Don't forget to save changes.", "success");
+    } catch (error: any) {
+      console.error('Photo update error:', error);
+      showAlert("Error", "Failed to upload photo: " + error.message, "error");
+    } finally {
+      setIsPhotoUploading(false);
+      setPendingPhoto(null);
+    }
+  };
+
+  const cancelPhotoUpload = () => {
+    setPendingPhoto(null);
+    setShowPhotoPreview(false);
+  };
+
   const handleUpdate = async () => {
     if (!selectedUser) return;
     setIsUpdating(true);
@@ -239,6 +323,11 @@ export default function UserManagementScreen() {
       updates.dob = editForm.dob;
       updates.staff_id = editForm.staff_id;
       updates.department = editForm.department;
+    }
+
+    // Common updates
+    if (editForm.image_url !== selectedUser.image_url && editForm.image_url !== selectedUser.profile_image_url && editForm.image_url !== selectedUser.avatar_url) {
+      updates.image_url = editForm.image_url;
     }
 
     const res = await updateUser(selectedUser.id, type, updates);
@@ -423,13 +512,22 @@ export default function UserManagementScreen() {
               contentContainerStyle={styles.modalScrollContent}
             >
               <View style={styles.modalAvatarContainer}>
-                <View style={styles.largeAvatar}>
-                  {editForm.image_url ? (
+                <TouchableOpacity 
+                  style={styles.largeAvatar} 
+                  onPress={handlePhotoUpdate}
+                  disabled={isPhotoUploading}
+                >
+                  {isPhotoUploading ? (
+                    <ActivityIndicator color={theme.colors.primary} />
+                  ) : editForm.image_url ? (
                     <Image source={{ uri: editForm.image_url }} style={styles.largeAvatarImage} />
                   ) : (
                     <Text style={styles.largeAvatarText}>{(editForm.name || 'U')[0]}</Text>
                   )}
-                </View>
+                  <View style={styles.avatarOverlay}>
+                    <Camera size={20} color="white" {...({} as any)} />
+                  </View>
+                </TouchableOpacity>
                 <Text style={styles.modalName}>{editForm.name}</Text>
                 <View style={styles.emailContainer}>
                   <Text style={styles.modalSub}>{editForm.email}</Text>
@@ -681,6 +779,28 @@ export default function UserManagementScreen() {
         </View>
       </Modal>
 
+      {/* Photo Preview Modal */}
+      <Modal visible={showPhotoPreview} transparent animationType="fade" onRequestClose={cancelPhotoUpload}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 32 }}>
+          <View style={{ backgroundColor: 'white', borderRadius: 24, width: '100%', maxWidth: 360, overflow: 'hidden' }}>
+            <Text style={{ fontSize: 18, fontWeight: 'bold', color: theme.colors.text, textAlign: 'center', paddingTop: 24, paddingBottom: 12 }}>Preview Photo</Text>
+            <View style={{ alignItems: 'center', paddingVertical: 20, paddingHorizontal: 24 }}>
+              {pendingPhoto && (
+                <Image source={{ uri: pendingPhoto }} style={{ width: 180, height: 180, borderRadius: 90, borderWidth: 3, borderColor: theme.colors.primary + '30' }} />
+              )}
+            </View>
+            <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#F1F5F9' }}>
+              <TouchableOpacity style={{ flex: 1, paddingVertical: 16, alignItems: 'center', borderRightWidth: 1, borderRightColor: '#F1F5F9' }} onPress={cancelPhotoUpload}>
+                <Text style={{ fontSize: 16, fontWeight: '600', color: '#EF4444' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={{ flex: 1, paddingVertical: 16, alignItems: 'center' }} onPress={confirmPhotoUpload}>
+                <Text style={{ fontSize: 16, fontWeight: 'bold', color: theme.colors.primary }}>Submit</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <AlertModal
         visible={alertConfig.visible}
         title={alertConfig.title}
@@ -742,7 +862,8 @@ const styles = StyleSheet.create({
   modalBody: { flex: 1 },
   modalScrollContent: { padding: 24, paddingBottom: 40 },
   modalAvatarContainer: { alignItems: 'center', marginBottom: 32 },
-  largeAvatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', marginBottom: 16, borderWidth: 4, borderColor: 'white', elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, overflow: 'hidden' },
+  largeAvatar: { width: 100, height: 100, borderRadius: 50, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', marginBottom: 16, borderWidth: 4, borderColor: 'white', elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, overflow: 'hidden', position: 'relative' },
+  avatarOverlay: { position: 'absolute', bottom: 0, right: 0, backgroundColor: theme.colors.primary, width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'white' },
   largeAvatarImage: { width: '100%', height: '100%' },
   largeAvatarText: { fontSize: 32, fontWeight: 'bold', color: theme.colors.primary },
   modalName: { fontSize: 24, fontWeight: 'bold', color: theme.colors.text },

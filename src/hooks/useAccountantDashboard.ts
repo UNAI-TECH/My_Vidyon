@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { Database } from '../types/supabase';
 
@@ -12,11 +13,14 @@ export interface AccountantDashboardStats {
     transactionCount: number;
     recentPayments: FeePayment[];
     accountantProfile: { full_name: string; image_url: string | null } | null;
+    feeDistribution: { name: string; value: number; color: string }[];
 }
 
 export function useAccountantDashboard(institutionId?: string) {
-    // 1. Total Revenue (YTD)
-    const { data: totalRevenue = 0 } = useQuery({
+    const queryClient = useQueryClient();
+
+    // 1. Total Revenue (YTD) - Sum from fee_payments
+    const { data: totalRevenue = 0, refetch: refetchRevenue } = useQuery({
         queryKey: ['accountant-revenue', institutionId],
         queryFn: async () => {
             if (!institutionId) return 0;
@@ -30,8 +34,8 @@ export function useAccountantDashboard(institutionId?: string) {
         enabled: !!institutionId,
     });
 
-    // 2. Outstanding Amount
-    const { data: outstandingAmount = 0 } = useQuery({
+    // 2. Outstanding Amount - Sum amount_due from student_fees
+    const { data: outstandingAmount = 0, refetch: refetchOutstanding } = useQuery({
         queryKey: ['accountant-outstanding', institutionId],
         queryFn: async () => {
             if (!institutionId) return 0;
@@ -45,8 +49,42 @@ export function useAccountantDashboard(institutionId?: string) {
         enabled: !!institutionId,
     });
 
-    // 3. Transaction Count
-    const { data: transactionCount = 0 } = useQuery({
+    // 3. Fee Distribution Logic
+    const { data: feeDistributionRaw = [], refetch: refetchDistribution } = useQuery({
+        queryKey: ['accountant-fee-dist', institutionId],
+        queryFn: async () => {
+            if (!institutionId) return [];
+            const { data } = await supabase
+                .from('student_fees')
+                .select('status, amount_paid, amount_due')
+                .eq('institution_id', institutionId);
+            return (data || []) as any[];
+        },
+        enabled: !!institutionId
+    });
+
+    const feeDistribution = useMemo(() => {
+        let paid = 0;
+        let pending = 0;
+        let overdue = 0;
+
+        feeDistributionRaw.forEach(f => {
+            const p = f.amount_paid || 0;
+            const d = f.amount_due || 0;
+            if (f.status === 'overdue') overdue++;
+            else if (d > p) pending++;
+            else if (d > 0) paid++;
+        });
+
+        return [
+            { name: 'Paid', value: paid, color: '#10B981' },
+            { name: 'Pending', value: pending, color: '#F59E0B' },
+            { name: 'Overdue', value: overdue, color: '#EF4444' },
+        ].filter(i => i.value > 0);
+    }, [feeDistributionRaw]);
+
+    // 4. Transaction Count
+    const { data: transactionCount = 0, refetch: refetchTransCount } = useQuery({
         queryKey: ['accountant-transactions-count', institutionId],
         queryFn: async () => {
             if (!institutionId) return 0;
@@ -59,8 +97,8 @@ export function useAccountantDashboard(institutionId?: string) {
         enabled: !!institutionId,
     });
 
-    // 4. Recent Payments
-    const { data: recentPayments = [] } = useQuery({
+    // 5. Recent Payments
+    const { data: recentPayments = [], refetch: refetchRecent } = useQuery({
         queryKey: ['accountant-recent-payments', institutionId],
         queryFn: async () => {
             if (!institutionId) return [];
@@ -80,14 +118,36 @@ export function useAccountantDashboard(institutionId?: string) {
         enabled: !!institutionId,
     });
 
-    const stats = {
-        totalRevenue,
-        outstandingAmount,
-        transactionCount,
-        recentPayments,
-    };
+    // 6. Real-time Subscriptions
+    useEffect(() => {
+        if (!institutionId) return;
 
-    // 5. Fetch Institution Logo/Name
+        const channel = supabase.channel(`accountant-dashboard-${institutionId}`)
+            .on('postgres_changes', { 
+                event: '*', 
+                schema: 'public', 
+                table: 'fee_payments', 
+                filter: `institution_id=eq.${institutionId}` 
+            }, () => {
+                refetchRevenue();
+                refetchTransCount();
+                refetchRecent();
+            })
+            .on('postgres_changes', { 
+                event: '*', 
+                schema: 'public', 
+                table: 'student_fees', 
+                filter: `institution_id=eq.${institutionId}` 
+            }, () => {
+                refetchOutstanding();
+                refetchDistribution();
+            })
+            .subscribe();
+
+        return () => { channel.unsubscribe(); };
+    }, [institutionId]);
+
+    // 7. Fetch Institution Logo/Name
     const { data: institution = null } = useQuery({
         queryKey: ['accountant-institution', institutionId],
         queryFn: async () => {
@@ -102,7 +162,7 @@ export function useAccountantDashboard(institutionId?: string) {
         enabled: !!institutionId,
     });
 
-    // 6. Fetch Accountant Profile
+    // 8. Fetch Accountant Profile
     const { data: accountantProfile = null } = useQuery({
         queryKey: ['accountant-profile', institutionId],
         queryFn: async () => {
@@ -118,7 +178,14 @@ export function useAccountantDashboard(institutionId?: string) {
     });
 
     return {
-        stats: { ...stats, accountantProfile },
+        stats: {
+            totalRevenue,
+            outstandingAmount,
+            transactionCount,
+            recentPayments,
+            feeDistribution,
+            accountantProfile
+        },
         institution,
         isLoading: false,
     };

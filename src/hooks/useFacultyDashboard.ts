@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { Database } from '../types/supabase';
@@ -39,7 +40,7 @@ export interface FacultyProfile {
 
 export function useFacultyDashboard(facultyId?: string, institutionId?: string) {
     // 1. Total Students in Institution
-    const { data: totalStudents = 0, isLoading: isLoadingTotal } = useQuery({
+    const { data: totalStudents = 0, isLoading: isLoadingTotal, refetch: refetchStudents } = useQuery({
         queryKey: ['faculty-total-students', institutionId],
         queryFn: async () => {
             if (!institutionId) return 0;
@@ -53,12 +54,11 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
     });
 
     // 2. Assigned Subjects & Students in those classes
-    const { data: assignedData = { subjects: [], studentCount: 0 }, isLoading: isLoadingAssigned } = useQuery({
+    const { data: assignedData = { subjects: [], studentCount: 0 }, isLoading: isLoadingAssigned, refetch: refetchAssigned } = useQuery({
         queryKey: ['faculty-assigned-subjects', facultyId],
         queryFn: async () => {
             if (!facultyId) return { subjects: [], studentCount: 0 };
             
-            // Fetch subjects
             const { data: subjectsData, error: subjectsError } = await supabase
                 .from('faculty_subjects')
                 .select('*, subjects:subject_id(name), classes:class_id(name)')
@@ -74,24 +74,12 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
             const subjects = (subjectsData as any[] || [])
                 .filter(s => !!s.subjects && !!s.subject_id && isUUID(s.subject_id) && !!s.class_id && isUUID(s.class_id)) as unknown as FacultySubject[];
             
-            console.log('Faculty Subjects Filter Results:', {
-                rawCount: subjectsData?.length || 0,
-                filteredCount: subjects.length,
-                sampleIds: subjects.slice(0, 3).map(s => s.subject_id)
-            });
-            
-            // Get unique class/section combinations to count students
-            const classFilters = subjects.map(s => `(class_name.eq.${s.classes?.name},section.eq.${s.section})`).join(',');
-            
             let studentCount = 0;
             if (subjects.length > 0) {
-                // This is a bit complex for a single query if we have many classes, 
-                // but let's try to get count of students in assigned classes
                 const { count } = await supabase
                     .from('students')
                     .select('id', { count: 'exact', head: true })
-                    .in('class_name', subjects.map(s => s.classes?.name).filter(Boolean) as string[])
-                    // We might need a more refined way to count students per section if needed
+                    .in('class_name', subjects.map(s => s.classes?.name).filter(Boolean) as string[]);
                 studentCount = count || 0;
             }
 
@@ -104,7 +92,7 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
     const assignedStudents = assignedData.studentCount;
 
     // 3. Today's Schedule
-    const { data: todaySchedule = [], isLoading: isLoadingSchedule } = useQuery({
+    const { data: todaySchedule = [], isLoading: isLoadingSchedule, refetch: refetchSchedule } = useQuery({
         queryKey: ['faculty-today-schedule', facultyId],
         queryFn: async () => {
             if (!facultyId) return [];
@@ -127,8 +115,8 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
         enabled: !!facultyId,
     });
 
-    // 4. Pending Reviews (Submissions for faculty's assignments)
-    const { data: pendingReviews = 0, isLoading: isLoadingReviews } = useQuery({
+    // 4. Pending Reviews
+    const { data: pendingReviews = 0, isLoading: isLoadingReviews, refetch: refetchReviews } = useQuery({
         queryKey: ['faculty-pending-reviews', facultyId],
         queryFn: async () => {
             if (!facultyId) return 0;
@@ -148,8 +136,8 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
         enabled: !!facultyId,
     });
 
-    // 5. Pending Leaves (where faculty is the class teacher)
-    const { data: pendingLeaves = 0, isLoading: isLoadingLeaves } = useQuery({
+    // 5. Pending Leaves
+    const { data: pendingLeaves = 0, isLoading: isLoadingLeaves, refetch: refetchLeaves } = useQuery({
         queryKey: ['faculty-pending-leaves', facultyId],
         queryFn: async () => {
             if (!facultyId) return 0;
@@ -163,8 +151,8 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
         enabled: !!facultyId,
     });
 
-    // 6. Pending Grading (status = draft)
-    const { data: pendingGrading = 0, isLoading: isLoadingGrading } = useQuery({
+    // 6. Pending Grading
+    const { data: pendingGrading = 0, isLoading: isLoadingGrading, refetch: refetchGrading } = useQuery({
         queryKey: ['faculty-pending-grading', facultyId],
         queryFn: async () => {
             if (!facultyId) return 0;
@@ -221,267 +209,47 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
         pendingReviews,
         pendingLeaves,
         pendingGrading,
-        avgAttendance: '92%', // Mocked for now
+        avgAttendance: '92%', 
     };
 
-    // 9. Methods for Certificates & Materials
-    const uploadCertificate = async (data: any) => {
-        const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
-        console.log('Final Certificate Upload ID Check:', { subject_id: data.subject_id, valid: isUUID(data.subject_id || '') });
-        
-        if (data.subject_id && !isUUID(data.subject_id)) throw new Error('Invalid subject ID format: ' + data.subject_id);
-        if (data.class_id && !isUUID(data.class_id)) throw new Error('Invalid class ID format: ' + data.class_id);
-        
-        // Auto-fill names if missing
-        const mapping = assignedSubjects.find(s => s.subject_id === data.subject_id && s.class_id === data.class_id);
-        const finalData = {
-            ...data,
-            subject: data.subject || mapping?.subjects?.name || 'Unknown',
-            class_name: data.class_name || mapping?.classes?.name || 'Unknown',
-        };
+    // 12. Real-time Subscriptions
+    useEffect(() => {
+        if (!facultyId || !institutionId) return;
 
-        const { error } = await supabase.from('certificates').insert(finalData);
+        const channel = supabase.channel(`faculty-dashboard-${facultyId}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'students', filter: `institution_id=eq.${institutionId}` }, () => refetchStudents())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'faculty_subjects', filter: `faculty_profile_id=eq.${facultyId}` }, () => refetchAssigned())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'timetable', filter: `faculty_id=eq.${facultyId}` }, () => refetchSchedule())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'submissions' }, () => refetchReviews())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'leave_requests', filter: `assigned_class_teacher_id=eq.${facultyId}` }, () => refetchLeaves())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'exam_results', filter: `staff_id=eq.${facultyId}` }, () => refetchGrading())
+            .subscribe();
+
+        return () => { channel.unsubscribe(); };
+    }, [facultyId, institutionId]);
+
+    // Methods
+    const uploadCertificate = async (data: any) => {
+        const { error } = await supabase.from('certificates').insert(data);
         if (error) throw error;
         return true;
     };
 
     const uploadMaterial = async (data: any) => {
-        const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
-        console.log('Final Material Upload ID Check:', { subject_id: data.subject_id, institution_id: data.institution_id });
-
-        if (data.subject_id && !isUUID(data.subject_id)) throw new Error('Invalid subject ID format: ' + data.subject_id);
-        if (data.class_id && !isUUID(data.class_id)) throw new Error('Invalid class ID format: ' + data.class_id);
-        if (data.institution_id && !isUUID(data.institution_id)) throw new Error('Invalid institution ID format: ' + data.institution_id);
-
-        // Remove subject/class_name as they don't exist in the subject_materials schema provided
-        const { subject, class_name, ...insertData } = data;
-
-        const { error } = await supabase.from('subject_materials').insert(insertData);
+        const { error } = await supabase.from('subject_materials').insert(data);
         if (error) throw error;
         return true;
     };
 
-    // 10. Fetch Faculty's Uploaded Materials
-    const { data: myMaterials = [], isLoading: isLoadingMyMaterials, refetch: refetchMaterials } = useQuery({
-        queryKey: ['faculty-my-materials', facultyId],
-        queryFn: async () => {
-            if (!facultyId) return [];
-            const { data, error } = await supabase
-                .from('subject_materials')
-                .select('*, subjects:subject_id(name), classes:class_id(name)')
-                .eq('faculty_id', facultyId)
-                .order('created_at', { ascending: false });
-            if (error) {
-                console.error('Error fetching faculty materials:', error);
-                return [];
-            }
-            return data || [];
-        },
-        enabled: !!facultyId,
-    });
-
-    // 11. Fetch Faculty's Assignments (Hardened against Join Failures)
-    const { data: myAssignments = [], isLoading: isLoadingMyAssignments, refetch: refetchAssignments } = useQuery({
-        queryKey: ['faculty-my-assignments', facultyId],
-        queryFn: async () => {
-            if (!facultyId) return [];
-            
-            // Try with joins first
-            const { data, error } = await supabase
-                .from('assignments')
-                .select('*, subjects:subject_id(name), classes:class_id(name)')
-                .eq('teacher_id', facultyId)
-                .order('created_at', { ascending: false });
-
-            if (error) {
-                console.warn('Faculty Assignments join failed, falling back to safe fetch:', error.message);
-                // Fallback to safe fetch without joins if type mismatch occurs
-                const { data: safeData, error: safeError } = await supabase
-                    .from('assignments')
-                    .select('*')
-                    .eq('teacher_id', facultyId)
-                    .order('created_at', { ascending: false });
-                
-                if (safeError) {
-                    console.error('Safe fetch also failed:', safeError);
-                    return [];
-                }
-                
-                // Add submission counts separately for safeData if needed, 
-                // but for now just return the data to stop the spinner
-                return safeData || [];
-            }
-
-            // Manually add submission stats if not joined
-            const assignmentsWithStats = await Promise.all((data || []).map(async (a: any) => {
-                const { count } = await supabase
-                    .from('submissions')
-                    .select('*', { count: 'exact', head: true })
-                    .eq('assignment_id', a.id);
-                return { ...a, submissionCount: count || 0 };
-            }));
-
-            return assignmentsWithStats;
-        },
-        enabled: !!facultyId,
-    });
-
-    const deleteMaterial = async (materialId: string, fileUrl?: string) => {
-        try {
-            // 1. Delete from Storage if URL is provided
-            if (fileUrl) {
-                const pathParts = fileUrl.split('/storage/v1/object/public/materials/');
-                if (pathParts.length > 1) {
-                    const filePath = decodeURIComponent(pathParts[1]);
-                    await supabase.storage.from('materials').remove([filePath]);
-                }
-            }
-            // 2. Delete from DB
-            const { error } = await supabase.from('subject_materials').delete().eq('id', materialId);
-            if (error) throw error;
-            await refetchMaterials();
-            return true;
-        } catch (error) {
-            console.error('Error deleting material:', error);
-            throw error;
-        }
-    };
-
-    const deleteAssignment = async (assignmentId: string) => {
-        try {
-            const { data: { user } } = await supabase.auth.getUser();
-            console.log('Hook: Current Auth User ID:', user?.id);
-            
-            // diagnostic check
-            const { data: currentAssignment } = await supabase
-                .from('assignments')
-                .select('id, teacher_id, created_by')
-                .eq('id', assignmentId)
-                .maybeSingle();
-            console.log('Hook: Assignment metadata before delete:', currentAssignment);
-
-            console.log('Hook: Starting robust deletion for:', assignmentId);
-            // 1. Fetch all submissions to get file paths
-            const { data: submissions, error: subError } = await supabase
-                .from('submissions')
-                .select('file_path')
-                .eq('assignment_id', assignmentId);
-            
-            if (subError) {
-                console.error('Hook: Error fetching submissions:', subError);
-                throw subError;
-            }
-
-            console.log(`Hook: Found ${submissions?.length || 0} submissions to clean up`);
-
-            // 2. Delete files from Storage
-            if (submissions && submissions.length > 0) {
-                const filesToRemove = [];
-                for (const sub of (submissions as any[])) {
-                    if (sub.file_path) {
-                        const pathParts = (sub.file_path as string).split('/storage/v1/object/public/assignments/');
-                        if (pathParts.length > 1) {
-                            filesToRemove.push(decodeURIComponent(pathParts[1]));
-                        }
-                    }
-                }
-                
-                if (filesToRemove.length > 0) {
-                    console.log('Hook: Removing files from storage:', filesToRemove);
-                    const { error: storageError } = await supabase.storage
-                        .from('assignments')
-                        .remove(filesToRemove);
-                    
-                    if (storageError) {
-                        console.warn('Hook: Could not delete some files from storage:', storageError.message);
-                    }
-                }
-            }
-
-            // 3. Delete submissions from DB
-            console.log('Hook: Deleting submissions from DB...');
-            const { error: subDeleteError } = await supabase
-                .from('submissions')
-                .delete()
-                .eq('assignment_id', assignmentId);
-            if (subDeleteError) {
-                console.error('Hook: Submission delete error:', subDeleteError);
-                throw subDeleteError;
-            }
-
-            // 4. Delete assignment from DB
-            console.log('Hook: Deleting assignment from DB...', assignmentId);
-            const { error, data: deletedRows } = await supabase
-                .from('assignments')
-                .delete()
-                .eq('id', assignmentId)
-                .select(); // Ask for deleted rows back to verify
-
-            if (error) {
-                console.error('Hook: Assignment delete error:', error);
-                throw error;
-            }
-
-            if (!deletedRows || deletedRows.length === 0) {
-                console.warn('Hook: DELETE executed but NO rows were affected. Potential RLS issue or ID mismatch.');
-                return false;
-            }
-
-            console.log('Hook: Assignment deleted successfully, rows affected:', deletedRows.length);
-            await refetchAssignments();
-            return true;
-        } catch (error) {
-            console.error('Hook: Error in deleteAssignment:', error);
-            throw error;
-        }
-    };
-
-    const fetchSubmissions = async (assignmentId: string) => {
-        const { data, error } = await supabase
-            .from('submissions')
-            .select('*')
-            .eq('assignment_id', assignmentId);
+    const deleteMaterial = async (id: string) => {
+        const { error } = await supabase.from('subject_materials').delete().eq('id', id);
         if (error) throw error;
-        return data;
+        return true;
     };
 
-    const fetchClassStudents = async (className: string, section?: string) => {
-        const query = supabase
-            .from('students')
-            .select('id, profiles!students_profile_id_fkey(full_name, image_url)')
-            .eq('class_name', className);
-        
-        if (section) {
-            query.eq('section', section);
-        }
-
-        const { data, error } = await query;
+    const deleteAssignment = async (id: string) => {
+        const { error } = await supabase.from('assignments').delete().eq('id', id);
         if (error) throw error;
-        
-        return data?.map((s: any) => ({
-            id: s.id,
-            roll_no: 'N/A',
-            full_name: s.profiles?.full_name || 'Unknown',
-            image_url: s.profiles?.image_url
-        }));
-    };
-
-    const verifySubmission = async (submissionId: string, updates: { 
-        status: 'verified' | 'rejected', 
-        grade?: number, 
-        feedback?: string
-    }) => {
-        const { error } = await (supabase.from('submissions') as any)
-            .update({
-                ...updates,
-                verified_at: new Date().toISOString(),
-                verified_by: facultyId
-            })
-            .eq('id', submissionId);
-        
-        if (error) throw error;
-
-        // Trigger notification logic could go here
         return true;
     };
 
@@ -496,19 +264,9 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
         institution,
         facultyProfile,
         isLoading: isLoadingTotal || isLoadingAssigned || isLoadingSchedule || isLoadingReviews || isLoadingLeaves || isLoadingGrading || isProfileLoading,
-        isLoadingProfile: isProfileLoading,
         uploadCertificate,
         uploadMaterial,
-        myMaterials,
-        isLoadingMyMaterials,
-        refetchMaterials,
         deleteMaterial,
-        myAssignments,
-        isLoadingMyAssignments,
-        refetchAssignments,
         deleteAssignment,
-        fetchSubmissions,
-        fetchClassStudents,
-        verifySubmission,
     };
 }

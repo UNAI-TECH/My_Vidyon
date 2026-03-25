@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, Image } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, Image, Modal } from 'react-native';
 import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
 import { 
@@ -19,7 +19,7 @@ import {
   ChevronDown,
   ChevronUp
 } from 'lucide-react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { supabase } from '../../../../src/lib/supabase';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -59,8 +59,13 @@ export default function InstitutionOnboarding() {
     phone: '',
     academic_year: '2025-26',
     school_code: '',
+    office_phone: '',
+    guard_phone: '',
+    transport_phone: '',
   });
   const [logo, setLogo] = useState<string | null>(null);
+  const [pendingLogo, setPendingLogo] = useState<string | null>(null);
+  const [showLogoPreview, setShowLogoPreview] = useState(false);
   
   const [adminInfo, setAdminInfo] = useState({
     email: '',
@@ -116,11 +121,37 @@ export default function InstitutionOnboarding() {
 
   const showAlert = (title: string, message: string, type: any = 'info', onClose?: () => void, buttons?: any[]) => {
     setAlert({ visible: true, title, message, type, onClose, buttons });
-  };  useEffect(() => {
-    if (isEditMode && id) {
-      fetchInstitutionData();
-    }
-  }, [isEditMode, id]);
+  };  useFocusEffect(
+    useCallback(() => {
+      if (isEditMode && id) {
+        fetchInstitutionData();
+      } else if (!isEditMode && !isSecurityMode) {
+        // Reset all form state for fresh "New Onboarding"
+        setBasicInfo({
+          name: '',
+          type: 'school',
+          address: '',
+          city: '',
+          state: '',
+          email: '',
+          phone: '',
+          academic_year: '2025-26',
+          school_code: '',
+          office_phone: '',
+          guard_phone: '',
+          transport_phone: '',
+        });
+        setLogo(null);
+        setPendingLogo(null);
+        setAdminInfo({ email: '', password: '' });
+        setStructure([]);
+        setSubjects([]);
+        setCurrentStep(1);
+        setCredentialsVerified(false);
+        setShowSecurityFields(false);
+      }
+    }, [isEditMode, id])
+  );
 
   const fetchInstitutionData = async () => {
     try {
@@ -143,6 +174,9 @@ export default function InstitutionOnboarding() {
           phone: data.phone,
           academic_year: data.current_academic_year || '2025-26',
           school_code: data.institution_id,
+          office_phone: data.office_phone || '',
+          guard_phone: data.guard_phone || '',
+          transport_phone: data.transport_phone || '',
         });
         setLogo(data.logo_url);
         setExistingCreds({
@@ -165,14 +199,25 @@ export default function InstitutionOnboarding() {
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
+      allowsEditing: false,
       quality: 0.5,
     });
 
     if (!result.canceled) {
-      setLogo(result.assets[0].uri);
+      setPendingLogo(result.assets[0].uri);
+      setShowLogoPreview(true);
     }
+  };
+
+  const confirmLogo = () => {
+    setLogo(pendingLogo);
+    setPendingLogo(null);
+    setShowLogoPreview(false);
+  };
+
+  const cancelLogo = () => {
+    setPendingLogo(null);
+    setShowLogoPreview(false);
   };
 
   const renderStepIndicator = () => (
@@ -294,6 +339,41 @@ export default function InstitutionOnboarding() {
           value={basicInfo.email}
           onChangeText={(v) => setBasicInfo({...basicInfo, email: v})}
         />
+      </View>
+
+      <Text style={[styles.sectionTitle, { marginTop: 12 }]}>Emergency Contacts</Text>
+      <View style={styles.field}>
+        <Text style={styles.label}>School Office Phone</Text>
+        <TextInput 
+          style={styles.input} 
+          placeholder="+91 00000 00000"
+          keyboardType="phone-pad"
+          value={basicInfo.office_phone}
+          onChangeText={(v) => setBasicInfo({...basicInfo, office_phone: v})}
+        />
+      </View>
+
+      <View style={styles.grid}>
+        <View style={[styles.field, { flex: 1 }]}>
+          <Text style={styles.label}>Main Guard Deck</Text>
+          <TextInput 
+            style={styles.input} 
+            placeholder="+91 00000 00000"
+            keyboardType="phone-pad"
+            value={basicInfo.guard_phone}
+            onChangeText={(v) => setBasicInfo({...basicInfo, guard_phone: v})}
+          />
+        </View>
+        <View style={[styles.field, { flex: 1 }]}>
+          <Text style={styles.label}>Transport Dept</Text>
+          <TextInput 
+            style={styles.input} 
+            placeholder="+91 00000 00000"
+            keyboardType="phone-pad"
+            value={basicInfo.transport_phone}
+            onChangeText={(v) => setBasicInfo({...basicInfo, transport_phone: v})}
+          />
+        </View>
       </View>
     </View>
   );
@@ -504,22 +584,24 @@ export default function InstitutionOnboarding() {
 
   const renderStructure = () => (
     <View style={styles.formContainer}>
-      <View style={[styles.flexRow, { justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }]}>
-        <Text style={styles.sectionTitle}>Groups & Classes</Text>
-        <TouchableOpacity style={{ backgroundColor: '#FDE68A', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 6 }} onPress={addGroup}>
-          <Plus size={16} color="#B45309" />
-          <Text style={{ color: '#B45309', fontWeight: '600', fontSize: 13 }}>Add Custom Group</Text>
+      <View style={[styles.flexRow, { justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }]}>
+        <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Groups & Classes</Text>
+        <TouchableOpacity style={{ backgroundColor: '#FDE68A', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 4 }} onPress={addGroup}>
+          <Plus size={14} color="#B45309" />
+          <Text style={{ color: '#B45309', fontWeight: '600', fontSize: 12 }}>Add Group</Text>
         </TouchableOpacity>
       </View>
 
-      <TouchableOpacity onPress={applyDefault} style={{ backgroundColor: '#F8FAFC', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <View>
-          <Text style={{ fontWeight: '600' }}>Quick Setup</Text>
-          <Text style={{ color: theme.colors.textMuted, fontSize: 12 }}>Apply a standard school template to get started faster</Text>
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#F1F5F9', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 }}>
-          <School size={16} color={theme.colors.text} />
-          <Text style={{ fontWeight: '500' }}>Apply Default Structure</Text>
+      <TouchableOpacity onPress={applyDefault} style={{ backgroundColor: '#F8FAFC', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 24 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <View style={{ flex: 1, marginRight: 8 }}>
+            <Text style={{ fontWeight: '600', fontSize: 14 }}>Quick Setup</Text>
+            <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>Apply a standard school template</Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#F1F5F9', paddingHorizontal: 8, paddingVertical: 6, borderRadius: 6 }}>
+            <School size={14} color={theme.colors.text} />
+            <Text style={{ fontWeight: '500', fontSize: 11 }}>Apply</Text>
+          </View>
         </View>
       </TouchableOpacity>
 
@@ -959,8 +1041,16 @@ export default function InstitutionOnboarding() {
           email: basicInfo.email,
           phone: basicInfo.phone,
           current_academic_year: basicInfo.academic_year,
+          academic_year: basicInfo.academic_year,
           logo_url: finalLogoUrl,
-          status: isEditMode ? undefined : 'active'
+          office_phone: basicInfo.office_phone,
+          guard_phone: basicInfo.guard_phone,
+          transport_phone: basicInfo.transport_phone,
+          // Only set status on new creation; omit it entirely on edit to preserve existing value
+          ...(isEditMode ? {} : { status: 'active' }),
+          // Include admin credentials during new creation
+          ...(!isEditMode && adminInfo.email ? { admin_email: adminInfo.email } : {}),
+          ...(!isEditMode && adminInfo.password ? { admin_password: adminInfo.password } : {}),
         };
 
         const { error: instError } = await (supabase
@@ -1109,6 +1199,28 @@ export default function InstitutionOnboarding() {
         </View>
       </ScrollView>
 
+      {/* Logo Preview Modal */}
+      <Modal visible={showLogoPreview} transparent animationType="fade" onRequestClose={cancelLogo}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 32 }}>
+          <View style={{ backgroundColor: 'white', borderRadius: 24, width: '100%', maxWidth: 360, overflow: 'hidden' }}>
+            <Text style={{ fontSize: 18, fontWeight: 'bold', color: theme.colors.text, textAlign: 'center', paddingTop: 24, paddingBottom: 12 }}>Preview Logo</Text>
+            <View style={{ alignItems: 'center', paddingVertical: 20, paddingHorizontal: 24 }}>
+              {pendingLogo && (
+                <Image source={{ uri: pendingLogo }} style={{ width: 180, height: 180, borderRadius: 24, borderWidth: 2, borderColor: '#F1F5F9' }} resizeMode="contain" />
+              )}
+            </View>
+            <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#F1F5F9' }}>
+              <TouchableOpacity style={{ flex: 1, paddingVertical: 16, alignItems: 'center', borderRightWidth: 1, borderRightColor: '#F1F5F9' }} onPress={cancelLogo}>
+                <Text style={{ fontSize: 16, fontWeight: '600', color: '#EF4444' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={{ flex: 1, paddingVertical: 16, alignItems: 'center' }} onPress={confirmLogo}>
+                <Text style={{ fontSize: 16, fontWeight: 'bold', color: theme.colors.primary }}>Submit</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <AlertModal 
         visible={alert.visible}
         title={alert.title}
@@ -1127,17 +1239,17 @@ export default function InstitutionOnboarding() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  content: { padding: 24, paddingBottom: 60 },
-  indicatorContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 32, paddingHorizontal: 4 },
-  stepWrapper: { alignItems: 'center', zIndex: 1 },
-  stepIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' },
+  content: { padding: 16, paddingBottom: 60 },
+  indicatorContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 24, paddingHorizontal: 0 },
+  stepWrapper: { alignItems: 'center', zIndex: 1, maxWidth: 56 },
+  stepIcon: { width: 32, height: 32, borderRadius: 10, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' },
   activeStepIcon: { backgroundColor: theme.colors.primary },
   completedStepIcon: { backgroundColor: '#10B981' },
-  stepLabel: { fontSize: 9, fontWeight: 'bold', color: theme.colors.textMuted, marginTop: 6 },
+  stepLabel: { fontSize: 8, fontWeight: 'bold', color: theme.colors.textMuted, marginTop: 4, textAlign: 'center' as const },
   activeStepLabel: { color: theme.colors.primary },
-  stepLine: { flex: 1, height: 2, backgroundColor: '#F1F5F9', marginHorizontal: 8, marginTop: -15 },
+  stepLine: { flex: 1, height: 2, backgroundColor: '#F1F5F9', marginHorizontal: 4, marginTop: -12 },
   activeStepLine: { backgroundColor: '#10B981' },
-  formContainer: { backgroundColor: 'white', borderRadius: 24, padding: 24, borderWidth: 1, borderColor: '#F1F5F9' },
+  formContainer: { backgroundColor: 'white', borderRadius: 20, padding: 16, borderWidth: 1, borderColor: '#F1F5F9' },
   sectionTitle: { fontSize: 16, fontWeight: 'bold', color: theme.colors.text, marginBottom: 16 },
   field: { marginBottom: 16 },
   label: { fontSize: 12, fontWeight: 'bold', color: theme.colors.text, marginBottom: 8 },

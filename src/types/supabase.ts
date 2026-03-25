@@ -64,6 +64,9 @@ export interface Database {
           current_academic_year: string
           academic_year_start: string
           academic_year_end: string
+          office_phone: string
+          guard_phone: string
+          transport_phone: string
         }
         Insert: {
           id?: string | null
@@ -84,6 +87,9 @@ export interface Database {
           current_academic_year?: string | null
           academic_year_start?: string | null
           academic_year_end?: string | null
+          office_phone?: string | null
+          guard_phone?: string | null
+          transport_phone?: string | null
         }
         Update: {
           id?: string | null
@@ -104,6 +110,9 @@ export interface Database {
           current_academic_year?: string | null
           academic_year_start?: string | null
           academic_year_end?: string | null
+          office_phone?: string | null
+          guard_phone?: string | null
+          transport_phone?: string | null
         }
       }
       grades: {

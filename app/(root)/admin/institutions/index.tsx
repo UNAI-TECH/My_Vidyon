@@ -8,6 +8,7 @@ import { Search, Plus, Filter, X, GraduationCap, School, BookOpen, Users, MapPin
 import { useRouter } from 'expo-router';
 import { supabase } from '../../../../src/lib/supabase';
 import { Badge } from '../../../../src/components/common/Badge';
+import { AlertModal } from '../../../../src/components/common/AlertModal';
 
 export default function InstitutionsList() {
   const router = useRouter();
@@ -23,6 +24,15 @@ export default function InstitutionsList() {
     subjects: []
   });
   const [loadingDetail, setLoadingDetail] = useState(false);
+
+  // Alert Modal State
+  const [alertConfig, setAlertConfig] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type?: 'success' | 'error' | 'info' | 'warning';
+    buttons?: { text: string; style?: 'primary' | 'secondary' | 'destructive'; onPress: () => void }[];
+  }>({ visible: false, title: '', message: '' });
 
   const filteredInstitutions = institutions.filter(inst => {
     const matchesSearch = inst.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -74,25 +84,29 @@ export default function InstitutionsList() {
 
   const handleToggle = (id: string, status: string, name: string) => {
     const action = status === 'active' ? 'deactivate' : 'activate';
-    Alert.alert(
-      'Confirm Action',
-      `Are you sure you want to ${action} ${name}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: action.toUpperCase(), onPress: () => toggleStatus(id, status) }
+    setAlertConfig({
+      visible: true,
+      title: status === 'active' ? 'Deactivate Institution' : 'Activate Institution',
+      message: `Are you sure you want to ${action} ${name}?`,
+      type: 'warning',
+      buttons: [
+        { text: 'Cancel', style: 'secondary', onPress: () => {} },
+        { text: action.charAt(0).toUpperCase() + action.slice(1), style: status === 'active' ? 'destructive' : 'primary', onPress: () => toggleStatus(id, status) }
       ]
-    );
+    });
   };
 
   const handleDelete = (id: string, name: string) => {
-    Alert.alert(
-      'Delete Institution',
-      `Are you sure you want to move ${name} to deleted?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'DELETE', style: 'destructive', onPress: () => deleteInstitution(id) }
+    setAlertConfig({
+      visible: true,
+      title: 'Delete Institution',
+      message: `Are you sure you want to permanently delete ${name}? This action cannot be undone.`,
+      type: 'error',
+      buttons: [
+        { text: 'Cancel', style: 'secondary', onPress: () => {} },
+        { text: 'Delete', style: 'destructive', onPress: () => deleteInstitution(id) }
       ]
-    );
+    });
   };
 
   if (isLoading) {
@@ -270,6 +284,15 @@ export default function InstitutionsList() {
           </View>
         </View>
       </Modal>
+
+      <AlertModal
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        buttons={alertConfig.buttons}
+        onClose={() => setAlertConfig(prev => ({ ...prev, visible: false }))}
+      />
     </View>
   );
 }

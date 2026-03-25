@@ -34,7 +34,6 @@ export default function InstitutionDashboard() {
   const { stats, charts, attendanceFeed, pendingLeaves, isLoading } = useInstitutionData(institutionId, academicYear);
 
   const shortcuts = [
-    { label: 'Org Structure', icon: Building, href: '/(root)/institution/org', color: '#3B82F6' },
     { label: 'Departments', icon: Briefcase, href: '/(root)/institution/departments', color: '#6366F1' },
     { label: 'Users', icon: Users, href: '/(root)/institution/users', color: '#A855F7' },
     { label: 'Add User', icon: GraduationCap, href: '/(root)/institution/students/add', color: '#14B8A6' },

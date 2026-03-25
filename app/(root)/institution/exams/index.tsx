@@ -17,7 +17,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { Download, Trash2, Calendar, Clock, BookOpen, ChevronRight, AlertCircle, ChevronDown, CheckCircle2, FileUp, X, Plus } from 'lucide-react-native';
 
 export default function InstitutionExams() {
-  const { institutionId, user } = useAuth();
+  const { institutionId, user, academicYear } = useAuth();
   const router = useRouter();
   
   const { 
@@ -82,9 +82,16 @@ export default function InstitutionExams() {
     targetGroups: [] as { classId: string; sections: string[] }[],
     exam_type: 'Midterm',
     exam_display_name: '',
-    academic_year: '2023-24',
+    academic_year: academicYear || '2023-24',
     entries: [] as any[]
   });
+
+  // Keep academic year in sync once it loads from Auth
+  React.useEffect(() => {
+    if (academicYear && !formData.academic_year) {
+      setFormData(prev => ({ ...prev, academic_year: academicYear }));
+    }
+  }, [academicYear]);
   
   const [showDatePicker, setShowDatePicker] = useState<{ id: string; visible: boolean }>({ id: '', visible: false });
   const [materialsModal, setMaterialsModal] = useState<{ entryId: string; subject: string; classId: string; visible: boolean } | null>(null);
@@ -151,7 +158,7 @@ export default function InstitutionExams() {
         targetGroups: [],
         exam_type: 'Midterm',
         exam_display_name: '',
-        academic_year: '2023-24',
+        academic_year: academicYear || '2023-24',
         entries: []
       });
     } catch (err: any) {
