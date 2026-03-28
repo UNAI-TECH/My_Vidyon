@@ -5,6 +5,7 @@ import { supabase } from '../../src/lib/supabase';
 import { Lock, Mail, ChevronRight, User as UserIcon, X } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { useQuickLogin } from '../../src/hooks/useQuickLogin';
+import { useAuth } from '../../src/hooks/useAuth';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function LoginScreen() {
@@ -14,10 +15,22 @@ export default function LoginScreen() {
   const [error, setError] = useState<string | null>(null);
   const { savedAccounts, saveAccount, switchToAccount, removeAccount, switchingAccount } = useQuickLogin();
   
+  const { session } = useAuth();
+  
   // Animation state
   const [animatingAccount, setAnimatingAccount] = useState<any>(null);
   const scaleValue = React.useRef(new Animated.Value(0)).current;
   const opacityValue = React.useRef(new Animated.Value(0)).current;
+
+  // Auto-recovery: If we are show-stopped on the animation overlay but the background
+  // auth state is now truthy, force a navigation to home.
+  React.useEffect(() => {
+    if (session && animatingAccount && !switchingAccount) {
+      console.log('[Login] Session detected during animation, forcing navigation');
+      setAnimatingAccount(null);
+      router.replace('/');
+    }
+  }, [session, switchingAccount]);
   
   // Sync missing images for saved accounts
   React.useEffect(() => {
@@ -195,7 +208,7 @@ export default function LoginScreen() {
           <View style={styles.content}>
             <View style={styles.logoContainer}>
               <Image 
-                source={require('@/assets/logo.png')} 
+                source={require('../../assets/logo.png')} 
                 style={styles.logo}
                 resizeMode="contain"
               />

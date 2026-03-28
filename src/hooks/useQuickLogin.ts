@@ -96,20 +96,27 @@ export function useQuickLogin() {
 
       setIsLoading(true);
 
-      // We rely completely on Supabase GoTrue's native `setSession` to restore the account.
-      // If the access_token is expired, GoTrue will automatically use the refresh_token in the background.
-      const { data, error } = await supabase.auth.setSession({
+      console.log('[QuickLogin] Attempting setSession for:', account.email);
+      
+      // Use a timeout to prevent permanent hangs if Supabase is slow or stuck
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Auth request timed out')), 8000)
+      );
+
+      const authPromise = supabase.auth.setSession({
         access_token: activeAccessToken,
         refresh_token: activeRefreshToken,
       });
 
+      const { data, error }: any = await Promise.race([authPromise, timeoutPromise]);
+
       if (error) {
-        console.warn('[QuickLogin] Session restore failed natively:', error.message);
+        console.error('[QuickLogin] Session restore error:', error.message);
         await removeAccount(account.id);
         return false;
       }
 
-      // If successful, GoTrue emitted SIGNED_IN securely and handles everything else!
+      console.log('[QuickLogin] setSession success for:', account.email);
       setSwitchingAccount(false);
       return true;
     } catch (err) {

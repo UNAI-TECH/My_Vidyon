@@ -1,6 +1,8 @@
 import React, { useEffect, useState, createContext, useContext } from 'react';
+import { Platform } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { Session, User } from '@supabase/supabase-js';
+import { LargeSecureStore } from '../lib/storage';
 
 type AuthContextType = {
   session: Session | null;
@@ -85,61 +87,71 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     initialize();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (!isMounted) return;
-      setSession(session);
-      setUser(session?.user ?? null);
-      
-      // Auto-sync regenerated tokens back to the savedAccounts storage
-      if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
-        try {
-          const { LargeSecureStore } = require('../lib/storage');
-          const stored = await LargeSecureStore.getItem('my_vidyon_saved_accounts');
-          if (stored) {
-             const current = JSON.parse(stored);
-             const idx = current.findIndex((a: any) => a.id === session.user.id);
-             if (idx !== -1) {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      // Fire-and-forget the heavy lifting to avoid blocking the auth state machine transition.
+      // Blocking here during setSession can cause the calling component (LoginScreen) to hang.
+      (async () => {
+        if (!isMounted) return;
+
+        console.log(`[Auth] Event: ${event}`, session?.user?.id);
+
+        if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
+          try {
+            const stored = await LargeSecureStore.getItem('my_vidyon_saved_accounts');
+            if (stored) {
+              const current = JSON.parse(stored) as any[];
+              const idx = current.findIndex((a: any) => a.id === session.user.id);
+              if (idx !== -1) {
                 current[idx].access_token = session.access_token;
                 current[idx].refresh_token = session.refresh_token;
                 await LargeSecureStore.setItem('my_vidyon_saved_accounts', JSON.stringify(current));
-             }
+              }
+            }
+          } catch (e) {
+            console.warn('[Auth] Token sync failed:', e);
           }
-        } catch(e) {
-          console.error('[Auth] Failed to sync token rotation', e);
         }
-      }
 
-      if (session?.user && event === 'SIGNED_IN') {
-        // Record session to the custom user_sessions table
-        try {
-          // Generate a custom unique marker for this device session using the exact login timestamp
-          const customSessionToken = `sess_${session.user.id.substring(0,8)}_${Date.now()}`;
-          const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(); // 30 Days
+        if (session?.user && event === 'SIGNED_IN') {
+          try {
+            // Include IP Address as requested by user
+            let ip_address = null;
+            try {
+              const res = await fetch('https://api.ipify.org?format=json');
+              const data = await res.json();
+              ip_address = data.ip;
+            } catch (ipErr) {
+              console.warn('[Auth] IP fetch failed, proceeding without it');
+            }
 
-          await (supabase.from('user_sessions') as any).insert({
-            user_id: session.user.id,
-            session_token: customSessionToken,
-            device_info: { client: 'MyVidyon Mobile App' },
-            expires_at: expiresAt
-          });
-          console.log('[Auth] Registered custom user_session in DB.');
-        } catch (e) {
-          console.error('[Auth] user_sessions insert failed', e);
+            const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+            await (supabase.from('user_sessions') as any).insert({
+              user_id: session.user.id,
+              session_token: `sess_${session.user.id.substring(0, 8)}_${Date.now()}`,
+              device_info: { client: 'MyVidyon Mobile App', platform: Platform.OS },
+              expires_at: expiresAt,
+              ip_address: ip_address
+            });
+            console.log('[Auth] Logged session with IP:', ip_address);
+          } catch (e) {
+            console.error('[Auth] Session logging failed:', e);
+          }
         }
-      }
 
-      if (session?.user) {
-        setLoading(true);
-        await fetchRole(session.user.id);
-        setLoading(false);
-      } else {
-        setRole(null);
-        setInstitutionId(null);
-        setInstitutionUuid(null);
-        setAcademicYear(null);
-        setFullName(null);
-        setImageUrl(null);
-      }
+        if (session) {
+          setSession(session);
+          setUser(session.user);
+          // Only trigger loading splash on role fetch if we don't have it yet
+          setLoading(true);
+          await fetchRole(session.user.id);
+          setLoading(false);
+        } else {
+          setSession(null);
+          setUser(null);
+          setRole(null);
+          setLoading(false);
+        }
+      })();
     });
 
     return () => {
