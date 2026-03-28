@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
 import { useAuth } from '../../../../src/hooks/useAuth';
@@ -15,8 +16,10 @@ import { supabase } from '../../../../src/lib/supabase';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { ActivityIndicator as RNActivityIndicator } from 'react-native';
+import { AlertModal } from '../../../../src/components/common/AlertModal';
 
 export default function FacultyAnnouncements() {
+  const insets = useSafeAreaInsets();
   const { user, institutionId, institutionUuid } = useAuth();
   const { assignedSubjects } = useFacultyDashboard(user?.id, institutionId || undefined);
   const [title, setTitle] = React.useState('');
@@ -28,6 +31,23 @@ export default function FacultyAnnouncements() {
   const [showClassSelector, setShowClassSelector] = React.useState(false);
   const [showTargetSelector, setShowTargetSelector] = React.useState(false);
   const [showPrioritySelector, setShowPrioritySelector] = React.useState(false);
+
+  // Alert State
+  const [alertConfig, setAlertConfig] = React.useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type: 'success' | 'error' | 'info' | 'warning';
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info'
+  });
+
+  const showAlert = (title: string, message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') => {
+    setAlertConfig({ visible: true, title, message, type });
+  };
 
   // Fetch announcements for this institution
   const { data: announcements = [], isLoading, refetch } = useQuery({
@@ -49,72 +69,20 @@ export default function FacultyAnnouncements() {
 
     setIsPosting(true);
     try {
-      const categoryValue = targetAudience === 'Specific Class' 
-        ? `${selectedClass?.classes?.name} - ${selectedClass?.section}`
-        : targetAudience;
-
       const { error } = await supabase
         .from('announcements')
         .insert({
           institution_id: institutionId,
           title,
           content,
-          category: categoryValue,
+          category: targetAudience === 'Specific Class' ? 'class' : (targetAudience === 'Faculty Only' ? 'faculty' : 'student'),
           type: priority,
+          target_class_id: targetAudience === 'Specific Class' ? selectedClass?.class_id : null,
+          target_section: targetAudience === 'Specific Class' ? selectedClass?.section : null,
           created_by: user.id,
         } as any);
 
       if (error) throw error;
-
-      // Sync to notifications table
-      try {
-        let userIds: string[] = [];
-
-        if (targetAudience === 'Specific Class' && selectedClass) {
-          // Only fetch students in that class + section
-          const { data } = await supabase
-            .from('students')
-            .select('user_id')
-            .eq('institution_id', institutionId)
-            .eq('class_name', selectedClass.classes?.name)
-            .eq('section', selectedClass.section) as { data: { user_id: string }[] | null };
-          if (data) userIds = data.map(s => s.user_id).filter(Boolean);
-        } else if (targetAudience === 'Faculty Only') {
-          const { data } = await supabase
-            .from('profiles')
-            .select('id')
-            .eq('institution_id', institutionId)
-            .eq('role', 'faculty') as { data: { id: string }[] | null };
-          if (data) userIds = data.map(p => p.id).filter(Boolean);
-        } else {
-          // All Students
-          const { data } = await supabase
-            .from('students')
-            .select('user_id')
-            .eq('institution_id', institutionId) as { data: { user_id: string }[] | null };
-          if (data) userIds = data.map(s => s.user_id).filter(Boolean);
-        }
-
-        userIds = [...new Set(userIds)];
-
-        if (userIds.length > 0) {
-          const notifications = userIds.map(uid => ({
-            user_id: uid,
-            title,
-            message: content,
-            type: 'announcement',
-            read: false,
-            institution_id: institutionId,
-          }));
-
-          const chunkSize = 100;
-          for (let i = 0; i < notifications.length; i += chunkSize) {
-            await supabase.from('notifications').insert(notifications.slice(i, i + chunkSize) as any);
-          }
-        }
-      } catch (notifErr) {
-        console.error('Failed to sync notifications:', notifErr);
-      }
       
       setTitle('');
       setContent('');
@@ -122,10 +90,10 @@ export default function FacultyAnnouncements() {
       setTargetAudience('All Students');
       setPriority('Info');
       refetch();
-      alert('Announcement posted successfully!');
+      showAlert('Success', 'Announcement posted successfully!', 'success');
     } catch (error: any) {
       console.error('Error posting announcement:', error);
-      alert('Failed to post announcement: ' + error.message);
+      showAlert('Error', 'Failed to post announcement: ' + error.message, 'error');
     } finally {
       setIsPosting(false);
     }
@@ -140,11 +108,27 @@ export default function FacultyAnnouncements() {
   };
 
   const renderPriorityIndicator = (type: string) => (
-    <View style={[styles.priorityIndicatorBase, { backgroundColor: getPriorityColor(type) }]} />
+    <View style={[styles.priorityIndicator, { backgroundColor: getPriorityColor(type) }]} />
   );
 
+  const getCategoryTheme = (category: string) => {
+    switch (category?.toLowerCase()) {
+      case 'class':    return { bg: '#EFF6FF', color: '#3B82F6', label: 'Class' };
+      case 'faculty':  return { bg: '#F5F3FF', color: '#8B5CF6', label: 'Faculty' };
+      case 'staff':    return { bg: '#FDF2F8', color: '#EC4899', label: 'Staff' };
+      case 'student':  return { bg: '#F0FDF4', color: '#10B981', label: 'Students' };
+      default:         return { bg: '#F8FAFC', color: '#64748B', label: category || 'General' };
+    }
+  };
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView 
+      style={styles.container} 
+      contentContainerStyle={[
+        styles.content, 
+        { paddingBottom: insets.bottom + theme.spacing.xl }
+      ]}
+    >
       <PageHeader title="Class Communication" subtitle="Broadcast announcements to your classes" />
 
       <View style={styles.composer}>
@@ -282,32 +266,45 @@ export default function FacultyAnnouncements() {
             <Text style={styles.emptyText}>No announcements found.</Text>
           </View>
         ) : (
-          announcements.map((ann: any) => (
-            <View key={ann.id} style={styles.card}>
-              {renderPriorityIndicator(ann.type)}
-              <View style={styles.cardHeader}>
-                <View style={styles.meta}>
-                  <Users size={12} color={theme.colors.textMuted} {...({} as any)} />
-                  <Text style={styles.metaText}>{ann.category || 'All'}</Text>
+          announcements.map((ann: any) => {
+            const catTheme = getCategoryTheme(ann.category);
+            return (
+              <View key={ann.id} style={styles.card}>
+                {renderPriorityIndicator(ann.type)}
+                <View style={styles.cardHeader}>
+                  <View style={styles.metaRow}>
+                    <View style={[styles.badge, { backgroundColor: catTheme.bg }]}>
+                      <Users size={10} color={catTheme.color} {...({} as any)} />
+                      <Text style={[styles.badgeText, { color: catTheme.color }]}>{catTheme.label}</Text>
+                    </View>
+                    <Text style={styles.date}>{format(new Date(ann.created_at), 'MMM d, h:mm a')}</Text>
+                  </View>
                 </View>
-                <Text style={styles.date}>{format(new Date(ann.created_at), 'MMM d, h:mm a')}</Text>
+                <Text style={styles.annTitle}>{ann.title}</Text>
+                {ann.content && (
+                  <Text style={styles.annContent} numberOfLines={3}>{ann.content}</Text>
+                )}
               </View>
-              <Text style={styles.annTitle}>{ann.title}</Text>
-              {ann.content && (
-                <Text style={styles.annContent}>{ann.content}</Text>
-              )}
-            </View>
-          ))
+            );
+          })
         )}
       </View>
+
+      <AlertModal
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        onClose={() => setAlertConfig(prev => ({ ...prev, visible: false }))}
+      />
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
-  content: { padding: 24 },
-  composer: { backgroundColor: 'white', borderRadius: 24, padding: 24, marginBottom: 32, borderWidth: 1, borderColor: '#F1F5F9' },
+  content: { padding: theme.spacing.m },
+  composer: { backgroundColor: 'white', borderRadius: 24, padding: theme.spacing.m, marginBottom: 32, borderWidth: 1, borderColor: '#F1F5F9' },
   label: { fontSize: 16, fontWeight: 'bold', color: theme.colors.text, marginBottom: 20 },
   subLabel: { fontSize: 12, fontWeight: 'bold', color: theme.colors.textMuted, marginBottom: 8 },
   titleInput: { backgroundColor: '#F8FAFC', borderRadius: 12, padding: 14, fontSize: 14, fontWeight: 'bold', borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 16 },
@@ -325,20 +322,15 @@ const styles = StyleSheet.create({
   sendBtnText: { color: 'white', fontWeight: 'bold', fontSize: 15 },
   section: { marginBottom: 24 },
   sectionTitle: { fontSize: 18, fontWeight: 'bold', color: theme.colors.text, marginBottom: 16 },
-  card: { backgroundColor: 'white', borderRadius: 20, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: '#F1F5F9', position: 'relative', overflow: 'hidden' },
-  priorityIndicatorBase: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 4,
-  },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  meta: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  metaText: { fontSize: 10, fontWeight: 'bold', color: theme.colors.textMuted, textTransform: 'uppercase' },
-  date: { fontSize: 10, color: theme.colors.textMuted },
-  annTitle: { fontSize: 15, fontWeight: 'bold', color: theme.colors.text },
-  annContent: { fontSize: 13, color: theme.colors.textMuted, marginTop: 6, lineHeight: 18 },
+  card: { backgroundColor: 'white', borderRadius: 20, padding: 18, marginBottom: 14, borderWidth: 1, borderColor: '#F1F5F9', position: 'relative', overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 },
+  priorityIndicator: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 6, opacity: 0.8 },
+  cardHeader: { marginBottom: 10 },
+  metaRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  badge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  badgeText: { fontSize: 10, fontWeight: 'bold', textTransform: 'uppercase' },
+  date: { fontSize: 11, color: theme.colors.textMuted },
+  annTitle: { fontSize: 16, fontWeight: 'bold', color: theme.colors.text, marginBottom: 4 },
+  annContent: { fontSize: 13, color: theme.colors.textMuted, lineHeight: 20 },
   emptyCard: { backgroundColor: '#F8FAFC', borderRadius: 16, padding: 32, alignItems: 'center', borderStyle: 'dashed', borderWidth: 1, borderColor: '#CBD5E1' },
   emptyText: { color: theme.colors.textMuted, fontSize: 14 }
 });

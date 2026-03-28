@@ -10,14 +10,18 @@ BEGIN
         institution_id, 
         attendance_date, 
         status, 
+        entry_allowed,
+        academic_year,
         canteen_permission
     )
     SELECT 
-        s.id, 
-        s.institution_id, 
-        CURRENT_DATE, 
-        'absent',
-        'false' -- Set to 'false' (text) which will trigger the notification
+        s.id as student_id,
+        s.institution_id,
+        current_date as attendance_date,
+        'absent' as status,
+        false as entry_allowed,
+        s.academic_year as academic_year,
+        false as canteen_permission
     FROM public.students s
     LEFT JOIN public.student_attendance sa 
         ON s.id = sa.student_id 

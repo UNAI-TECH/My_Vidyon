@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NotificationBell } from '../../../src/components/common/NotificationBell';
 import { theme } from '../../../src/theme';
 import { PageHeader } from '../../../src/components/common/PageHeader';
@@ -17,7 +18,6 @@ import {
   Calendar, 
   LayoutDashboard,
   LucideIcon,
-  Sparkles,
   ClipboardList,
   Award,
   MapPin,
@@ -38,7 +38,8 @@ const chartConfig = {
 };
 
 export default function StudentDashboard() {
-  const { user, institutionId, role } = useAuth();
+  const insets = useSafeAreaInsets();
+  const { user, institutionId, role, imageUrl } = useAuth();
   const { stats, assignments, institution, studentProfile, isLoading: isDashboardLoading } = useStudentDashboard(user?.id, institutionId || undefined);
 
   const { slots, specialSlots, isLoading: isTimetableLoading } = useStudentTimetable(user?.id);
@@ -55,7 +56,6 @@ export default function StudentDashboard() {
     { label: 'Attendance', icon: CheckCircle, href: '/student/attendance', color: '#3B82F6' },
     { label: 'Courses', icon: BookOpen, href: '/student/courses', color: '#F97316' },
     { label: 'Assignments', icon: ClipboardList, href: '/student/assignments', color: '#10B981' },
-    { label: 'AI Tutor', icon: Sparkles, href: '/student/ai-tutor', color: '#A855F7' },
     { label: 'Exams', icon: ClipboardList, href: '/student/exams', color: '#F87171' },
     { label: 'Leave', icon: FileText, href: '/student/leave', color: '#EF4444' },
     { label: 'Grades', icon: TrendingUp, href: '/student/grades', color: '#F59E0B' },
@@ -72,24 +72,25 @@ export default function StudentDashboard() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView 
+      style={styles.container} 
+      contentContainerStyle={[
+        styles.content, 
+        { paddingBottom: insets.bottom + theme.spacing.xl }
+      ]}
+    >
       <PageHeader 
         title={`Welcome, ${studentProfile?.name || 'Student'}!`} 
         subtitle="Unified Education Platform Overview"
         institutionName={institution?.name}
         institutionLogo={institution?.logo_url}
-        userRole={role || undefined}
-        userAvatar={(studentProfile as any)?.image_url || undefined}
+        userRole={role || 'student'}
+        userAvatar={imageUrl || (studentProfile as any)?.image_url || undefined}
         userSubtitle={studentProfile ? `Class ${studentProfile.class_name} - ${studentProfile.section}` : undefined}
         actions={<NotificationBell />}
       />
 
-      <View style={{ paddingBottom: 16 }}>
-        <AdCard 
-          title="Master Your Subjects!" 
-          description="Try UNAI Tech's premium AI Tutor exclusively. Click here to learn more."
-        />
-      </View>
+
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Quick Services</Text>
@@ -126,18 +127,7 @@ export default function StudentDashboard() {
         )}
       </View>
 
-      <View style={styles.announcementCard}>
-        <View style={styles.announcementContent}>
-          <View style={styles.announcementText}>
-            <Text style={styles.announcementBadge}>NEW</Text>
-            <Text style={styles.announcementTitle}>AI Tutor Enhanced!</Text>
-            <Text style={styles.announcementDesc}>Boost your performance with real-time doubt solving.</Text>
-          </View>
-          <View style={styles.announcementIcon}>
-            <TrendingUp size={32} color="white" {...({} as any)} />
-          </View>
-        </View>
-      </View>
+
 
       <View style={styles.statsGrid}>
         <StatCard 
@@ -190,26 +180,10 @@ export default function StudentDashboard() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
-  content: { padding: 24 },
-  section: { marginBottom: 24 },
+  content: { padding: theme.spacing.m },
+  section: { marginBottom: theme.spacing.l },
   sectionTitle: { fontSize: 18, fontWeight: 'bold', color: theme.colors.text, marginBottom: 16 },
-  announcementCard: {
-    backgroundColor: theme.colors.primary,
-    borderRadius: 24,
-    padding: 24,
-    marginBottom: 32,
-    shadowColor: theme.colors.primary,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    elevation: 4,
-  },
-  announcementContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  announcementText: { flex: 1 },
-  announcementBadge: { backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, color: 'white', fontSize: 10, fontWeight: 'bold', alignSelf: 'flex-start', marginBottom: 8 },
-  announcementTitle: { fontSize: 20, fontWeight: 'bold', color: 'white', marginBottom: 4 },
-  announcementDesc: { fontSize: 14, color: 'rgba(255,255,255,0.8)' },
-  announcementIcon: { width: 48, height: 48, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
+
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   chartContainer: { 
     backgroundColor: 'white', 

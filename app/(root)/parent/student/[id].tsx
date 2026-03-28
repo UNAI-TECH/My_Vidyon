@@ -173,88 +173,93 @@ export default function StudentDetail() {
         </View>
       </View>
 
-      <View style={styles.statsGrid}>
-      {/* Attendance Visual Dashboard */}
-      <View style={styles.premiumCard}>
-        <LinearGradient
-          colors={['white', '#F8FAFC']}
-          style={styles.cardGradient}
-        >
-          <View style={styles.premiumHeader}>
-            <View style={styles.premiumTitleGroup}>
-              <Text style={styles.premiumLabel}>ACADEMIC STANDING</Text>
-              <Text style={styles.premiumTitle}>Attendance Overview</Text>
-            </View>
-            <TrendingUp size={20} color={theme.colors.primary} {...({} as any)} />
-          </View>
-
-          <View style={styles.attendanceVisualInner}>
-            {/* Left: Circular Gauge */}
-            <View style={styles.gaugeContainer}>
-              <Svg width={120} height={120} viewBox="0 0 100 100">
-                <Defs>
-                  <SvgGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <Stop offset="0%" stopColor={theme.colors.primary} />
-                    <Stop offset="100%" stopColor="#F59E0B" />
-                  </SvgGradient>
-                </Defs>
-                {/* Background Ring */}
-                <Circle
-                  cx="50"
-                  cy="50"
-                  r="45"
-                  stroke="#F1F5F9"
-                  strokeWidth="8"
-                  fill="none"
-                />
-                {/* Progress Ring */}
-                <Circle
-                  cx="50"
-                  cy="50"
-                  r="45"
-                  stroke="url(#grad)"
-                  strokeWidth="10"
-                  strokeDasharray={`${(stats?.attendanceRate || 0) * 2.827}, 282.7`}
-                  strokeLinecap="round"
-                  fill="none"
-                  transform="rotate(-90 50 50)"
-                />
-              </Svg>
-              <View style={styles.gaugeContent}>
-                <Text style={styles.gaugeValue}>{stats?.attendanceRate}%</Text>
-                <Text style={styles.gaugeSub}>Rate</Text>
+      <View style={[
+        styles.statsGrid,
+        theme.metrics.width < 380 && { flexDirection: 'column' }
+      ]}>
+        <View style={[styles.premiumCard, { flex: 1 }]}>
+          <LinearGradient
+            colors={['white', '#F8FAFC']}
+            style={styles.cardGradient}
+          >
+            <View style={styles.premiumHeader}>
+              <View style={styles.premiumTitleGroup}>
+                <Text style={styles.premiumLabel}>ACADEMIC STANDING</Text>
+                <Text style={styles.premiumTitle}>Attendance Overview</Text>
               </View>
+              <TrendingUp size={20} color={theme.colors.primary} {...({} as any)} />
             </View>
 
-            {/* Right: Detailed Breakdown */}
-            <View style={styles.attendanceStatsGrid}>
-              <View style={styles.statItem}>
-                <View style={[styles.statDot, { backgroundColor: '#10B981' }]} />
-                <View>
-                  <Text style={styles.statCount}>{stats?.presentCount}</Text>
-                  <Text style={styles.statLabel}>Present</Text>
+            <View style={[
+              styles.attendanceVisualInner,
+              theme.metrics.width < 400 && { flexDirection: 'column', alignItems: 'center', gap: 20 }
+            ]}>
+              {/* Left: Circular Gauge */}
+              <View style={styles.gaugeContainer}>
+                <Svg width={100} height={100} viewBox="0 0 100 100">
+                  <Defs>
+                    <SvgGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <Stop offset="0%" stopColor={theme.colors.primary} />
+                      <Stop offset="100%" stopColor="#F59E0B" />
+                    </SvgGradient>
+                  </Defs>
+                  {/* Background Ring */}
+                  <Circle
+                    cx="50"
+                    cy="50"
+                    r="45"
+                    stroke="#F1F5F9"
+                    strokeWidth="8"
+                    fill="none"
+                  />
+                  {/* Progress Ring */}
+                  <Circle
+                    cx="50"
+                    cy="50"
+                    r="45"
+                    stroke="url(#grad)"
+                    strokeWidth="10"
+                    strokeDasharray={`${(stats?.attendanceRate || 0) * 2.827}, 282.7`}
+                    strokeLinecap="round"
+                    fill="none"
+                    transform="rotate(-90 50 50)"
+                  />
+                </Svg>
+                <View style={styles.gaugeContent}>
+                  <Text style={styles.gaugeValue}>{stats?.attendanceRate}%</Text>
+                  <Text style={styles.gaugeSub}>Rate</Text>
                 </View>
               </View>
-              <View style={styles.statItem}>
-                <View style={[styles.statDot, { backgroundColor: '#EF4444' }]} />
-                <View>
-                  <Text style={styles.statCount}>{stats?.absentCount}</Text>
-                  <Text style={styles.statLabel}>Absent</Text>
+
+              {/* Right: Detailed Breakdown */}
+              <View style={[styles.attendanceStatsGrid, theme.metrics.width < 400 && { width: '100%' }]}>
+                <View style={styles.statItem}>
+                  <View style={[styles.statDot, { backgroundColor: '#10B981' }]} />
+                  <View>
+                    <Text style={styles.statCount}>{stats?.presentCount}</Text>
+                    <Text style={styles.statLabel}>Present</Text>
+                  </View>
                 </View>
-              </View>
-              <View style={styles.statItem}>
-                <View style={[styles.statDot, { backgroundColor: '#F59E0B' }]} />
-                <View>
-                  <Text style={styles.statCount}>{stats?.lateCount || 0}</Text>
-                  <Text style={styles.statLabel}>Late</Text>
+                <View style={styles.statItem}>
+                  <View style={[styles.statDot, { backgroundColor: '#EF4444' }]} />
+                  <View>
+                    <Text style={styles.statCount}>{stats?.absentCount}</Text>
+                    <Text style={styles.statLabel}>Absent</Text>
+                  </View>
+                </View>
+                <View style={styles.statItem}>
+                  <View style={[styles.statDot, { backgroundColor: '#F59E0B' }]} />
+                  <View>
+                    <Text style={styles.statCount}>{stats?.lateCount || 0}</Text>
+                    <Text style={styles.statLabel}>Late</Text>
+                  </View>
                 </View>
               </View>
             </View>
-          </View>
-        </LinearGradient>
-      </View>
+          </LinearGradient>
+        </View>
 
-        <View style={{ flex: 0.4 }}>
+        <View style={theme.metrics.width < 380 ? { width: '100%', marginBottom: 12 } : { flex: 0.4 }}>
           <StatCard 
             title="Pending Fees" 
             value={`₹${stats?.pendingFees}`} 
@@ -263,8 +268,6 @@ export default function StudentDetail() {
           />
         </View>
       </View>
-
-
 
       {/* Attendance Logs */}
       <View style={styles.section}>

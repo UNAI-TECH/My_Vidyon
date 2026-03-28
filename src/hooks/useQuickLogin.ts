@@ -79,60 +79,44 @@ export function useQuickLogin() {
   const switchToAccount = async (account: SavedAccount): Promise<boolean> => {
     setSwitchingAccount(true);
     try {
-      // Step 1: Call the Supabase Auth REST API directly to exchange
-      // the refresh_token for a fresh access_token + refresh_token pair.
-      // This bypasses the Supabase JS client's internal session checks
-      // which throw "Auth session missing!" when there's no active session.
-      const response = await fetch(
-        `${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': SUPABASE_ANON_KEY,
-          },
-          body: JSON.stringify({ refresh_token: account.refresh_token }),
+      // Always fetch the absolutely latest token from persistent storage right before 
+      // authenticating, because the background sync in useAuth might have updated it!
+      const stored = await LargeSecureStore.getItem(STORAGE_KEY);
+      let activeRefreshToken = account.refresh_token;
+      let activeAccessToken = account.access_token;
+
+      if (stored) {
+        const current: SavedAccount[] = JSON.parse(stored);
+        const fresh = current.find(a => a.id === account.id);
+        if (fresh?.refresh_token && fresh?.access_token) {
+          activeRefreshToken = fresh.refresh_token;
+          activeAccessToken = fresh.access_token;
         }
-      );
-
-      const tokenData = await response.json();
-
-      if (!response.ok || !tokenData.access_token) {
-        console.warn('Token refresh failed:', tokenData.error_description || tokenData.msg);
-        await removeAccount(account.id);
-        return false;
       }
 
-      // Step 2: Now that we have fresh, valid tokens, use setSession
-      // to install them in the Supabase client.
+      setIsLoading(true);
+
+      // We rely completely on Supabase GoTrue's native `setSession` to restore the account.
+      // If the access_token is expired, GoTrue will automatically use the refresh_token in the background.
       const { data, error } = await supabase.auth.setSession({
-        access_token: tokenData.access_token,
-        refresh_token: tokenData.refresh_token,
+        access_token: activeAccessToken,
+        refresh_token: activeRefreshToken,
       });
 
-      if (error || !data.session) {
-        console.warn('setSession failed after token refresh:', error?.message);
+      if (error) {
+        console.warn('[QuickLogin] Session restore failed natively:', error.message);
         await removeAccount(account.id);
         return false;
       }
 
-      // Step 3: Persist the rotated tokens for next quick-login
-      await saveAccount({
-        id: account.id,
-        email: account.email,
-        full_name: account.full_name,
-        role: account.role,
-        institution_id: account.institution_id,
-        image_url: account.image_url,
-        access_token: data.session.access_token,
-        refresh_token: data.session.refresh_token,
-      });
-
+      // If successful, GoTrue emitted SIGNED_IN securely and handles everything else!
+      setSwitchingAccount(false);
       return true;
-    } catch (e) {
-      console.error('Error switching account:', e);
+    } catch (err) {
+      console.error('[QuickLogin] switch error:', err);
       return false;
     } finally {
+      setIsLoading(false);
       setSwitchingAccount(false);
     }
   };
@@ -141,6 +125,19 @@ export function useQuickLogin() {
     try {
       const stored = await LargeSecureStore.getItem(STORAGE_KEY);
       const current: SavedAccount[] = stored ? JSON.parse(stored) : [];
+
+      // Expire session key on the backend
+      const accountToRemove = current.find(a => a.id === id);
+      if (accountToRemove && accountToRemove.access_token) {
+        fetch(`${SUPABASE_URL}/auth/v1/logout`, {
+          method: 'POST',
+          headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${accountToRemove.access_token}`
+          }
+        }).catch(err => console.warn('Failed to invalidate session on backend:', err));
+      }
+
       const updated = current.filter(a => a.id !== id);
       await LargeSecureStore.setItem(STORAGE_KEY, JSON.stringify(updated));
       setSavedAccounts(updated);

@@ -1,16 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { theme } from '../../../src/theme';
+import { ProfileSettings } from '../../../src/components/common/ProfileSettings';
 
 export default function StudentSettings() {
-  return (
-    <View style={styles.container}>
-      <Text style={styles.text}>Profile & Student Settings Coming Soon</Text>
-    </View>
-  );
+  return <ProfileSettings />;
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.background },
-  text: { color: theme.colors.text, fontSize: 18 },
-});

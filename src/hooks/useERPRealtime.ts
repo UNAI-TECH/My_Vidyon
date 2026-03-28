@@ -1,6 +1,24 @@
 import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import * as Notifications from 'expo-notifications';
+import { useAuth } from './useAuth';
+
+/**
+ * Helper to fire a local in-app notification.
+ * This shows a system-tray alert even when the app is foregrounded
+ * (because of the handler configured in notifications.ts).
+ */
+async function showLocalAlert(title: string, body: string, data?: Record<string, any>) {
+  try {
+    await Notifications.scheduleNotificationAsync({
+      content: { title, body, data: data || {} },
+      trigger: null, // immediate
+    });
+  } catch (e) {
+    // Silently fail on simulators / web
+  }
+}
 
 /**
  * useERPRealtime
@@ -11,6 +29,7 @@ import { supabase } from '../lib/supabase';
  */
 export function useERPRealtime() {
   const queryClient = useQueryClient();
+  const { role } = useAuth();
 
   useEffect(() => {
     // 1. Attendance Real-time
@@ -18,11 +37,28 @@ export function useERPRealtime() {
       .channel('erp-attendance')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'student_attendance' },
+        { event: 'INSERT', schema: 'public', table: 'student_attendance' },
         (payload) => {
           console.log('Attendance Change Detected:', payload);
           queryClient.invalidateQueries({ queryKey: ['attendance'] });
           queryClient.invalidateQueries({ queryKey: ['canteen_status'] });
+          queryClient.invalidateQueries({ queryKey: ['parent-children'] });
+          queryClient.invalidateQueries({ queryKey: ['parent-student-detail'] });
+          queryClient.invalidateQueries({ queryKey: ['parent-student-stats'] });
+          const att = payload.new as any;
+          // Local alert removed: redundant with notifications trigger
+          // showLocalAlert(
+          //   '✅ Attendance Recorded',
+          //   att.status === 'present' ? 'Marked present for today' : `Attendance status: ${att.status || 'recorded'}`,
+          //   { action_url }
+          // );
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'student_attendance' },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ['attendance'] });
           queryClient.invalidateQueries({ queryKey: ['parent-children'] });
           queryClient.invalidateQueries({ queryKey: ['parent-student-detail'] });
           queryClient.invalidateQueries({ queryKey: ['parent-student-stats'] });
@@ -49,8 +85,22 @@ export function useERPRealtime() {
       .channel('erp-assignments')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'assignments' },
+        { event: 'INSERT', schema: 'public', table: 'assignments' },
         (payload) => {
+          queryClient.invalidateQueries({ queryKey: ['assignments'] });
+          const a = payload.new as any;
+          // Local alert removed: redundant with notifications trigger
+          // showLocalAlert(
+          //   '📝 New Assignment',
+          //   a.title ? `${a.title} has been posted` : 'A new assignment has been posted',
+          //   { action_url }
+          // );
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'assignments' },
+        () => {
           queryClient.invalidateQueries({ queryKey: ['assignments'] });
         }
       )
@@ -69,7 +119,7 @@ export function useERPRealtime() {
       .channel('erp-leaves')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'leave_requests' },
+        { event: 'UPDATE', schema: 'public', table: 'leave_requests' },
         (payload) => {
           console.log('Leave change detected:', payload.eventType);
           queryClient.invalidateQueries({ queryKey: ['leaves'] });
@@ -77,6 +127,27 @@ export function useERPRealtime() {
           queryClient.invalidateQueries({ queryKey: ['institution-leaves'] });
           queryClient.invalidateQueries({ queryKey: ['parent-leaves'] });
           queryClient.invalidateQueries({ queryKey: ['student-leaves'] });
+          queryClient.invalidateQueries({ queryKey: ['my-leaves'] });
+          const lv = payload.new as any;
+          if (lv?.status && lv.status !== (payload.old as any)?.status) {
+            const emoji = lv.status === 'approved' ? '✅' : lv.status === 'rejected' ? '❌' : '🔄';
+            // Local alert removed: redundant with notifications trigger
+            // showLocalAlert(
+            //   `${emoji} Leave ${lv.status.charAt(0).toUpperCase() + lv.status.slice(1)}`,
+            //   `Your leave request has been ${lv.status}`,
+            //   { action_url }
+            // );
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'leave_requests' },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ['leaves'] });
+          queryClient.invalidateQueries({ queryKey: ['pending-leaves'] });
+          queryClient.invalidateQueries({ queryKey: ['institution-leaves'] });
+          queryClient.invalidateQueries({ queryKey: ['my-leaves'] });
         }
       )
       .on(
@@ -102,8 +173,22 @@ export function useERPRealtime() {
       .channel('erp-announcements')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'announcements' },
+        { event: 'INSERT', schema: 'public', table: 'announcements' },
         (payload) => {
+          queryClient.invalidateQueries({ queryKey: ['announcements'] });
+          const ann = payload.new as any;
+          // Local alert removed: redundant with notifications trigger
+          // showLocalAlert(
+          //   '📢 New Announcement',
+          //   ann.title || 'A new announcement has been posted',
+          //   { action_url }
+          // );
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'announcements' },
+        () => {
           queryClient.invalidateQueries({ queryKey: ['announcements'] });
         }
       )
@@ -140,9 +225,29 @@ export function useERPRealtime() {
       .channel('erp-notifications')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'notifications' },
+        { event: 'INSERT', schema: 'public', table: 'notifications' },
         (payload) => {
-          console.log('Notification Change Detected:', payload);
+          console.log('New Notification Detected:', payload);
+          queryClient.invalidateQueries({ queryKey: ['aggregated-notifications'] });
+          
+          // Show local in-app notification
+          const n = payload.new as any;
+          if (n?.title) {
+            showLocalAlert(n.title, n.message || '', { action_url: n.action_url });
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'notifications' },
+        (payload) => {
+          queryClient.invalidateQueries({ queryKey: ['aggregated-notifications'] });
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'notifications' },
+        (payload) => {
           queryClient.invalidateQueries({ queryKey: ['aggregated-notifications'] });
         }
       )
@@ -202,5 +307,5 @@ export function useERPRealtime() {
       supabase.removeChannel(adminSub);
       supabase.removeChannel(gradesSub);
     };
-  }, [queryClient]);
+  }, [queryClient, role]);
 }

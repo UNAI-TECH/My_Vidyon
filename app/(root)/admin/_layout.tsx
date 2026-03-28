@@ -92,6 +92,7 @@ export default function AdminTabs() {
       <Tabs.Screen name="logs/index" options={{ href: null }} />
       <Tabs.Screen name="status/index" options={{ href: null }} />
       <Tabs.Screen name="onboarding/index" options={{ href: null }} />
+      <Tabs.Screen name="promotions/index" options={{ href: null }} />
       <Tabs.Screen name="notifications" options={{ href: null }} />
     </Tabs>
   );

@@ -51,46 +51,6 @@ export default function InstitutionCommunication() {
         .insert(payload);
       
       if (!error) {
-        // Now also send to notifications table for each student/staff if targeted
-        try {
-          let userIds: string[] = [];
-          
-          if (targetRole === 'all' || targetRole === 'student') {
-            const { data } = await supabase
-              .from('students')
-              .select('user_id')
-              .eq('institution_id', institutionId) as { data: { user_id: string }[] | null };
-            if (data) userIds.push(...data.map(s => s.user_id).filter(Boolean));
-          }
-
-          if (targetRole === 'all' || targetRole === 'faculty' || targetRole === 'staff') {
-            const query = supabase.from('profiles').select('id').eq('institution_id', institutionId);
-            if (targetRole !== 'all') query.eq('role', targetRole);
-            const { data } = await query as { data: { id: string }[] | null };
-            if (data) userIds.push(...data.map(p => p.id).filter(Boolean));
-          }
-
-          userIds = [...new Set(userIds)];
-
-          if (userIds.length > 0) {
-            const notifications = userIds.map(uid => ({
-              user_id: uid,
-              title: payload.title,
-              message: payload.content,
-              type: 'announcement',
-              read: false,
-              institution_id: institutionId
-            }));
-
-            const chunkSize = 100;
-            for (let i = 0; i < notifications.length; i += chunkSize) {
-              await supabase.from('notifications').insert(notifications.slice(i, i + chunkSize) as any);
-            }
-          }
-        } catch (notifErr) {
-          console.error('Failed to blast notifications:', notifErr);
-        }
-
         setMessage('');
         setTargetRole('all');
         showAlert('Success', 'Announcement sent successfully!', 'success');

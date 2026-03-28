@@ -34,7 +34,19 @@ BEGIN
 
   -- ── On INSERT: notify the assigned class teacher / faculty ──
   IF TG_OP = 'INSERT' THEN
-    -- Use assigned_class_teacher_id if present, else skip faculty notification
+    -- Auto-lookup teacher if not provided
+    IF NEW.assigned_class_teacher_id IS NULL THEN
+        SELECT fs.faculty_profile_id INTO NEW.assigned_class_teacher_id
+        FROM public.students s
+        JOIN public.classes c ON c.name = s.class_name
+        JOIN public.faculty_subjects fs ON fs.class_id = c.id
+        WHERE s.id = NEW.student_id
+        AND fs.assignment_type = 'class_teacher'
+        AND (s.section = ANY(c.sections) OR s.section IS NULL)
+        LIMIT 1;
+    END IF;
+
+    -- Use assigned_class_teacher_id if present
     IF NEW.assigned_class_teacher_id IS NOT NULL THEN
       INSERT INTO public.notifications (user_id, title, message, type, read, metadata, action_url)
       VALUES (
@@ -69,7 +81,7 @@ BEGIN
       'leave',
       FALSE,
       jsonb_build_object('leave_id', NEW.id, 'status', NEW.status),
-      '/(root)/student/leave'
+      '/(root)/student/leave/index'
     );
 
     -- If there's a parent_id, notify the parent too
@@ -87,7 +99,7 @@ BEGIN
         'leave',
         FALSE,
         jsonb_build_object('leave_id', NEW.id, 'status', NEW.status, 'student_id', NEW.student_id),
-        '/(root)/parent'
+        '/(root)/parent/index'
       );
     END IF;
 
@@ -137,7 +149,6 @@ CREATE POLICY "Faculty update leave status"
          EXISTS (
            SELECT 1 FROM profiles p
             WHERE p.id = auth.uid()
-              AND p.role IN ('institution', 'admin', 'superadmin')
          ))
   WITH CHECK (TRUE);
 
@@ -154,4 +165,5 @@ CREATE POLICY "Users update own notifications"
   FOR UPDATE TO authenticated
   USING (user_id = auth.uid());
 
-RAISE NOTICE 'Leave approval trigger and policies created successfully.';
+
+-- Leave approval trigger and policies created successfully.

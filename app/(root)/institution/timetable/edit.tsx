@@ -146,7 +146,7 @@ export default function InstitutionTimetableEditScreen() {
         if (!slot.subject_id) continue;
         const result = await saveSlot(slot);
         if (!result?.success) {
-          throw new Error(result?.error?.message || 'Failed to save a slot. Please check your connection.');
+          throw new Error((result?.error as any)?.message || 'Failed to save a slot. Please check your connection.');
         }
       }
       setAlert({

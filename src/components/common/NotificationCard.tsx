@@ -75,12 +75,6 @@ export const NotificationCard = ({ item, onPress }: NotificationCardProps) => {
             <Clock size={12} color={theme.colors.textMuted} />
             <Text style={styles.timeText}>{item.date}</Text>
           </View>
-          {item.actionUrl && (
-            <View style={styles.actionPrompt}>
-              <Text style={styles.actionText}>View Detail</Text>
-              <ArrowRight size={12} color={theme.colors.primary} />
-            </View>
-          )}
         </View>
       </View>
     </TouchableOpacity>

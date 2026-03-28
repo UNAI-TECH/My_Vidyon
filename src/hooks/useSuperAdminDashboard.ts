@@ -72,6 +72,26 @@ export function useSuperAdminDashboard() {
         },
     });
 
+    // 6. Fetch authenticated user's profile
+    const { data: profile = null } = useQuery({
+        queryKey: ['superadmin-profile'],
+        queryFn: async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return null;
+            const { data, error } = await supabase
+                .from('profiles')
+                .select('full_name, image_url')
+                .eq('id', user.id)
+                .maybeSingle();
+            
+            if (error) {
+                console.error('Error fetching superadmin profile:', error);
+                return null;
+            }
+            return data as unknown as { full_name: string; image_url: string | null };
+        },
+    });
+
     const stats: SuperAdminDashboardStats = {
         totalInstitutions,
         totalRevenue,
@@ -83,6 +103,7 @@ export function useSuperAdminDashboard() {
 
     return {
         stats,
+        profile,
         isLoading: loadingInst || loadingRev || loadingUsers || loadingActivity || loadingPending,
     };
 }

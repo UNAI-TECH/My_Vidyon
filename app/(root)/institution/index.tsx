@@ -16,7 +16,6 @@ import {
   Settings,
   GraduationCap,
   Building,
-  Scan,
   UserCheck,
   Clock,
   ChevronDown,
@@ -30,9 +29,9 @@ import { format } from 'date-fns';
 const screenWidth = Dimensions.get('window').width;
 
 export default function InstitutionDashboard() {
-  const { institutionId } = useAuth();
+  const { institutionId, role, imageUrl } = useAuth();
   const [academicYear, setAcademicYear] = useState('2026-27');
-  const { stats, charts, attendanceFeed, pendingLeaves, isLoading } = useInstitutionData(institutionId, academicYear);
+  const { stats, charts, attendanceFeed, pendingLeaves, profile, institution, isLoading } = useInstitutionData(institutionId, academicYear);
 
   const shortcuts = [
     { label: 'Departments', icon: Briefcase, href: '/(root)/institution/departments', color: '#6366F1' },
@@ -45,7 +44,6 @@ export default function InstitutionDashboard() {
     { label: 'Staff Assigning', icon: UserCheck, href: '/(root)/institution/faculty/assign', color: '#10B981' },
     { label: 'Analytics', icon: TrendingUp, href: '/(root)/institution/analytics', color: '#10B981' },
     { label: 'Reports', icon: FileText, href: '/(root)/institution/reports', color: '#8B5CF6' },
-    { label: 'Live Vision', icon: Scan, href: '/(root)/institution/live-feed', color: '#06B6D4' },
     { label: 'Settings', icon: Settings, href: '/(root)/institution/settings', color: '#64748B' },
   ];
 
@@ -66,6 +64,10 @@ export default function InstitutionDashboard() {
       <PageHeader 
         title="Institution Overview" 
         subtitle={`Academic Year ${academicYear}`}
+        institutionName={institution?.name}
+        institutionLogo={institution?.logo_url}
+        userRole={role || 'institution'}
+        userAvatar={imageUrl || profile?.image_url || undefined}
         actions={
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <NotificationBell />
@@ -172,49 +174,6 @@ export default function InstitutionDashboard() {
           />
       </View>
 
-      {/* Live Feed */}
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-            <View style={styles.flexRow}>
-                <Scan size={18} color={theme.colors.primary} style={styles.animatePulse} {...({} as any)} />
-                <Text style={styles.sectionTitle}>Live Attendance Stream</Text>
-            </View>
-            <View style={styles.badge}>
-                <Text style={styles.badgeText}>Camera Bridge Active</Text>
-            </View>
-        </View>
-        
-        <View style={styles.feedContainer}>
-            {attendanceFeed.length > 0 ? attendanceFeed.map((item) => (
-                <View key={item.id} style={styles.feedItem}>
-                    <View style={styles.feedProfile}>
-                        <View style={styles.avatar}>
-                            <Text style={styles.avatarText}>{item.name[0]}</Text>
-                        </View>
-                        <View>
-                            <Text style={styles.feedName}>{item.name}</Text>
-                            <Text style={styles.feedSubtitle}>{item.subtitle}</Text>
-                        </View>
-                    </View>
-                    <View style={styles.feedMeta}>
-                        <View style={styles.presentBadge}>
-                            <UserCheck size={12} color="#10B981" {...({} as any)} />
-                            <Text style={styles.presentText}>Present</Text>
-                        </View>
-                        <View style={styles.timeWrapper}>
-                            <Clock size={10} color={theme.colors.textMuted} {...({} as any)} />
-                            <Text style={styles.feedTime}>{format(new Date(item.created_at), 'hh:mm a')}</Text>
-                        </View>
-                    </View>
-                </View>
-            )) : (
-                <View style={styles.emptyFeed}>
-                    <Scan size={40} color="#E2E8F0" {...({} as any)} />
-                    <Text style={styles.emptyText}>Waiting for recognitions...</Text>
-                </View>
-            )}
-        </View>
-      </View>
 
       {/* Notifications */}
       <View style={styles.section}>

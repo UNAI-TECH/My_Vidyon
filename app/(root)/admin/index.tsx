@@ -34,7 +34,8 @@ const chartConfig = {
 import { useSuperAdminDashboard } from '../../../src/hooks/useSuperAdminDashboard';
 
 export default function AdminDashboard() {
-  const { stats, isLoading } = useSuperAdminDashboard();
+  const { role, imageUrl } = useAuth();
+  const { stats, profile, isLoading } = useSuperAdminDashboard();
 
   if (isLoading) return <View style={styles.container}><Text>Loading SaaS Metrics...</Text></View>;
 
@@ -48,6 +49,8 @@ export default function AdminDashboard() {
       <PageHeader
         title="Super Admin (SaaS)"
         subtitle="Global Network Oversight & Onboarding"
+        userRole={role || 'super_admin'}
+        userAvatar={imageUrl || profile?.image_url || undefined}
         actions={<NotificationBell />}
       />
 

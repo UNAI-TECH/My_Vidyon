@@ -45,13 +45,7 @@ export default function StudentTabs() {
           tabBarIcon: ({ color }) => <Home size={22} color={color} {...({} as any)} />,
         }}
       />
-      <Tabs.Screen
-        name="certificates/index"
-        options={{
-          tabBarLabel: 'Certificates',
-          tabBarIcon: ({ color }) => <Award size={22} color={color} {...({} as any)} />,
-        }}
-      />
+
       <Tabs.Screen name="certificates" options={{ href: null }} />
       <Tabs.Screen
         name="settings"
@@ -67,11 +61,14 @@ export default function StudentTabs() {
       <Tabs.Screen name="fees" options={{ href: null }} />
       <Tabs.Screen name="notices/index" options={{ href: null }} />
       <Tabs.Screen name="assignments/index" options={{ href: null }} />
+      <Tabs.Screen name="assignments/[id]" options={{ href: null }} />
       <Tabs.Screen name="attendance/index" options={{ href: null }} />
       <Tabs.Screen name="calendar/index" options={{ href: null }} />
       <Tabs.Screen name="courses/index" options={{ href: null }} />
       <Tabs.Screen name="grades/index" options={{ href: null }} />
       <Tabs.Screen name="timetable/index" options={{ href: null }} />
+      <Tabs.Screen name="exams/index" options={{ href: null }} />
+      <Tabs.Screen name="certificates/index" options={{ href: null }} />
       <Tabs.Screen name="notifications" options={{ href: null }} />
       <Tabs.Screen name="leave/index" options={{ href: null }} />
       <Tabs.Screen name="leave" options={{ href: null }} />

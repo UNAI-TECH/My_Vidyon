@@ -174,7 +174,7 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
             const { data: inst } = await supabase
                 .from('institutions')
                 .select('*')
-                .eq('id', institutionId)
+                .eq('institution_id', institutionId)
                 .maybeSingle();
             return inst as any;
         },
@@ -196,7 +196,50 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
                 console.error('Error fetching faculty profile:', error);
                 return null;
             }
-            return data as unknown as FacultyProfile;
+            if (!data) return null;
+            
+            return data as FacultyProfile;
+        },
+        enabled: !!facultyId,
+    });
+
+    // 9. My Assignments
+    const { data: myAssignments = [], isLoading: isLoadingMyAssignments, refetch: refetchAssignments } = useQuery({
+        queryKey: ['faculty-assignments', facultyId],
+        queryFn: async () => {
+            if (!facultyId) return [];
+            const { data, error } = await supabase
+                .from('assignments')
+                .select('*, subjects:subject_id(name), classes:class_id(name)')
+                .eq('teacher_id', facultyId)
+                .order('created_at', { ascending: false });
+
+            if (error) {
+                console.error('Error fetching assignments:', error);
+                return [];
+            }
+
+            // For each assignment, fetch submission counts
+            const assignmentsWithCounts = await Promise.all((data as any[] || []).map(async (assignment) => {
+                const { count: submissionCount } = await supabase
+                    .from('submissions')
+                    .select('id', { count: 'exact', head: true })
+                    .eq('assignment_id', assignment.id);
+                
+                const { count: pendingCount } = await supabase
+                    .from('submissions')
+                    .select('id', { count: 'exact', head: true })
+                    .eq('assignment_id', assignment.id)
+                    .eq('status', 'pending');
+
+                return {
+                    ...(assignment as any),
+                    submissionCount: submissionCount || 0,
+                    pendingCount: pendingCount || 0,
+                };
+            }));
+
+            return assignmentsWithCounts;
         },
         enabled: !!facultyId,
     });
@@ -220,7 +263,11 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
             .on('postgres_changes', { event: '*', schema: 'public', table: 'students', filter: `institution_id=eq.${institutionId}` }, () => refetchStudents())
             .on('postgres_changes', { event: '*', schema: 'public', table: 'faculty_subjects', filter: `faculty_profile_id=eq.${facultyId}` }, () => refetchAssigned())
             .on('postgres_changes', { event: '*', schema: 'public', table: 'timetable', filter: `faculty_id=eq.${facultyId}` }, () => refetchSchedule())
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'submissions' }, () => refetchReviews())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'submissions' }, () => {
+                refetchReviews();
+                refetchAssignments();
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'assignments', filter: `teacher_id=eq.${facultyId}` }, () => refetchAssignments())
             .on('postgres_changes', { event: '*', schema: 'public', table: 'leave_requests', filter: `assigned_class_teacher_id=eq.${facultyId}` }, () => refetchLeaves())
             .on('postgres_changes', { event: '*', schema: 'public', table: 'exam_results', filter: `staff_id=eq.${facultyId}` }, () => refetchGrading())
             .subscribe();
@@ -253,6 +300,38 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
         return true;
     };
 
+    const fetchSubmissions = async (assignmentId: string) => {
+        const { data, error } = await supabase
+            .from('submissions')
+            .select('*')
+            .eq('assignment_id', assignmentId);
+        if (error) throw error;
+        return data;
+    };
+
+    const fetchClassStudents = async (className: string, section: string) => {
+        const { data, error } = await supabase
+            .from('students')
+            .select('*')
+            .eq('class_name', className)
+            .eq('section', section);
+        if (error) throw error;
+        return data;
+    };
+
+    const verifySubmission = async (submissionId: string, updateData: any) => {
+        const { error } = await (supabase
+            .from('submissions') as any)
+            .update({
+                status: updateData.status,
+                grade: updateData.grade,
+                feedback: updateData.feedback,
+            })
+            .eq('id', submissionId);
+        if (error) throw error;
+        return true;
+    };
+
     return {
         stats,
         assignedSubjects,
@@ -263,10 +342,16 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
         pendingGrading,
         institution,
         facultyProfile,
-        isLoading: isLoadingTotal || isLoadingAssigned || isLoadingSchedule || isLoadingReviews || isLoadingLeaves || isLoadingGrading || isProfileLoading,
+        myAssignments,
+        isLoadingMyAssignments,
+        refetchAssignments,
+        isLoading: isLoadingTotal || isLoadingAssigned || isLoadingSchedule || isLoadingReviews || isLoadingLeaves || isLoadingGrading || isProfileLoading || isLoadingMyAssignments,
         uploadCertificate,
         uploadMaterial,
         deleteMaterial,
         deleteAssignment,
+        fetchSubmissions,
+        fetchClassStudents,
+        verifySubmission,
     };
 }

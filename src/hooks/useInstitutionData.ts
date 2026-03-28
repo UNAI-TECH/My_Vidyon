@@ -167,6 +167,36 @@ export function useInstitutionData(institutionId: string | null, academicYear: s
         enabled: !!institutionId,
     });
 
+    // 5. Fetch authenticated user's profile
+    const { data: profile = null } = useQuery({
+        queryKey: ['institution-profile'],
+        queryFn: async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return null;
+            const { data } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', user.id)
+                .maybeSingle();
+            return data as any;
+        },
+    });
+
+    // 6. Fetch institution details
+    const { data: institution = null } = useQuery({
+        queryKey: ['institution-details', institutionId],
+        queryFn: async () => {
+            if (!institutionId) return null;
+            const { data } = await supabase
+                .from('institutions')
+                .select('*')
+                .eq('institution_id', institutionId)
+                .maybeSingle();
+            return data as any;
+        },
+        enabled: !!institutionId,
+    });
+
     // Real-time Subscriptions
     useEffect(() => {
         if (!institutionId) return;
@@ -197,6 +227,8 @@ export function useInstitutionData(institutionId: string | null, academicYear: s
         charts,
         attendanceFeed,
         pendingLeaves,
+        profile,
+        institution,
         isLoading: isStatsLoading || isChartsLoading || isFeedLoading || isLeavesLoading
     };
 }

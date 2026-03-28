@@ -55,7 +55,6 @@ export default function InstitutionTabs() {
       />
 
       {/* Hidden Screens — Accessible via dashboard shortcuts, not in bottom nav */}
-      <Tabs.Screen name="live-feed" options={{ href: null }} />
       <Tabs.Screen name="faculty/index" options={{ href: null }} />
       <Tabs.Screen name="faculty/assign" options={{ href: null }} />
       <Tabs.Screen name="reports/index" options={{ href: null }} />
@@ -63,6 +62,7 @@ export default function InstitutionTabs() {
       <Tabs.Screen name="leaves/index" options={{ href: null }} />
       <Tabs.Screen name="analytics/index" options={{ href: null }} />
       <Tabs.Screen name="departments/index" options={{ href: null }} />
+      <Tabs.Screen name="exams/index" options={{ href: null }} />
       <Tabs.Screen name="users/index" options={{ href: null }} />
       <Tabs.Screen name="students/add" options={{ href: null }} />
       <Tabs.Screen name="timetable/index" options={{ href: null }} />

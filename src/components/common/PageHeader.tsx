@@ -1,7 +1,10 @@
 import React from 'react';
-import { View, Text, StyleSheet, Image } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Users, GraduationCap, Briefcase, Calculator, Coffee, UserCircle } from 'lucide-react-native';
 import { theme } from '../../theme';
+import { useRouter } from 'expo-router';
+import { useAuth } from '../../hooks/useAuth';
 
 interface PageHeaderProps {
   title: string;
@@ -16,58 +19,92 @@ interface PageHeaderProps {
 }
 
 const getRoleIcon = (role?: string) => {
-  switch(role) {
+  switch(role?.toLowerCase()) {
     case 'student': return <GraduationCap size={24} color={theme.colors.primary} />;
-    case 'faculty': return <Briefcase size={24} color={theme.colors.primary} />;
+    case 'faculty': 
+    case 'teacher':
+    case 'staff':
+      return <Briefcase size={24} color={theme.colors.primary} />;
     case 'parent': return <Users size={24} color={theme.colors.primary} />;
     case 'accountant': return <Calculator size={24} color={theme.colors.primary} />;
-    case 'canteen': return <Coffee size={24} color={theme.colors.primary} />;
+    case 'canteen': 
+    case 'canteen_manager':
+      return <Coffee size={24} color={theme.colors.primary} />;
     default: return <UserCircle size={24} color={theme.colors.primary} />;
   }
 };
 
 const getRoleLabel = (role?: string) => {
   if (!role) return 'User';
+  // Standardize labels
+  if (role.toLowerCase() === 'canteen_manager') return 'Canteen';
   return role.charAt(0).toUpperCase() + role.slice(1);
 };
 
 export const PageHeader = ({ title, subtitle, actions, leftAction, institutionName, institutionLogo, userRole, userAvatar, userSubtitle }: PageHeaderProps) => {
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const { role: authRole, fullName: authName, imageUrl: authAvatar } = useAuth();
+
+  const displayRole = (userRole || authRole || '') as string;
+  const displayUserName = title || (authName ? `Hello, ${authName}!` : 'Welcome!');
+  const displayUserAvatar = (userAvatar?.trim() || authAvatar?.trim()) || undefined;
+
+  const handleProfilePress = () => {
+    const activeRole = userRole || authRole;
+    if (!activeRole) return;
+    
+    // Normalize role for routing
+    const roleSlug = activeRole.toLowerCase().split('_')[0]; // e.g., canteen_manager -> canteen
+    
+    router.push(`/(root)/${roleSlug}/settings`);
+  };
+
+  const showInstitutionCard = !!userRole || !!institutionName || !!institutionLogo;
+  
   return (
-    <View style={styles.outerContainer}>
-      {(institutionName || institutionLogo) && (
+    <View style={[styles.outerContainer, { paddingTop: Math.max(insets.top, theme.spacing.s) }]}>
+      {showInstitutionCard && (
         <View style={styles.institutionCard}>
-          {/* Left side: Institution Info */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 14 }}>
+          <TouchableOpacity 
+            style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 14 }}
+            activeOpacity={0.7}
+            onPress={handleProfilePress}
+          >
             {institutionLogo ? (
               <Image source={{ uri: institutionLogo }} style={styles.institutionLogoBig} />
             ) : (
               <View style={[styles.institutionLogoBig, { backgroundColor: theme.colors.primary + '20', justifyContent: 'center', alignItems: 'center' }]}>
-                <Text style={{ fontWeight: 'bold', color: theme.colors.primary, fontSize: 20 }}>{institutionName?.substring(0, 1)}</Text>
+                <Text style={{ fontWeight: 'bold', color: theme.colors.primary, fontSize: 20 }}>{institutionName?.substring(0, 1) || 'M'}</Text>
               </View>
             )}
             <View style={{ flex: 1 }}>
-              <Text style={styles.institutionNameBig} numberOfLines={1}>{institutionName || 'Institution'}</Text>
-              <Text style={styles.institutionSubtitle}>Powered by My Vidyon</Text>
+              <Text style={styles.institutionNameBig} numberOfLines={1}>{institutionName || 'My Vidyon ERP'}</Text>
+              <Text style={styles.institutionSubtitle}>{displayRole ? `${getRoleLabel(displayRole)} Portal` : 'Powered by My Vidyon'}</Text>
             </View>
-          </View>
-          {/* Right side: Role Badge */}
-          {userRole && (
-            <View style={styles.roleContainer}>
-              <View style={styles.roleIconContainer}>
-                {userAvatar ? (
-                  <Image 
-                    source={{ uri: userAvatar }} 
-                    style={styles.roleAvatar}
-                    resizeMode="cover"
-                  />
-                ) : (
-                  getRoleIcon(userRole)
-                )}
-              </View>
-              <Text style={styles.roleText}>{getRoleLabel(userRole)}</Text>
-              {userSubtitle && <Text style={styles.userSubtitle} numberOfLines={1}>{userSubtitle}</Text>}
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            activeOpacity={0.7}
+            onPress={handleProfilePress}
+            style={styles.roleContainer}
+          >
+            <View style={[styles.roleIconContainer, { borderColor: theme.colors.primary + '20', borderWidth: 1 }]}>
+              {displayUserAvatar ? (
+                <Image 
+                  source={{ uri: displayUserAvatar }} 
+                  style={styles.roleAvatar}
+                  resizeMode="cover"
+                />
+              ) : (
+                <View style={{ transform: [{ scale: 0.8 }] }}>
+                  {getRoleIcon(displayRole)}
+                </View>
+              )}
             </View>
-          )}
+            <Text style={styles.roleText}>{getRoleLabel(displayRole)}</Text>
+            {userSubtitle && <Text style={styles.userSubtitle} numberOfLines={1}>{userSubtitle}</Text>}
+          </TouchableOpacity>
         </View>
       )}
       <View style={styles.container}>
@@ -86,7 +123,7 @@ export const PageHeader = ({ title, subtitle, actions, leftAction, institutionNa
 
 const styles = StyleSheet.create({
   outerContainer: {
-    marginBottom: 24,
+    marginBottom: theme.spacing.l,
     width: '100%',
   },
   institutionCard: {
@@ -94,9 +131,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: 'white',
-    padding: 16,
-    borderRadius: 24,
-    marginBottom: 24,
+    padding: theme.spacing.m,
+    borderRadius: theme.borderRadius.xl,
+    marginBottom: theme.spacing.l,
     width: '100%',
     borderWidth: 1,
     borderColor: '#F1F5F9',
@@ -125,6 +162,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: theme.colors.textMuted,
     marginTop: 2,
+    opacity: 0.8,
   },
   roleContainer: {
     alignItems: 'center',

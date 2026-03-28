@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "891189484070",
+    "project_id": "myvidyon-app-15664",
+    "storage_bucket": "myvidyon-app-15664.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:891189484070:android:238ca105809fe162fba4e7",
+        "android_client_info": {
+          "package_name": "com.myvidyon.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAMhKOHDKLvwZ6aeYmZM2gwMfQ4vNyuADA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

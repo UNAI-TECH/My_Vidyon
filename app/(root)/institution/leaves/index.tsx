@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator, Alert } from 'react-native';
+import React from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator, Image } from 'react-native';
 import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
 import { useAuth } from '../../../../src/hooks/useAuth';
@@ -16,6 +16,7 @@ import {
   AlertCircle
 } from 'lucide-react-native';
 import { AlertModal } from '../../../../src/components/common/AlertModal';
+import { LeaveHistoryModal } from '../../../../src/components/leave/LeaveHistoryModal';
 
 export default function InstitutionLeaves() {
   const { institutionId } = useAuth();
@@ -30,18 +31,38 @@ export default function InstitutionLeaves() {
     type?: 'success' | 'error' | 'info' | 'warning';
   }>({ visible: false, title: '', message: '' });
 
+  // History Modal State
+  const [historyModal, setHistoryModal] = React.useState<{
+    visible: boolean;
+    userId: string | null;
+    userName: string;
+    userImage?: string | null;
+    userType: 'student' | 'staff';
+  }>({
+    visible: false,
+    userId: null,
+    userName: '',
+    userImage: null,
+    userType: 'student',
+  });
+
   const showAlert = (title: string, message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') => {
     setAlertConfig({ visible: true, title, message, type });
   };
 
   // Fetch ALL leave requests for this institution from DB
-  const { data: requests = [], isLoading, refetch } = useQuery<any[]>({
+  const { data: requests = [], isLoading } = useQuery<any[]>({
     queryKey: ['institution-leaves', institutionId],
     queryFn: async () => {
       if (!institutionId) return [];
       const { data, error } = await supabase
         .from('leave_requests')
-        .select('*, students:student_id(name, register_number, class_name, section)')
+        .select(`
+          *, 
+          students:student_id(name, register_number, class_name, section, image_url), 
+          staff:staff_id(full_name, role, image_url, profile_image_url)
+        `)
+        .eq('institution_id', institutionId)
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -52,9 +73,6 @@ export default function InstitutionLeaves() {
     },
     enabled: !!institutionId,
   });
-
-  // Real-time update handled by useERPRealtime global hook
-  // (Redundant useEffect removed)
 
   // Approve or reject a leave request
   const handleAction = async (requestId: string, status: 'approved' | 'rejected') => {
@@ -70,7 +88,8 @@ export default function InstitutionLeaves() {
 
       if (error) throw error;
 
-      showAlert('Success', `Leave request ${status} successfully`, 'success');
+      queryClient.invalidateQueries({ queryKey: ['institution-leaves', institutionId] });
+      showAlert('Success', `Request ${status} successfully`, 'success');
     } catch (error: any) {
       console.error('Error updating leave:', error);
       showAlert('Error', error.message || 'Failed to update leave request', 'error');
@@ -115,29 +134,50 @@ export default function InstitutionLeaves() {
 
   const renderLeaveCard = ({ item }: { item: any }) => {
     const isPending = item.status === 'pending';
-    const studentName = item.students?.name || 'Unknown';
-    const studentClass = item.students?.class_name 
-      ? `${item.students.class_name}${item.students.section ? `-${item.students.section}` : ''}`
-      : '';
-    const regNo = item.students?.register_number || '';
+    const isStaff = !!item.staff_id;
+    
+    const displayName = isStaff ? item.staff?.full_name : (item.students?.name || 'Unknown');
+    const displayRole = isStaff 
+      ? (item.staff?.role ? item.staff.role.charAt(0).toUpperCase() + item.staff.role.slice(1) : 'Staff')
+      : (item.students?.class_name 
+          ? `Student (${item.students.class_name}${item.students.section ? `-${item.students.section}` : ''})`
+          : 'Student');
+    const displayId = isStaff ? '' : (item.students?.register_number ? `#${item.students.register_number}` : '');
+    
+    const userImageUrl = isStaff 
+      ? (item.staff?.profile_image_url || item.staff?.image_url)
+      : item.students?.image_url;
 
     return (
       <View style={[styles.card, !isPending && { opacity: 0.75 }]}>
         <View style={styles.header}>
-          <View style={styles.userInfo}>
-            <View style={styles.avatar}>
-              <User size={20} color={theme.colors.primary} {...({} as any)} />
+          <TouchableOpacity 
+            style={styles.userInfo}
+            onPress={() => setHistoryModal({
+              visible: true,
+              userId: isStaff ? item.staff_id : item.student_id,
+              userName: displayName,
+              userImage: userImageUrl,
+              userType: isStaff ? 'staff' : 'student'
+            })}
+          >
+            <View style={[styles.avatar, isStaff && { backgroundColor: '#EEF2FF' }]}>
+              {userImageUrl ? (
+                <Image source={{ uri: userImageUrl }} style={styles.avatarImage} />
+              ) : (
+                <User size={20} color={theme.colors.primary} {...({} as any)} />
+              )}
             </View>
             <View>
-              <Text style={styles.name}>{studentName}</Text>
+              <Text style={styles.name}>{displayName}</Text>
               <Text style={styles.role}>
-                {studentClass ? `Student (${studentClass})` : `#${regNo}`}
+                {displayRole} {displayId}
               </Text>
             </View>
-          </View>
+          </TouchableOpacity>
           <View style={[styles.typeBadge, { backgroundColor: getStatusBg(item.status) }]}>
             <Text style={[styles.typeText, { color: getStatusColor(item.status) }]}>
-              {isPending ? (item.leave_type || 'Leave') : item.status}
+              {isPending ? (item.leave_type || (isStaff ? 'Staff Leave' : 'Leave')) : item.status}
             </Text>
           </View>
         </View>
@@ -221,6 +261,15 @@ export default function InstitutionLeaves() {
         type={alertConfig.type}
         onClose={() => setAlertConfig(prev => ({ ...prev, visible: false }))}
       />
+
+      <LeaveHistoryModal
+        visible={historyModal.visible}
+        onClose={() => setHistoryModal(prev => ({ ...prev, visible: false }))}
+        userId={historyModal.userId}
+        userName={historyModal.userName}
+        userImage={historyModal.userImage}
+        userType={historyModal.userType}
+      />
     </View>
   );
 }
@@ -232,7 +281,8 @@ const styles = StyleSheet.create({
   card: { backgroundColor: 'white', borderRadius: 24, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: '#F1F5F9' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
   userInfo: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  avatar: { width: 40, height: 40, borderRadius: 10, backgroundColor: theme.colors.primary + '10', justifyContent: 'center', alignItems: 'center' },
+  avatar: { width: 40, height: 40, borderRadius: 10, backgroundColor: theme.colors.primary + '10', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
+  avatarImage: { width: '100%', height: '100%' },
   name: { fontSize: 15, fontWeight: 'bold', color: theme.colors.text },
   role: { fontSize: 11, color: theme.colors.textMuted, marginTop: 2 },
   typeBadge: { backgroundColor: '#FFFBEB', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: '#F1F5F9' },

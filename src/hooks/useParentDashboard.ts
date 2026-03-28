@@ -135,8 +135,17 @@ export function useParentDashboard(parentId?: string): ParentDashboardData & { i
         queryKey: ['parent-profile', parentId],
         queryFn: async () => {
             if (!parentId) return null;
-            const { data } = await supabase.from('profiles').select('full_name, image_url').eq('id', parentId).maybeSingle();
-            return data as any;
+            const { data, error } = await supabase
+                .from('profiles')
+                .select('full_name, image_url')
+                .eq('id', parentId)
+                .maybeSingle();
+            
+            if (error) {
+                console.error('Error fetching parent profile:', error);
+                return null;
+            }
+            return data as unknown as { full_name: string; image_url: string | null };
         },
         enabled: !!parentId,
     });

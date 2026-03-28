@@ -1,4 +1,4 @@
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { LogBox } from 'react-native';
 
 // Suppress the Expo Go push notification removal warning for Android SDK 53+
@@ -19,6 +19,7 @@ import { useEffect } from 'react';
 
 function RealtimeObserver({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
+  const router = useRouter();
   useERPRealtime();
 
   useEffect(() => {
@@ -27,22 +28,34 @@ function RealtimeObserver({ children }: { children: React.ReactNode }) {
       registerForPushNotificationsAsync(user.id);
 
       // Setup listeners
-      const { notificationListener, responseListener } = setupNotificationListeners();
+      const { notificationListener, responseListener } = setupNotificationListeners((data: any) => {
+        console.log('Notification Clicked: Redirection Logged', data);
+        
+        // Handle explicit timetable redirection for SDK consistency
+        if (data?.type === 'timetable') {
+           router.push('/student/timetable');
+        } else if (data?.action_url) {
+           router.push(data.action_url);
+        }
+      });
 
       return () => {
         notificationListener.remove();
         responseListener.remove();
       };
     }
-  }, [user?.id]);
+  }, [user?.id, router]);
 
   return <>{children}</>;
 }
+
+import { StatusBar } from 'expo-status-bar';
 
 export default function AppLayout() {
   console.log("ROOT LAYOUT BOOTING WITH STACK");
   return (
     <SafeAreaProvider>
+      <StatusBar style="dark" />
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
           <RealtimeObserver>

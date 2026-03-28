@@ -45,25 +45,24 @@ export async function registerForPushNotificationsAsync(userId: string) {
       return null;
     }
 
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('default', {
+        name: 'default',
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#FF231F7C',
+      });
+    }
+
     // Get the FCM token specifically, as your current edge function is coded for FCM
     try {
-        console.log('Attempting to get Device Push Token...');
+        console.log('Attempting to get Device Push Token (FCM)...');
         const deviceToken = await Notifications.getDevicePushTokenAsync();
         token = deviceToken.data;
         console.log('Register Success: Got Device Push Token:', token);
     } catch (e: any) {
         console.warn('Could not get device push token (expected on some simulators):', e.message);
-        // Fallback to Expo token if device token fails
-        try {
-            console.log('Attempting fallback to Expo Push Token...');
-            const expoToken = await Notifications.getExpoPushTokenAsync({
-                projectId: Constants.expoConfig?.extra?.eas?.projectId,
-            });
-            token = expoToken.data;
-            console.log('Register Success: Got Expo Push Token:', token);
-        } catch (fallbackError: any) {
-            console.warn('Push Notifications: Failed to get any push token. On Android, this usually means google-services.json is missing or Firebase is not configured. Redirect to: https://docs.expo.dev/push-notifications/fcm-credentials/');
-        }
+        console.log('Skipping push registration as native tokens are required for direct FCM delivery.');
     }
   } else {
     console.log('Push Notifications: Skipping registration (Not a physical device)');
@@ -95,17 +94,19 @@ export async function registerForPushNotificationsAsync(userId: string) {
  * Sets up notification listeners.
  * Returning these allow the caller to remove them on unmount.
  */
-export function setupNotificationListeners() {
+export function setupNotificationListeners(onResponse?: (data: any) => void) {
   const notificationListener = Notifications.addNotificationReceivedListener(notification => {
     console.log('Notification Received (foreground):', notification);
   });
 
   const responseListener = Notifications.addNotificationResponseReceivedListener(response => {
     console.log('Notification Response Received:', response);
-    // Handle navigation here if action_url is present in data
     const data = response.notification.request.content.data;
-    if (data?.action_url) {
-        // You might want to use router.push(data.action_url) here
+    if (onResponse) {
+        onResponse(data);
+    } else if (data?.action_url) {
+        // Default fallback if no handler provided (but usually we'll provide one)
+        console.log('Notification clicked with action_url:', data.action_url);
     }
   });
 

@@ -222,9 +222,9 @@ export default function ExamGrading() {
     setIsPublishing(true);
     setModalVisible(false);
     try {
-      const { error } = await supabase
-        .from('exam_results')
-        .update({ status: 'PUBLISHED' } as any)
+      const { error } = await (supabase
+        .from('exam_results') as any)
+        .update({ status: 'PUBLISHED' })
         .eq('exam_id', id)
         .eq('subject_id', selectedSubject.subject_id);
 

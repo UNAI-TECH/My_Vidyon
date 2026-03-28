@@ -31,12 +31,30 @@ export const NotificationView = ({ role }: NotificationViewProps) => {
     setTimeout(() => setRefreshing(false), 1000);
   };
 
+  const normalizeRoute = (path: string) => {
+    if (!path) return path;
+    let normalized = path;
+    // Remove (root), (auth), etc. group segments
+    normalized = normalized.replace(/\/\(\w+\)/g, '');
+    // Remove /index suffix if it's not the root index
+    if (normalized !== '/index') {
+      normalized = normalized.replace(/\/index$/, '');
+    }
+    // Ensure it starts with /
+    if (!normalized.startsWith('/')) {
+      normalized = '/' + normalized;
+    }
+    return normalized as any;
+  };
+
   const handleNotificationPress = (item: NotificationItem) => {
     if (!item.read) {
       markAsRead(item.id);
     }
     if (item.actionUrl) {
-      router.push(item.actionUrl as any);
+      const targetPath = normalizeRoute(item.actionUrl);
+      console.log('Navigating to normalized path:', targetPath);
+      router.push(targetPath);
     }
   };
 

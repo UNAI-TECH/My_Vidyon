@@ -40,8 +40,8 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   card: {
-    width: '22%', // 4 items per row
-    aspectRatio: 0.9,
+    width: theme.metrics.isSmallDevice ? '30%' : '22%', // 3 items on small, 4 on others
+    aspectRatio: 1,
     backgroundColor: 'white',
     borderRadius: 20,
     justifyContent: 'center',
@@ -56,12 +56,12 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   iconWrapper: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
+    width: theme.metrics.isSmallDevice ? 36 : 44,
+    height: theme.metrics.isSmallDevice ? 36 : 44,
+    borderRadius: theme.borderRadius.m,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: theme.spacing.s,
   },
   label: {
     fontSize: 10,

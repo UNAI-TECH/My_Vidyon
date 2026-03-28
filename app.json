@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "my-vidyon-rebuild",
+    "name": "MY VIDYON",
     "slug": "my-vidyon-rebuild",
     "scheme": "myvidyonrebuild",
     "version": "1.0.0",
@@ -23,7 +23,12 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "package": "com.anonymous.myvidyonrebuild"
+      "package": "com.myvidyon.app",
+      "googleServicesFile": "./google-services.json",
+      "notification": {
+        "icon": "./assets/android-icon-monochrome.png",
+        "color": "#1E3A8A"
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -40,6 +45,12 @@
       "eas": {
         "projectId": "e43bedd5-6bcc-4eeb-9a4b-4588ac9d04aa"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/e43bedd5-6bcc-4eeb-9a4b-4588ac9d04aa"
     }
   }
 }

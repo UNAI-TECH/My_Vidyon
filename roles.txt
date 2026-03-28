@@ -1,0 +1,1 @@
+institution, parent, faculty, admin, student, canteen_manager, accountant

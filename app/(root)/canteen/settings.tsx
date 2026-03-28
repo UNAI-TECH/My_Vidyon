@@ -1,16 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { theme } from '../../../src/theme';
+import { ProfileSettings } from '../../../src/components/common/ProfileSettings';
 
-export default function CanteenSettings() {
-  return (
-    <View style={styles.container}>
-      <Text style={styles.text}>Canteen Settings Coming Soon</Text>
-    </View>
-  );
+export default function CanteenSettingsPage() {
+  return <ProfileSettings />;
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.background },
-  text: { color: theme.colors.text, fontSize: 18 },
-});

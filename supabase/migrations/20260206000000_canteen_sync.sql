@@ -32,12 +32,20 @@ END $$;
 CREATE OR REPLACE FUNCTION public.tr_sync_canteen_permission()
 RETURNS TRIGGER AS $$
 BEGIN
-    -- Logic to sync canteen permission based on attendance status
-    -- For example: if status is 'absent', canteen_permission = 'false'
+    -- Sync academic year from students table if missing
+    IF NEW.academic_year IS NULL THEN
+        SELECT s.academic_year INTO NEW.academic_year
+        FROM public.students s
+        WHERE s.id = NEW.student_id;
+    END IF;
+
+    -- Logic to sync canteen permission and entry_allowed based on attendance status
     IF NEW.status = 'absent' THEN
         NEW.canteen_permission := 'false';
-    ELSEIF NEW.status = 'present' THEN
+        NEW.entry_allowed := false;
+    ELSEIF NEW.status = 'present' OR NEW.status = 'late' THEN
         NEW.canteen_permission := 'true';
+        NEW.entry_allowed := true;
     END IF;
     RETURN NEW;
 END;

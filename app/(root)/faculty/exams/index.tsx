@@ -97,7 +97,7 @@ export default function FacultyExams() {
                 <Text style={styles.examName}>{exam.exam_display_name || exam.exam_type}</Text>
                 <View style={styles.examMeta}>
                   <Calendar size={12} color={theme.colors.textMuted} {...({} as any)} />
-                  <Text style={styles.metaText}>{exam.academic_year} • Class {exam.class_id} {exam.section}</Text>
+                  <Text style={styles.metaText}>{exam.academic_year} • Class {classNameMap[exam.class_id] || exam.class_id} {exam.section}</Text>
                 </View>
               </View>
               <View style={styles.actions}>

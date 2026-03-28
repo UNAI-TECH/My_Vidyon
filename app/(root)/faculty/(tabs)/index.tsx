@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NotificationBell } from '../../../../src/components/common/NotificationBell';
 import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
@@ -39,7 +40,9 @@ const chartConfig = {
 };
 
 export default function FacultyDashboard() {
-  const { user, institutionId, role } = useAuth();
+  const insets = useSafeAreaInsets();
+  const { user, institutionId, role, imageUrl } = useAuth();
+
   const { stats, todaySchedule, assignedSubjects, assignedStudents, institution, facultyProfile, isLoading } = useFacultyDashboard(user?.id, institutionId || undefined);
 
   const router = useRouter();
@@ -60,14 +63,20 @@ export default function FacultyDashboard() {
   ];
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView 
+      style={styles.container} 
+      contentContainerStyle={[
+        styles.content, 
+        { paddingBottom: insets.bottom + 100 }
+      ]}
+    >
       <PageHeader 
         title={`Hello, ${welcomeName}!`} 
         subtitle={facultySubtitle}
         institutionName={institution?.name}
         institutionLogo={institution?.logo_url}
-        userRole={role || undefined}
-        userAvatar={facultyProfile?.image_url || undefined}
+        userRole={role || 'faculty'}
+        userAvatar={imageUrl || undefined}
         userSubtitle={facultyProfile?.department || undefined}
         actions={<NotificationBell />}
       />
@@ -255,8 +264,8 @@ export default function FacultyDashboard() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
-  content: { padding: 24, paddingBottom: 100 },
-  section: { marginBottom: 32 },
+  content: { padding: theme.spacing.m },
+  section: { marginBottom: theme.spacing.l },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   sectionTitle: { fontSize: 20, fontWeight: 'bold', color: theme.colors.text },
   viewAllText: { fontSize: 14, color: theme.colors.primary, fontWeight: '600' },

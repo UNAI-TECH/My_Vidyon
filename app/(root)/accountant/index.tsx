@@ -22,7 +22,7 @@ import { PieChart } from 'react-native-chart-kit';
 const screenWidth = Dimensions.get('window').width;
 
 export default function AccountantDashboard() {
-  const { institutionId, role } = useAuth();
+  const { institutionId, role, imageUrl } = useAuth();
   const { stats, institution, isLoading } = useAccountantDashboard(institutionId || undefined);
 
   const welcomeName = stats.accountantProfile?.full_name || 'Accountant';
@@ -37,7 +37,7 @@ export default function AccountantDashboard() {
         institutionName={institution?.name}
         institutionLogo={institution?.logo_url}
         userRole={role || undefined}
-        userAvatar={stats.accountantProfile?.image_url || undefined}
+        userAvatar={imageUrl || stats.accountantProfile?.image_url || undefined}
         userSubtitle="Financial Head"
         actions={
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>

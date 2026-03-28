@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, Image, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, Image, ScrollView, Animated, Dimensions, Easing } from 'react-native';
 import { theme } from '../../src/theme';
 import { supabase } from '../../src/lib/supabase';
 import { Lock, Mail, ChevronRight, User as UserIcon, X } from 'lucide-react-native';
@@ -13,6 +13,48 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { savedAccounts, saveAccount, switchToAccount, removeAccount, switchingAccount } = useQuickLogin();
+  
+  // Animation state
+  const [animatingAccount, setAnimatingAccount] = useState<any>(null);
+  const scaleValue = React.useRef(new Animated.Value(0)).current;
+  const opacityValue = React.useRef(new Animated.Value(0)).current;
+  
+  // Sync missing images for saved accounts
+  React.useEffect(() => {
+    const syncImages = async () => {
+      const accountsToUpdate = savedAccounts.filter(a => !a.image_url);
+      if (accountsToUpdate.length === 0) return;
+
+      for (const account of accountsToUpdate) {
+        try {
+          let foundImg = null;
+          // 1. Try profiles table
+          const { data: profile } = await supabase.from('profiles').select('image_url, profile_image_url, avatar_url, role, institution_id').eq('id', account.id).maybeSingle() as any;
+          if (profile) foundImg = profile.image_url || profile.profile_image_url || profile.avatar_url;
+          
+          // 2. Try students table specifically for students
+          if (account.role === 'student' || (profile && profile.role === 'student')) {
+            const { data: student } = await supabase.from('students').select('image_url').or(`user_id.eq.${account.id},profile_id.eq.${account.id}`).maybeSingle() as any;
+            if (student?.image_url) foundImg = student.image_url;
+          }
+
+          // 3. Try institutions table for admin/institution profiles
+          if ((account.role === 'admin' || account.role === 'staff' || (profile && profile.role === 'admin')) && (account.institution_id || profile?.institution_id)) {
+            const instId = account.institution_id || profile?.institution_id;
+            const { data: inst } = await supabase.from('institutions').select('logo_url').eq('institution_id', instId).maybeSingle() as any;
+            if (inst?.logo_url) foundImg = inst.logo_url;
+          }
+
+          if (foundImg) {
+            await saveAccount({ ...account, image_url: foundImg });
+          }
+        } catch (e) {
+          console.error('[Sync] Failed for', account.id, e);
+        }
+      }
+    };
+    syncImages();
+  }, [savedAccounts.length]);
 
   const handleLogin = async () => {
     setLoading(true);
@@ -33,24 +75,114 @@ export default function LoginScreen() {
           .maybeSingle() as any;
 
         if (profile && data.session) {
+          let imageUrl = profile.image_url || profile.profile_image_url || profile.avatar_url;
+          let fullName = profile.full_name;
+
+          // If student, attempt to get image from students table
+          if (profile.role === 'student') {
+            const { data: student } = await supabase
+              .from('students')
+              .select('name, image_url')
+              .or(`user_id.eq.${data.user.id},profile_id.eq.${data.user.id}`)
+              .maybeSingle() as any;
+            
+            if (student) {
+              imageUrl = student.image_url || imageUrl;
+              fullName = student.name || fullName;
+            }
+          }
+
+          // If institution/admin, get logo from institutions table
+          if ((profile.role === 'admin' || profile.role === 'staff') && profile.institution_id) {
+            const { data: inst } = await supabase
+              .from('institutions')
+              .select('logo_url')
+              .eq('institution_id', profile.institution_id)
+              .maybeSingle() as any;
+            if (inst?.logo_url) imageUrl = inst.logo_url;
+          }
+
           await saveAccount({
             id: profile.id,
             email: data.user.email!,
-            full_name: profile.full_name || data.user.email!.split('@')[0],
+            full_name: fullName || data.user.email!.split('@')[0],
             role: profile.role,
             institution_id: profile.institution_id,
-            image_url: profile.image_url,
+            image_url: imageUrl,
             access_token: data.session.access_token,
             refresh_token: data.session.refresh_token,
           });
         }
-        router.replace('/(root)');
+        router.replace('/');
       }
     } catch (e: any) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleAccountPress = (account: any) => {
+    setAnimatingAccount(account);
+    setError(null);
+    
+    // Reset values just in case
+    scaleValue.setValue(0.5);
+    opacityValue.setValue(0);
+
+    Animated.parallel([
+      Animated.spring(scaleValue, {
+        toValue: 1,
+        useNativeDriver: true,
+        damping: 15,
+        mass: 1,
+        stiffness: 120,
+      }),
+      Animated.timing(opacityValue, {
+        toValue: 1,
+        duration: 300,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      })
+    ]).start(async () => {
+      const success = await switchToAccount(account);
+      if (success) {
+        // Transition animation out into the app
+        Animated.parallel([
+          Animated.timing(scaleValue, {
+            toValue: 15, // Zoom to fill screen
+            duration: 500,
+            easing: Easing.in(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(opacityValue, {
+            toValue: 0,
+            duration: 400,
+            delay: 100,
+            useNativeDriver: true,
+          })
+        ]).start(() => {
+          router.replace('/');
+        });
+      } else {
+        // Fail - zoom back down
+        Animated.parallel([
+          Animated.spring(scaleValue, {
+            toValue: 0.5,
+            useNativeDriver: true,
+          }),
+          Animated.timing(opacityValue, {
+            toValue: 0,
+            duration: 200,
+            useNativeDriver: true,
+          })
+        ]).start(() => {
+          setAnimatingAccount(null);
+          setError('Session expired. Please log in with your password.');
+          setEmail(account.email);
+        });
+      }
+    });
   };
 
   return (
@@ -62,15 +194,12 @@ export default function LoginScreen() {
         <ScrollView contentContainerStyle={styles.container} bounces={false}>
           <View style={styles.content}>
             <View style={styles.logoContainer}>
-            <Image 
-              source={require('@/assets/logo.png')} 
-              style={styles.logo}
-              resizeMode="contain"
-            />
-          </View>
-          
-          <Text style={styles.title}>My Vidyon</Text>
-          <Text style={styles.subtitle}>Unified Education Platform</Text>
+              <Image 
+                source={require('@/assets/logo.png')} 
+                style={styles.logo}
+                resizeMode="contain"
+              />
+            </View>
 
           {savedAccounts.length > 0 && (
             <View style={styles.savedAccountsContainer}>
@@ -84,16 +213,7 @@ export default function LoginScreen() {
                   <TouchableOpacity 
                     key={account.id} 
                     style={styles.accountCard}
-                    onPress={async () => {
-                      setError(null);
-                      const success = await switchToAccount(account);
-                      if (success) {
-                        router.replace('/(root)');
-                      } else {
-                        setError('Session expired. Please log in with your password.');
-                        setEmail(account.email);
-                      }
-                    }}
+                    onPress={() => handleAccountPress(account)}
                   >
                     <View style={styles.avatarContainer}>
                       {account.image_url ? (
@@ -169,6 +289,45 @@ export default function LoginScreen() {
         </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Animation Overlay */}
+      {animatingAccount && (
+        <Animated.View style={[
+          StyleSheet.absoluteFill,
+          {
+            backgroundColor: 'rgba(255,255,255,0.95)',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 1000,
+            opacity: opacityValue,
+          }
+        ]} pointerEvents="auto">
+          <Animated.View style={{
+            alignItems: 'center',
+            transform: [{ scale: scaleValue }]
+          }}>
+            <View style={[styles.avatarContainer, { width: 120, height: 120, marginBottom: 24 }]}>
+              {animatingAccount.image_url ? (
+                <Image source={{ uri: animatingAccount.image_url }} style={[styles.avatar, { width: 120, height: 120, borderRadius: 60 }]} />
+              ) : (
+                <View style={[styles.avatar, styles.placeholderAvatar, { width: 120, height: 120, borderRadius: 60 }]}>
+                  <UserIcon size={50} color={theme.colors.primary} {...({} as any)} />
+                </View>
+              )}
+            </View>
+            <Text style={[styles.accountName, { fontSize: 24 }]}>{animatingAccount.full_name}</Text>
+            <Text style={[styles.accountRole, { fontSize: 16, marginBottom: 24 }]}>
+              {animatingAccount.role.charAt(0).toUpperCase() + animatingAccount.role.slice(1)}
+            </Text>
+            
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <ActivityIndicator color={theme.colors.primary} size="small" />
+              <Text style={{ color: theme.colors.textMuted, fontSize: 16, fontWeight: '500' }}>Logging in...</Text>
+            </View>
+          </Animated.View>
+        </Animated.View>
+      )}
+
     </SafeAreaView>
   );
 }
@@ -189,7 +348,8 @@ const styles = StyleSheet.create({
     height: 80, 
     justifyContent: 'center', 
     alignItems: 'center', 
-    marginBottom: 24,
+    marginTop: 40,
+    marginBottom: 60,
     backgroundColor: 'transparent'
   },
   logo: {

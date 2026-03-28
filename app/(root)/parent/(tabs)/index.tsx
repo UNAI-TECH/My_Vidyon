@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Linking } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NotificationBell } from '../../../../src/components/common/NotificationBell';
 import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
@@ -21,7 +22,8 @@ import { Link, useRouter } from 'expo-router';
 import { useParentDashboard } from '../../../../src/hooks/useParentDashboard';
 
 export default function ParentDashboard() {
-  const { user, role } = useAuth();
+  const insets = useSafeAreaInsets();
+  const { user, role, imageUrl } = useAuth();
   const router = useRouter();
   const { children, pendingFees, institution, parentProfile, isLoading } = useParentDashboard(user?.id);
 
@@ -30,15 +32,22 @@ export default function ParentDashboard() {
   if (isLoading) return <View style={styles.container}><Text>Loading Children Data...</Text></View>;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView 
+      style={styles.container} 
+      contentContainerStyle={[
+        styles.content, 
+        { paddingBottom: insets.bottom + theme.spacing.xl }
+      ]}
+      showsVerticalScrollIndicator={false}
+    >
       <PageHeader 
         title={`Hello, ${welcomeName}!`} 
         subtitle={institution ? `Staying connected with ${institution.name}` : "Staying connected to your child's progress"}
         institutionName={institution?.name}
         institutionLogo={institution?.logo_url}
-        userRole={role || undefined}
-        userAvatar={parentProfile?.image_url || undefined}
-        userSubtitle={`${children.length} Children Enrolled`}
+        userRole={role || 'parent'}
+        userAvatar={imageUrl || undefined}
+        userSubtitle={children.length > 0 ? `${children.length} Children Enrolled` : undefined}
         actions={<NotificationBell />}
       />
 
@@ -155,15 +164,15 @@ export default function ParentDashboard() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
-  content: { padding: 24 },
-  section: { marginBottom: 24 },
+  content: { padding: theme.spacing.m },
+  section: { marginBottom: theme.spacing.l },
   sectionTitle: { fontSize: 18, fontWeight: 'bold', color: theme.colors.text, marginBottom: 16 },
   childCard: { 
     backgroundColor: 'white', 
     borderRadius: 24, 
-    padding: 20, 
-    flexDirection: 'row', 
-    alignItems: 'center',
+    padding: theme.metrics.isSmallDevice ? 16 : 20, 
+    flexDirection: theme.metrics.width < 400 ? 'column' : 'row', 
+    alignItems: theme.metrics.width < 400 ? 'flex-start' : 'center',
     borderWidth: 1,
     borderColor: '#F1F5F9',
     shadowColor: '#000',
@@ -171,6 +180,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 10,
     elevation: 2,
+    gap: theme.metrics.width < 400 ? 12 : 0,
   },
   childInfo: { flex: 1, flexDirection: 'row', alignItems: 'center' },
   avatar: { width: 44, height: 44, borderRadius: 14, backgroundColor: theme.colors.primary + '20', justifyContent: 'center', alignItems: 'center', marginRight: 12, overflow: 'hidden' },
@@ -178,15 +188,34 @@ const styles = StyleSheet.create({
   avatarText: { fontWeight: 'bold', color: theme.colors.primary },
   childName: { fontSize: 16, fontWeight: 'bold', color: theme.colors.text },
   childMeta: { fontSize: 12, color: theme.colors.textMuted },
-  childStats: { flexDirection: 'row', gap: 16, marginRight: 12 },
-  miniStat: { alignItems: 'flex-end' },
+  childStats: { 
+    flexDirection: 'row', 
+    gap: 16, 
+    marginRight: 12,
+    width: theme.metrics.width < 400 ? '100%' : 'auto',
+    justifyContent: theme.metrics.width < 400 ? 'space-between' : 'flex-end',
+    borderTopWidth: theme.metrics.width < 400 ? 1 : 0,
+    borderTopColor: '#F1F5F9',
+    paddingTop: theme.metrics.width < 400 ? 12 : 0,
+  },
+  miniStat: { alignItems: theme.metrics.width < 400 ? 'flex-start' : 'flex-end' },
   miniStatLabel: { fontSize: 8, fontWeight: 'bold', color: theme.colors.textMuted },
   miniStatValue: { fontSize: 14, fontWeight: 'bold' },
-  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 24 },
-  safetyCard: { backgroundColor: '#FFFBEB', borderRadius: 24, padding: 20, borderWidth: 1, borderColor: '#FEF3C7' },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 12, gap: 12 },
+  safetyCard: { backgroundColor: '#FFFBEB', borderRadius: 24, padding: 20, borderWidth: 1, borderColor: '#FEF3C7', marginBottom: 20 },
   safetyHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
   safetyTitle: { fontSize: 16, fontWeight: 'bold', color: '#92400E' },
-  contactRow: { flexDirection: 'row', gap: 12 },
-  contactButton: { flex: 1, backgroundColor: '#F59E0B', borderRadius: 12, paddingVertical: 12, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
+  contactRow: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
+  contactButton: { 
+    flex: 1, 
+    minWidth: 140,
+    backgroundColor: '#F59E0B', 
+    borderRadius: 12, 
+    paddingVertical: 12, 
+    flexDirection: 'row', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    gap: 8 
+  },
   contactText: { color: 'white', fontWeight: 'bold', fontSize: 13 },
 });

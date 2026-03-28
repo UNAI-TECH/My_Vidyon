@@ -5,10 +5,14 @@ import { theme } from '../../src/theme';
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../src/lib/supabase';
 import { AlertModal } from '../../src/components/common/AlertModal';
+import { useERPRealtime } from '../../src/hooks/useERPRealtime';
 
 export default function RootLayout() {
   const auth = useAuth();
   const { session, role, loading, user, institutionId, institutionUuid } = auth;
+  
+  // Activate global real-time sync hook
+  useERPRealtime();
   const [activeNotification, setActiveNotification] = useState<{
     visible: boolean;
     title: string;
@@ -73,7 +77,6 @@ export default function RootLayout() {
   return (
     <>
       <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="index" />
         <Stack.Screen name="student" />
         <Stack.Screen name="faculty" />
         <Stack.Screen name="admin" />

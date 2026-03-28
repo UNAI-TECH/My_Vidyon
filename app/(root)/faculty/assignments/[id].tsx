@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Linking, Modal, TextInput, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Linking, Modal, TextInput, RefreshControl, Image } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
@@ -212,11 +212,15 @@ export default function AssignmentDetails() {
             <View key={item.id} style={styles.studentCard}>
               <View style={styles.studentInfo}>
                 <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>{item.full_name?.charAt(0)}</Text>
+                  {item.image_url ? (
+                    <Image source={{ uri: item.image_url }} style={styles.avatarImage} />
+                  ) : (
+                    <Text style={styles.avatarText}>{item.name?.charAt(0) || '?'}</Text>
+                  )}
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.studentName}>{item.full_name}</Text>
-                  <Text style={styles.rollNo}>Roll No: {item.roll_no || 'N/A'}</Text>
+                  <Text style={styles.studentName}>{item.name}</Text>
+                  <Text style={styles.rollNo}>Roll No: {item.register_number || 'N/A'}</Text>
                 </View>
                 <View style={[
                   styles.statusBadge, 
@@ -235,7 +239,7 @@ export default function AssignmentDetails() {
 
               <View style={styles.submissionMeta}>
                 <Text style={styles.submittedAt}>
-                  Submitted: {item.submission.created_at ? format(new Date(item.submission.created_at), 'MMM d, h:mm a') : 'N/A'}
+                  Submitted: {(item.submission.submitted_at || item.submission.created_at) ? format(new Date(item.submission.submitted_at || item.submission.created_at), 'MMM d, h:mm a') : 'N/A'}
                 </Text>
                 {item.submission.file_path ? (
                   <TouchableOpacity 
@@ -304,11 +308,15 @@ export default function AssignmentDetails() {
             <View key={student.id} style={[styles.studentCard, { opacity: 0.7 }]}>
               <View style={styles.studentInfo}>
                 <View style={[styles.avatar, { backgroundColor: '#F1F5F9' }]}>
-                  <Text style={[styles.avatarText, { color: '#64748B' }]}>{student.full_name?.charAt(0)}</Text>
+                  {student.image_url ? (
+                    <Image source={{ uri: student.image_url }} style={styles.avatarImage} />
+                  ) : (
+                    <Text style={[styles.avatarText, { color: '#64748B' }]}>{student.name?.charAt(0) || '?'}</Text>
+                  )}
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.studentName}>{student.full_name}</Text>
-                  <Text style={styles.rollNo}>Roll No: {student.roll_no || 'N/A'}</Text>
+                  <Text style={styles.studentName}>{student.name}</Text>
+                  <Text style={styles.rollNo}>Roll No: {student.register_number || 'N/A'}</Text>
                 </View>
                 <View style={styles.missingBadge}>
                   <Clock size={12} color="#94A3B8" {...({} as any)} />
@@ -416,7 +424,8 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 18, fontWeight: 'bold', color: theme.colors.text, marginBottom: 16 },
   studentCard: { backgroundColor: 'white', borderRadius: 20, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: '#F1F5F9' },
   studentInfo: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: theme.colors.primary + '10', justifyContent: 'center', alignItems: 'center' },
+  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: theme.colors.primary + '10', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
+  avatarImage: { width: '100%', height: '100%' },
   avatarText: { color: theme.colors.primary, fontWeight: 'bold', fontSize: 18 },
   studentName: { fontSize: 15, fontWeight: 'bold', color: theme.colors.text },
   rollNo: { fontSize: 12, color: theme.colors.textMuted, marginTop: 2 },

@@ -41,7 +41,7 @@ export default function CanteenTabs() {
       <Tabs.Screen
         name="index"
         options={{
-          tabBarLabel: 'Orders',
+          tabBarLabel: 'Dashboard',
           tabBarIcon: ({ color }) => <Utensils size={22} color={color} {...({} as any)} />,
         }}
       />
@@ -54,7 +54,6 @@ export default function CanteenTabs() {
       />
 
       {/* Hidden Screens */}
-      <Tabs.Screen name="menu" options={{ href: null }} />
       <Tabs.Screen name="notifications" options={{ href: null }} />
     </Tabs>
   );
