@@ -7,6 +7,7 @@ import { StatCard } from '../../../src/components/common/StatCard';
 import { AdCard } from '../../../src/components/common/AdCard';
 import { useAuth } from '../../../src/hooks/useAuth';
 import { useAccountantDashboard } from '../../../src/hooks/useAccountantDashboard';
+import { DashboardBanner } from '../../../src/components/common/Ads/DashboardBanner';
 import {
   CreditCard,
   TrendingUp,
@@ -144,6 +145,8 @@ export default function AccountantDashboard() {
           )}
         </View>
       </View>
+
+      <DashboardBanner type="ACCOUNTANT" />
 
       <TouchableOpacity style={styles.actionButton}>
         <Download size={20} color="white" {...({} as any)} />

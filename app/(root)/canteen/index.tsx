@@ -8,6 +8,7 @@ import { PageHeader } from '../../../src/components/common/PageHeader';
 import { useAuth } from '../../../src/hooks/useAuth';
 import { useCanteenDashboard } from '../../../src/hooks/useCanteenDashboard';
 import { supabase } from '../../../src/lib/supabase';
+import { DashboardBanner } from '../../../src/components/common/Ads/DashboardBanner';
 import { 
   Users, CheckCircle, XCircle, ShieldAlert, Lock, User, 
   HelpCircle, CheckSquare, XSquare, PartyPopper, 
@@ -170,6 +171,7 @@ export default function CanteenDashboard() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />
         }
         contentContainerStyle={styles.list}
+        ListFooterComponent={<DashboardBanner type="CANTEEN" />}
         ListHeaderComponent={
           <View>
             {/* Greeting */}

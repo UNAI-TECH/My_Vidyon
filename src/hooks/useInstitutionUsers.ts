@@ -13,6 +13,7 @@ export function useInstitutionUsers(institutionId: string | null) {
         .from('students')
         .select('*, parents:parent_id(full_name, email, phone)')
         .eq('institution_id', institutionId)
+        .eq('is_active', true)
         .order('name');
       if (error) throw error;
       return data || [];
@@ -28,6 +29,7 @@ export function useInstitutionUsers(institutionId: string | null) {
         .from('profiles')
         .select('*')
         .eq('institution_id', institutionId)
+        .eq('is_active', true)
         .order('full_name');
       if (error) throw error;
       const targetRoles = ['faculty', 'admin', 'teacher', 'accountant', 'canteen_manager', 'driver'];
@@ -44,6 +46,7 @@ export function useInstitutionUsers(institutionId: string | null) {
         .from('parents')
         .select('*')
         .eq('institution_id', institutionId)
+        .eq('is_active', true)
         .order('name');
       if (error) throw error;
       return data || [];
@@ -91,6 +94,44 @@ export function useInstitutionUsers(institutionId: string | null) {
       });
       if (error) throw error;
       
+      // Invalidate and refetch queries immediately
+      const keys = [];
+      if (type === 'student') keys.push(['institution-students']);
+      if (type === 'staff') keys.push(['institution-staff']);
+      if (type === 'parent') keys.push(['institution-parents']);
+      
+      for (const key of keys) {
+        await queryClient.refetchQueries({ queryKey: key, exact: false });
+      }
+      
+      return { success: true };
+    } catch (err) {
+      console.error(err);
+      return { success: false, error: err };
+    }
+  };
+
+  const deleteUser = async (id: string, type: 'student' | 'staff' | 'parent') => {
+    try {
+      console.log(`[DELETE_ATTEMPT] Starting for ID: ${id}, Type: ${type}`);
+      const { data, error } = await (supabase.rpc as any)('delete_user_completely', {
+        user_id: id,
+        user_type: type
+      });
+      
+      console.log(`[DELETE_RESPONSE] Data:`, data);
+      if (error) {
+        console.error(`[DELETE_RPC_ERROR]`, error);
+        throw error;
+      }
+      
+      if (data && data.success === false) {
+        console.error(`[DELETE_BUSINESS_ERROR]`, data.message, data.detail);
+        throw new Error(data.message + (data.detail ? ': ' + data.detail : ''));
+      }
+      
+      console.log(`[DELETE_SUCCESS] User removed. Invalidating queries...`);
+      
       // Invalidate queries
       if (type === 'student') queryClient.invalidateQueries({ queryKey: ['institution-students'] });
       if (type === 'staff') queryClient.invalidateQueries({ queryKey: ['institution-staff'] });
@@ -98,7 +139,7 @@ export function useInstitutionUsers(institutionId: string | null) {
       
       return { success: true };
     } catch (err) {
-      console.error(err);
+      console.error('Delete user error:', err);
       return { success: false, error: err };
     }
   };
@@ -157,6 +198,7 @@ export function useInstitutionUsers(institutionId: string | null) {
     parents,
     isLoading: isStudentsLoading || isStaffLoading || isParentsLoading,
     toggleUserStatus,
+    deleteUser,
     updateUser
   };
 }

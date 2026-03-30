@@ -40,13 +40,13 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   card: {
-    width: theme.metrics.isSmallDevice ? '30%' : '22%', // 3 items on small, 4 on others
+    width: theme.metrics.isTablet ? '18%' : theme.metrics.isSmallDevice ? '30%' : '22.5%', // 5 items on tablet, 3 on small, 4 on standard
     aspectRatio: 1,
     backgroundColor: 'white',
-    borderRadius: 20,
+    borderRadius: theme.metrics.normalize(16),
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 8,
+    padding: theme.metrics.normalize(8),
     borderWidth: 1,
     borderColor: '#F1F5F9',
     shadowColor: '#000',
@@ -56,15 +56,15 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   iconWrapper: {
-    width: theme.metrics.isSmallDevice ? 36 : 44,
-    height: theme.metrics.isSmallDevice ? 36 : 44,
-    borderRadius: theme.borderRadius.m,
+    width: theme.metrics.normalize(40),
+    height: theme.metrics.normalize(40),
+    borderRadius: theme.metrics.normalize(12),
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: theme.spacing.s,
+    marginBottom: theme.metrics.normalize(8),
   },
   label: {
-    fontSize: 10,
+    fontSize: theme.metrics.normalize(10),
     fontWeight: '600',
     color: theme.colors.text,
     textAlign: 'center',

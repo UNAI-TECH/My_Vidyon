@@ -7,6 +7,7 @@ import { PageHeader } from '../../../../src/components/common/PageHeader';
 import { StatCard } from '../../../../src/components/common/StatCard';
 import { AdCard } from '../../../../src/components/common/AdCard';
 import { useAuth } from '../../../../src/hooks/useAuth';
+import { DashboardBanner } from '../../../../src/components/common/Ads/DashboardBanner';
 import { 
   Users, 
   Calendar, 
@@ -155,6 +156,9 @@ export default function ParentDashboard() {
           </TouchableOpacity>
         </View>
       </View>
+      
+      <DashboardBanner type="PARENT" />
+
       <View style={{ alignItems: 'center', marginVertical: 40, opacity: 0.4 }}>
         <Image source={require('../../../../assets/logo.png')} style={{ width: 100, height: 30, resizeMode: 'contain' }} />
       </View>

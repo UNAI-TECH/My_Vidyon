@@ -62,6 +62,31 @@ export default function RootLayout() {
     };
   }, [session, user, institutionId, institutionUuid]);
 
+  useEffect(() => {
+    // Initialize Google Mobile Ads SDK with Expo Go safety
+    try {
+      // Dynamic require to prevent crash in Expo Go during import evaluation
+      const mobileAds = require('react-native-google-mobile-ads').default;
+      
+      if (typeof mobileAds === 'function') {
+        mobileAds()
+          .initialize()
+          .then((adapterStatuses: any) => {
+            if (__DEV__) {
+              console.log('[AdMob] SDK Initialized', adapterStatuses);
+            }
+          })
+          .catch((err: any) => {
+            if (__DEV__) console.warn('[AdMob] Initialization Error:', err);
+          });
+      }
+    } catch (error) {
+      if (__DEV__) {
+        console.log('[AdMob] Native module not found or failed to load. Skipping init (Expo Go).');
+      }
+    }
+  }, []);
+
   if (loading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.background }}>

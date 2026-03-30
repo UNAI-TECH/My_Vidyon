@@ -156,13 +156,17 @@ export default function InstitutionOnboarding() {
   const fetchInstitutionData = async () => {
     try {
       setLoading(true);
-      const { data, error } = await (supabase
-        .from('institutions') as any)
-        .select('*')
-        .eq('institution_id', id)
-        .single();
+      
+      // Parallelize all main data fetches
+      const [instResult, groupsResult, subjectsResult] = await Promise.all([
+        (supabase.from('institutions') as any).select('*').eq('institution_id', id).single(),
+        supabase.from('groups').select('id, name, classes(*)').eq('institution_id', id),
+        supabase.from('subjects').select('*').eq('institution_id', id)
+      ]);
 
-      if (error) throw error;
+      if (instResult.error) throw instResult.error;
+      const data = instResult.data;
+
       if (data) {
         setBasicInfo({
           name: data.name,
@@ -183,14 +187,42 @@ export default function InstitutionOnboarding() {
           email: data.admin_email || '',
           password: data.admin_password || ''
         });
-        // Set initial admin info to current values
         setAdminInfo({
           email: data.admin_email || '',
-          password: '' // Don't pre-fill password for security
+          password: ''
         });
+
+        // 2. Map Groups & Classes (Capturing IDs to prevent cloning)
+        if (groupsResult.data) {
+          const mappedStructure = groupsResult.data.map((g: { id: string, name: string, classes?: any[] }) => ({
+            id: g.id,
+            name: g.name,
+            classes: (g.classes || []).map((c: any) => ({
+              id: c.id,
+              name: c.name,
+              sections: c.sections || ['A', 'B'],
+              class_order: c.class_order || 0,
+              is_final_class: c.is_final_class || false
+            }))
+          }));
+          setStructure(mappedStructure);
+        }
+
+        // 3. Map Subjects (Capturing IDs)
+        if (subjectsResult.data) {
+          const mappedSubjects = subjectsResult.data.map((s: { id: string, name: string, code?: string, class_name: string, group_name?: string }) => ({
+            id: s.id,
+            name: s.name,
+            code: s.code || '',
+            className: s.class_name,
+            group: s.group_name || 'Core'
+          }));
+          setSubjects(mappedSubjects);
+        }
       }
     } catch (err: any) {
-      showAlert('Error', 'Failed to fetch institution: ' + err.message, 'error');
+      console.error('[Optimized Fetch Fail]', err);
+      showAlert('Error', 'Failed to fetch: ' + err.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -375,6 +407,15 @@ export default function InstitutionOnboarding() {
           />
         </View>
       </View>
+      {isEditMode && (
+        <TouchableOpacity 
+          style={[styles.saveProgressBtn, { marginTop: 24, borderStyle: 'solid' }]} 
+          onPress={() => handleSaveStep(1)}
+          disabled={submitting}
+        >
+          {submitting ? <ActivityIndicator size="small" color={theme.colors.primary} /> : <Text style={styles.saveProgressBtnText}>Save Basic Info</Text>}
+        </TouchableOpacity>
+      )}
     </View>
   );
 
@@ -469,7 +510,7 @@ export default function InstitutionOnboarding() {
                 placeholder="admin@school.com"
                 keyboardType="email-address"
                 value={adminInfo.email}
-                onChangeText={(v) => setAdminInfo({...adminInfo, email: v})}
+                onChangeText={(v: string) => setAdminInfo({...adminInfo, email: v})}
               />
             </View>
 
@@ -480,10 +521,19 @@ export default function InstitutionOnboarding() {
                 placeholder="Secret password"
                 secureTextEntry
                 value={adminInfo.password}
-                onChangeText={(v) => setAdminInfo({...adminInfo, password: v})}
+                onChangeText={(v: string) => setAdminInfo({...adminInfo, password: v})}
               />
             </View>
           </>
+        )}
+        {isEditMode && (
+          <TouchableOpacity 
+            style={[styles.saveProgressBtn, { marginTop: 24, borderStyle: 'solid' }]} 
+            onPress={() => handleSaveStep(2)}
+            disabled={submitting}
+          >
+            {submitting ? <ActivityIndicator size="small" color={theme.colors.primary} /> : <Text style={styles.saveProgressBtnText}>Save Admin Info</Text>}
+          </TouchableOpacity>
         )}
       </View>
     );
@@ -636,7 +686,7 @@ export default function InstitutionOnboarding() {
                 <TextInput
                   style={{ flex: 1, backgroundColor: '#F1F5F9', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, fontWeight: '600' }}
                   value={group.name}
-                  onChangeText={(v) => updateGroup(group.id, v)}
+                  onChangeText={(v: string) => updateGroup(group.id, v)}
                   placeholder="Group name (e.g., Primary)"
                 />
                 <TouchableOpacity style={{ backgroundColor: '#FDE68A', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 6 }} onPress={() => addClass(group.id)}>
@@ -655,13 +705,13 @@ export default function InstitutionOnboarding() {
                       <TextInput
                         style={{ flex: 2, backgroundColor: '#F1F5F9', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, fontWeight: '500' }}
                         value={classItem.name}
-                        onChangeText={(v) => updateClass(group.id, classItem.id, v)}
+                        onChangeText={(v: string) => updateClass(group.id, classItem.id, v)}
                         placeholder="Class name"
                       />
                       <TextInput
                         style={{ flex: 1, backgroundColor: '#F1F5F9', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, textAlign: 'center' }}
                         value={classItem.class_order?.toString() || ''}
-                        onChangeText={(v) => updateClassOrder(group.id, classItem.id, v)}
+                        onChangeText={(v: string) => updateClassOrder(group.id, classItem.id, v)}
                         placeholder="Order (e.g. 1)"
                         keyboardType="numeric"
                       />
@@ -700,7 +750,7 @@ export default function InstitutionOnboarding() {
                           style={{ backgroundColor: '#F1F5F9', paddingHorizontal: 10, paddingVertical: 0, height: 32, borderRadius: 6, fontSize: 13, flex: 1, minWidth: 80 }}
                           placeholder="Extra sec"
                           value={extraSectionInput[classItem.id] || ''}
-                          onChangeText={(v) => setExtraSectionInput({ ...extraSectionInput, [classItem.id]: v })}
+                          onChangeText={(v: string) => setExtraSectionInput({ ...extraSectionInput, [classItem.id]: v })}
                           onSubmitEditing={(e) => {
                             const val = e.nativeEvent.text.trim();
                             if (val && !classItem.sections.includes(val)) {
@@ -720,6 +770,15 @@ export default function InstitutionOnboarding() {
             </View>
           ))}
         </View>
+      )}
+      {isEditMode && structure.length > 0 && (
+        <TouchableOpacity 
+          style={[styles.saveProgressBtn, { marginTop: 24, borderStyle: 'solid' }]} 
+          onPress={() => handleSaveStep(3)}
+          disabled={submitting}
+        >
+          {submitting ? <ActivityIndicator size="small" color={theme.colors.primary} /> : <Text style={styles.saveProgressBtnText}>Save Structure</Text>}
+        </TouchableOpacity>
       )}
     </View>
   );
@@ -795,7 +854,7 @@ export default function InstitutionOnboarding() {
       return c && c.name.toLowerCase().includes(s);
     });
 
-    const subjectsByClass = subjects.reduce((acc, subject) => {
+    const subjectsByClass = subjects.reduce((acc: Record<string, Subject[]>, subject) => {
       const key = subject.group && subject.group !== 'Primary' && subject.group !== 'Secondary' && subject.group !== 'Higher Sec'
           ? `${subject.className} (${subject.group})`
           : subject.className;
@@ -966,6 +1025,15 @@ export default function InstitutionOnboarding() {
             ))}
           </View>
         )}
+        {isEditMode && (
+          <TouchableOpacity 
+            style={[styles.saveProgressBtn, { marginTop: 24, borderStyle: 'solid' }]} 
+            onPress={() => handleSaveStep(4)}
+            disabled={submitting}
+          >
+            {submitting ? <ActivityIndicator size="small" color={theme.colors.primary} /> : <Text style={styles.saveProgressBtnText}>Save Subjects</Text>}
+          </TouchableOpacity>
+        )}
       </View>
     );
   };
@@ -1028,6 +1096,137 @@ export default function InstitutionOnboarding() {
       // In security mode, we only have one step (which is rendered directly)
       // and "Continue" should trigger submit.
       handleSubmit();
+    }
+  };
+
+  const handleSaveStep = async (stepId: number) => {
+    try {
+      setSubmitting(true);
+      
+      if (stepId === 1) {
+        // Partial Save: Basic Info
+        let finalLogoUrl = logo;
+        if (logo && logo.startsWith('file://')) {
+          const fileExt = logo.split('.').pop() || 'jpeg';
+          const fileName = `${basicInfo.school_code}-${Math.random()}.${fileExt}`;
+          const formData = new FormData();
+          formData.append('file', { uri: logo, name: fileName, type: `image/${fileExt}` } as any);
+          
+          const { error: uploadError } = await supabase.storage.from('logos').upload(fileName, formData, { upsert: true });
+          if (!uploadError) {
+            const { data: { publicUrl } } = supabase.storage.from('logos').getPublicUrl(fileName);
+            finalLogoUrl = publicUrl;
+          }
+        }
+
+        const { error } = await (supabase.from('institutions') as any).upsert({
+          institution_id: basicInfo.school_code,
+          name: basicInfo.name,
+          type: basicInfo.type,
+          address: basicInfo.address,
+          city: basicInfo.city,
+          state: basicInfo.state,
+          email: basicInfo.email,
+          phone: basicInfo.phone,
+          current_academic_year: basicInfo.academic_year,
+          logo_url: finalLogoUrl,
+          office_phone: basicInfo.office_phone,
+          guard_phone: basicInfo.guard_phone,
+          transport_phone: basicInfo.transport_phone,
+        });
+        if (error) throw error;
+        showAlert('Saved', 'Basic information updated successfully.', 'success');
+      } 
+      
+      else if (stepId === 2) {
+        // Partial Save: Admin
+        if (!credentialsVerified && (adminInfo.email !== existingCreds.email || adminInfo.password !== '')) {
+          return showAlert('Verification Required', 'Verify old credentials first.', 'warning');
+        }
+        
+        const updates: any = {};
+        if (adminInfo.email !== existingCreds.email) updates.admin_email = adminInfo.email;
+        if (adminInfo.password !== '') updates.admin_password = adminInfo.password;
+
+        if (Object.keys(updates).length > 0) {
+          const { error } = await (supabase.from('institutions') as any)
+            .update(updates)
+            .eq('institution_id', basicInfo.school_code);
+          if (error) throw error;
+
+          // Also trigger edge function to update auth
+          await supabase.functions.invoke('create-user', {
+            body: {
+              email: adminInfo.email,
+              password: adminInfo.password || undefined,
+              role: 'institution',
+              institution_id: basicInfo.school_code,
+              staff_id: `ADM-${basicInfo.school_code}`
+            }
+          });
+          showAlert('Saved', 'Admin credentials updated.', 'success');
+        } else {
+          showAlert('Info', 'No changes to save.', 'info');
+        }
+      }
+
+      else if (stepId === 3) {
+        // Partial Save: Structure
+        if (structure.length === 0) return showAlert('Empty', 'Add some structure first.', 'warning');
+        
+        for (const group of structure) {
+          let gId = group.id;
+          if (!gId || String(gId).startsWith('temp')) {
+            const { data, error } = await (supabase.from('groups') as any)
+              .insert([{ name: group.name, institution_id: basicInfo.school_code }])
+              .select().single();
+            if (error) throw error;
+            gId = data.id;
+          }
+
+          const classesToUpsert = group.classes.map((c: any) => ({
+            id: (c.id && !String(c.id).startsWith('temp')) ? c.id : undefined,
+            group_id: gId,
+            name: c.name,
+            sections: c.sections,
+            class_order: c.class_order,
+            is_final_class: c.is_final_class,
+            academic_year: basicInfo.academic_year,
+            institution_id: basicInfo.school_code
+          }));
+
+          const { error: cError } = await (supabase.from('classes') as any).upsert(classesToUpsert, { 
+            onConflict: 'id' // Prefer ID for update, natural key as fallback if no ID
+          });
+          if (cError) throw cError;
+        }
+        showAlert('Saved', 'Institution structure updated.', 'success');
+      }
+
+      else if (stepId === 4) {
+        // Partial Save: Subjects
+        if (subjects.length === 0) return showAlert('Empty', 'Add some subjects first.', 'warning');
+        
+        const subjectsToUpsert = subjects.map(sub => ({
+          id: (sub.id && !String(sub.id).startsWith('temp')) ? sub.id : undefined,
+          institution_id: basicInfo.school_code,
+          name: sub.name,
+          code: sub.code || '',
+          class_name: sub.className,
+          group_name: sub.group || 'Core'
+        }));
+        
+        const { error } = await (supabase.from('subjects') as any).upsert(subjectsToUpsert, {
+          onConflict: 'id'
+        });
+        if (error) throw error;
+        showAlert('Saved', 'Subjects updated successfully.', 'success');
+      }
+
+    } catch (err: any) {
+      showAlert('Error', err.message, 'error');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -1141,36 +1340,67 @@ export default function InstitutionOnboarding() {
       // 4. Setup Structure (Skip in security mode)
       if (!isSecurityMode && structure.length > 0) {
         for (const group of structure) {
-          const { data: gData, error: gError } = await (supabase
-            .from('groups') as any)
-            .insert([{ name: group.name, institution_id: basicInfo.school_code }])
-            .select()
-            .single();
+          // Check if group exists
+          let gId = '';
+          const { data: existingGroup } = await supabase
+            .from('groups')
+            .select('id')
+            .eq('institution_id', basicInfo.school_code)
+            .eq('name', group.name)
+            .maybeSingle() as { data: { id: string } | null };
+
+          if (existingGroup) {
+            gId = (existingGroup as any).id;
+          } else {
+            const { data: gData, error: gError } = await (supabase
+              .from('groups') as any)
+              .insert([{ name: group.name, institution_id: basicInfo.school_code }])
+              .select()
+              .single();
+            if (gError) throw gError;
+            gId = gData.id;
+          }
             
-          if (!gError && gData) {
-            const classesToInsert = group.classes.map((c: any) => ({
-              group_id: gData.id,
-              name: typeof c === 'string' ? c : c.name,
-              sections: c.sections || ['A', 'B'],
-              class_order: c.class_order || 0,
-              is_final_class: c.is_final_class || false,
-              academic_year: basicInfo.academic_year
-            }));
-            await (supabase.from('classes') as any).insert(classesToInsert);
+          if (gId) {
+            const classesToUpsert = group.classes.map((c: { id?: string, name: string, sections?: string[], class_order?: number, is_final_class?: boolean }) => {
+              const className = typeof c === 'string' ? c : c.name;
+              return {
+                id: (c.id && !String(c.id).startsWith('temp')) ? c.id : undefined,
+                group_id: gId,
+                name: className,
+                sections: c.sections || ['A', 'B'],
+                class_order: c.class_order || 0,
+                is_final_class: c.is_final_class || false,
+                academic_year: basicInfo.academic_year,
+                institution_id: basicInfo.school_code
+              };
+            }).filter((c: { name: string }) => c.name);
+
+            if (classesToUpsert.length > 0) {
+              const { error: cError } = await (supabase.from('classes') as any).upsert(classesToUpsert, { 
+                onConflict: 'id' 
+              });
+              if (cError) throw cError;
+            }
           }
         }
       }
       
       // 5. Setup Subjects (Skip in security mode)
       if (!isSecurityMode && subjects.length > 0) {
-        const subjectsToInsert = subjects.map(sub => ({
+        const subjectsToUpsert = subjects.map(sub => ({
+          id: (sub.id && !String(sub.id).startsWith('temp')) ? sub.id : undefined,
           institution_id: basicInfo.school_code,
           name: sub.name,
           code: sub.code || '',
           class_name: sub.className,
           group_name: sub.group || 'Core'
         }));
-        await (supabase.from('subjects') as any).insert(subjectsToInsert);
+        
+        // Upsert by ID for updates, natural key is fallback
+        await (supabase.from('subjects') as any).upsert(subjectsToUpsert, {
+          onConflict: 'id'
+        });
       }
       
       showAlert('Success', isSecurityMode ? 'Admin credentials updated!' : 'Institution onboarding completed!', 'success', () => {
@@ -1208,32 +1438,50 @@ export default function InstitutionOnboarding() {
         )}
 
         <View style={styles.navButtons}>
-          {currentStep > 1 && (
-            <TouchableOpacity 
-              style={styles.backBtn} 
-              onPress={() => setCurrentStep(currentStep - 1)}
-              disabled={submitting}
-            >
-              <ChevronLeft size={20} color={theme.colors.text} {...({} as any)} />
-              <Text style={styles.backBtnText}>Back</Text>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity 
-            style={[styles.nextBtn, currentStep === 1 && { flex: 1 }]} 
-            onPress={handleNext}
-            disabled={submitting}
-          >
-            {submitting ? (
-              <ActivityIndicator color="white" />
-            ) : (
-              <>
-                <Text style={styles.nextBtnText}>
-                  {currentStep === steps.length ? 'Confirm & Finish' : 'Continue'}
-                </Text>
-                {currentStep < steps.length && <ChevronRight size={20} color="white" {...({} as any)} />}
-              </>
+          <View style={{ flex: 1, gap: 10 }}>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              {currentStep > 1 && (
+                <TouchableOpacity 
+                  style={styles.backBtn} 
+                  onPress={() => setCurrentStep(currentStep - 1)}
+                  disabled={submitting}
+                >
+                  <ChevronLeft size={20} color={theme.colors.text} {...({} as any)} />
+                  <Text style={styles.backBtnText}>Back</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity 
+                style={[styles.nextBtn, (currentStep === 1 || isSecurityMode) && { flex: 1 }]} 
+                onPress={handleNext}
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <ActivityIndicator color="white" />
+                ) : (
+                  <>
+                    <Text style={styles.nextBtnText}>
+                      {currentStep === steps.length || isSecurityMode ? 'Confirm & Finish' : 'Continue'}
+                    </Text>
+                    {currentStep < steps.length && !isSecurityMode && <ChevronRight size={20} color="white" {...({} as any)} />}
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            {isEditMode && currentStep < 5 && (
+              <TouchableOpacity 
+                style={styles.saveProgressBtn}
+                onPress={() => handleSaveStep(currentStep)}
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <ActivityIndicator color={theme.colors.primary} />
+                ) : (
+                  <Text style={styles.saveProgressBtnText}>Save Progress</Text>
+                )}
+              </TouchableOpacity>
             )}
-          </TouchableOpacity>
+          </View>
         </View>
       </ScrollView>
 
@@ -1277,32 +1525,34 @@ export default function InstitutionOnboarding() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  content: { padding: 16, paddingBottom: 60 },
+  content: { padding: theme.metrics.normalize(16), paddingBottom: 100 },
   indicatorContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 24, paddingHorizontal: 0 },
-  stepWrapper: { alignItems: 'center', zIndex: 1, maxWidth: 56 },
-  stepIcon: { width: 32, height: 32, borderRadius: 10, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' },
+  stepWrapper: { alignItems: 'center', zIndex: 1, flex: 1, minWidth: 40 },
+  stepIcon: { width: theme.metrics.normalize(32), height: theme.metrics.normalize(32), borderRadius: 10, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' },
   activeStepIcon: { backgroundColor: theme.colors.primary },
   completedStepIcon: { backgroundColor: '#10B981' },
-  stepLabel: { fontSize: 8, fontWeight: 'bold', color: theme.colors.textMuted, marginTop: 4, textAlign: 'center' as const },
+  stepLabel: { fontSize: theme.metrics.normalize(8), fontWeight: 'bold', color: theme.colors.textMuted, marginTop: 4, textAlign: 'center' as const },
   activeStepLabel: { color: theme.colors.primary },
   stepLine: { flex: 1, height: 2, backgroundColor: '#F1F5F9', marginHorizontal: 4, marginTop: -12 },
   activeStepLine: { backgroundColor: '#10B981' },
-  formContainer: { backgroundColor: 'white', borderRadius: 20, padding: 16, borderWidth: 1, borderColor: '#F1F5F9' },
-  sectionTitle: { fontSize: 16, fontWeight: 'bold', color: theme.colors.text, marginBottom: 16 },
+  formContainer: { backgroundColor: 'white', borderRadius: 20, padding: theme.metrics.normalize(16), borderWidth: 1, borderColor: '#F1F5F9' },
+  sectionTitle: { fontSize: theme.metrics.normalize(16), fontWeight: 'bold', color: theme.colors.text, marginBottom: 16 },
   field: { marginBottom: 16 },
-  label: { fontSize: 12, fontWeight: 'bold', color: theme.colors.text, marginBottom: 8 },
-  input: { backgroundColor: '#F8FAFC', borderRadius: 12, padding: 14, fontSize: 14, borderWidth: 1, borderColor: '#E2E8F0', color: theme.colors.text },
+  label: { fontSize: theme.metrics.normalize(12), fontWeight: 'bold', color: theme.colors.text, marginBottom: 8 },
+  input: { backgroundColor: '#F8FAFC', borderRadius: 12, padding: theme.metrics.normalize(14), fontSize: theme.metrics.normalize(14), borderWidth: 1, borderColor: '#E2E8F0', color: theme.colors.text },
   grid: { flexDirection: 'row', gap: 12 },
   logoUpload: { flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 24 },
   logoBtn: { width: 64, height: 64, borderRadius: 16, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', borderStyle: 'dashed', borderWidth: 1, borderColor: theme.colors.primary },
   uploadedLogo: { width: '100%', height: '100%', borderRadius: 16 },
-  uploadTitle: { fontSize: 14, fontWeight: 'bold', color: theme.colors.text },
-  uploadSubtitle: { fontSize: 11, color: theme.colors.textMuted, marginTop: 2 },
+  uploadTitle: { fontSize: theme.metrics.normalize(14), fontWeight: 'bold', color: theme.colors.text },
+  uploadSubtitle: { fontSize: theme.metrics.normalize(11), color: theme.colors.textMuted, marginTop: 2 },
   navButtons: { flexDirection: 'row', gap: 12, marginTop: 24 },
   backBtn: { height: 56, borderRadius: 16, borderWidth: 1, borderColor: '#E2E8F0', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20, gap: 8 },
   backBtnText: { fontWeight: 'bold', color: theme.colors.text },
   nextBtn: { flex: 2, height: 56, borderRadius: 16, backgroundColor: theme.colors.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   nextBtnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
+  saveProgressBtn: { height: 48, borderRadius: 16, borderWidth: 1, borderColor: theme.colors.primary, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(52, 102, 246, 0.05)' },
+  saveProgressBtnText: { color: theme.colors.primary, fontWeight: 'bold', fontSize: 14 },
   helperText: { fontSize: 12, color: theme.colors.textMuted, marginBottom: 20 },
   flexRow: { flexDirection: 'row', alignItems: 'center' },
   emptyStructure: { height: 120, justifyContent: 'center', alignItems: 'center', borderStyle: 'dashed', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 16, marginBottom: 16 },

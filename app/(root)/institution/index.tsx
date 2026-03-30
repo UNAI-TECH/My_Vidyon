@@ -8,6 +8,7 @@ import { StatCard } from '../../../src/components/common/StatCard';
 import { AdCard } from '../../../src/components/common/AdCard';
 import { useAuth } from '../../../src/hooks/useAuth';
 import { useInstitutionData } from '../../../src/hooks/useInstitutionData';
+import { DashboardBanner } from '../../../src/components/common/Ads/DashboardBanner';
 import { 
   Users, 
   Briefcase, 
@@ -32,7 +33,13 @@ export default function InstitutionDashboard() {
   const { institutionId, role, imageUrl } = useAuth();
   const [academicYear, setAcademicYear] = useState('2026-27');
   const { stats, charts, attendanceFeed, pendingLeaves, profile, institution, isLoading } = useInstitutionData(institutionId, academicYear);
+  const [containerWidth, setContainerWidth] = useState(screenWidth - 32);
 
+  const onLayout = (event: any) => {
+    const { width } = event.nativeEvent.layout;
+    setContainerWidth(width);
+  };
+  
   const shortcuts = [
     { label: 'Departments', icon: Briefcase, href: '/(root)/institution/departments', color: '#6366F1' },
     { label: 'Users', icon: Users, href: '/(root)/institution/users', color: '#A855F7' },
@@ -41,9 +48,9 @@ export default function InstitutionDashboard() {
     { label: 'Timetable', icon: Clock, href: '/(root)/institution/timetable', color: '#F59E0B' },
     { label: 'Exams', icon: ClipboardList, href: '/(root)/institution/exams', color: '#F87171' },
     { label: 'Communication', icon: Bell, href: '/(root)/institution/communication', color: '#F43F5E' },
-    { label: 'Staff Assigning', icon: UserCheck, href: '/(root)/institution/faculty/assign', color: '#10B981' },
-    { label: 'Analytics', icon: TrendingUp, href: '/(root)/institution/analytics', color: '#10B981' },
-    { label: 'Reports', icon: FileText, href: '/(root)/institution/reports', color: '#8B5CF6' },
+    { label: 'Staff Assigning', icon: UserCheck, href: '/(root)/institution/faculty/assign', color: '#8B5CF6' },
+    { label: 'Analytics', icon: TrendingUp, href: '/(root)/institution/analytics', color: '#0EA5E9' },
+    { label: 'Reports', icon: FileText, href: '/(root)/institution/reports', color: '#6366F1' },
     { label: 'Settings', icon: Settings, href: '/(root)/institution/settings', color: '#64748B' },
   ];
 
@@ -60,7 +67,7 @@ export default function InstitutionDashboard() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content} onLayout={onLayout}>
       <PageHeader 
         title="Institution Overview" 
         subtitle={`Academic Year ${academicYear}`}
@@ -135,7 +142,7 @@ export default function InstitutionDashboard() {
               data: charts.enrollmentTrend.length > 0 ? charts.enrollmentTrend.map(t => t.value) : [0]
             }]
           }}
-          width={screenWidth - 68}
+          width={containerWidth - 36}
           height={180}
           chartConfig={{
             backgroundColor: "#fff",
@@ -162,7 +169,7 @@ export default function InstitutionDashboard() {
                 legendFontColor: "#64748B",
                 legendFontSize: 11
             }))}
-            width={screenWidth - 68}
+            width={containerWidth - 36}
             height={160}
             chartConfig={{
               color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
@@ -172,6 +179,96 @@ export default function InstitutionDashboard() {
             paddingLeft="15"
             absolute
           />
+      </View>
+
+      {/* New Analytics: Daily Attendance Trend */}
+      <View style={styles.chartCard}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.chartTitle}>Daily Attendance Trend (%)</Text>
+          <View style={styles.badge}>
+            <Text style={styles.badgeText}>Real-time</Text>
+          </View>
+        </View>
+        <LineChart
+          data={{
+            labels: charts.dailyAttendanceTrend.length > 0 ? charts.dailyAttendanceTrend.map(t => t.name) : ["Sun"],
+            datasets: [{
+              data: charts.dailyAttendanceTrend.length > 0 ? charts.dailyAttendanceTrend.map(t => t.value) : [0]
+            }]
+          }}
+          width={containerWidth - 36}
+          height={180}
+          chartConfig={{
+            backgroundColor: "#fff",
+            backgroundGradientFrom: "#fff",
+            backgroundGradientTo: "#fff",
+            decimalPlaces: 0,
+            color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})`, // Green
+            labelColor: (opacity = 1) => `rgba(100, 116, 139, ${opacity})`,
+            propsForDots: { r: "4", strokeWidth: "2", stroke: "#10B981" },
+            style: { borderRadius: 16 },
+          }}
+          bezier
+          style={styles.chartStyle}
+        />
+      </View>
+
+      {/* New Analytics: Faculty Daily Attendance Trend (%) */}
+      <View style={styles.chartCard}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.chartTitle}>Faculty Daily Attendance (%)</Text>
+          <View style={[styles.badge, { borderColor: 'rgba(168, 85, 247, 0.2)', backgroundColor: 'rgba(168, 85, 247, 0.05)' }]}>
+            <Text style={[styles.badgeText, { color: '#A855F7' }]}>Real-time</Text>
+          </View>
+        </View>
+        <LineChart
+          data={{
+            labels: charts.facultyAttendanceTrend?.length > 0 ? charts.facultyAttendanceTrend.map((t: any) => t.name) : ["Sun"],
+            datasets: [{
+              data: charts.facultyAttendanceTrend?.length > 0 ? charts.facultyAttendanceTrend.map((t: any) => t.value) : [0]
+            }]
+          }}
+          width={containerWidth - 36}
+          height={180}
+          chartConfig={{
+            backgroundColor: "#fff",
+            backgroundGradientFrom: "#fff",
+            backgroundGradientTo: "#fff",
+            decimalPlaces: 0,
+            color: (opacity = 1) => `rgba(168, 85, 247, ${opacity})`, // Purple
+            labelColor: (opacity = 1) => `rgba(100, 116, 139, ${opacity})`,
+            propsForDots: { r: "4", strokeWidth: "2", stroke: "#A855F7" },
+            style: { borderRadius: 16 },
+          }}
+          bezier
+          style={styles.chartStyle}
+        />
+      </View>
+
+      {/* New Analytics: Faculty Leave Frequency */}
+      <View style={styles.chartCard}>
+        <Text style={styles.chartTitle}>Faculty Leave Intensity (Last 7 Days)</Text>
+        <LineChart
+          data={{
+            labels: charts.facultyLeaveTrend.length > 0 ? charts.facultyLeaveTrend.map(t => t.name) : ["Sun"],
+            datasets: [{
+              data: charts.facultyLeaveTrend.length > 0 ? charts.facultyLeaveTrend.map(t => t.value) : [0]
+            }]
+          }}
+          width={containerWidth - 36}
+          height={180}
+          chartConfig={{
+            backgroundColor: "#fff",
+            backgroundGradientFrom: "#fff",
+            backgroundGradientTo: "#fff",
+            decimalPlaces: 0,
+            color: (opacity = 1) => `rgba(239, 68, 68, ${opacity})`, // Red
+            labelColor: (opacity = 1) => `rgba(100, 116, 139, ${opacity})`,
+            propsForDots: { r: "4", strokeWidth: "2", stroke: "#EF4444" },
+            style: { borderRadius: 16 },
+          }}
+          style={styles.chartStyle}
+        />
       </View>
 
 
@@ -196,6 +293,7 @@ export default function InstitutionDashboard() {
         </View>
       </View>
       
+      <DashboardBanner type="INSTITUTION" />
     </ScrollView>
   );
 }
@@ -207,13 +305,13 @@ const styles = StyleSheet.create({
   yearPicker: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0', gap: 6 },
   yearText: { fontSize: 13, fontWeight: '600', color: theme.colors.text },
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 20 },
-  chartCard: { backgroundColor: 'white', borderRadius: 24, padding: 18, marginBottom: 20, borderWidth: 1, borderColor: '#F1F5F9' },
-  chartTitle: { fontSize: 14, fontWeight: 'bold', color: theme.colors.text, marginBottom: 16 },
-  chartStyle: { marginLeft: -16, borderRadius: 16 },
-  section: { marginBottom: 24 },
+  chartCard: { backgroundColor: 'white', borderRadius: 24, padding: 18, marginBottom: 20, borderWidth: 1, borderColor: '#F1F5F9', width: '100%' },
+  chartTitle: { fontSize: theme.metrics.normalize(14), fontWeight: 'bold', color: theme.colors.text, marginBottom: 16 },
+  chartStyle: { marginLeft: -theme.metrics.normalize(16), borderRadius: 16 },
+  section: { marginBottom: 24, width: '100%' },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   flexRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  sectionTitle: { fontSize: 16, fontWeight: 'bold', color: theme.colors.text },
+  sectionTitle: { fontSize: theme.metrics.normalize(16), fontWeight: 'bold', color: theme.colors.text },
   badge: { backgroundColor: 'rgba(59, 130, 246, 0.05)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(59, 130, 246, 0.2)' },
   badgeText: { fontSize: 10, fontWeight: 'bold', color: '#3B82F6', textTransform: 'uppercase' },
   feedContainer: { backgroundColor: 'white', borderRadius: 24, padding: 12, borderWidth: 1, borderColor: '#F1F5F9' },
@@ -221,8 +319,8 @@ const styles = StyleSheet.create({
   feedProfile: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   avatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(59, 130, 246, 0.1)', justifyContent: 'center', alignItems: 'center' },
   avatarText: { fontWeight: 'bold', color: '#3B82F6' },
-  feedName: { fontSize: 13, fontWeight: 'bold', color: theme.colors.text },
-  feedSubtitle: { fontSize: 11, color: theme.colors.textMuted },
+  feedName: { fontSize: theme.metrics.normalize(13), fontWeight: 'bold', color: theme.colors.text },
+  feedSubtitle: { fontSize: theme.metrics.normalize(11), color: theme.colors.textMuted },
   feedMeta: { alignItems: 'flex-end' },
   presentBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 2 },
   presentText: { fontSize: 11, fontWeight: '600', color: '#10B981' },
@@ -235,8 +333,8 @@ const styles = StyleSheet.create({
   notifItem: { flexDirection: 'row', gap: 12, marginBottom: 16 },
   notifDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#F59E0B', marginTop: 6 },
   notifContent: { flex: 1 },
-  notifMessage: { fontSize: 13, fontWeight: '600', color: theme.colors.text },
-  notifTime: { fontSize: 11, color: theme.colors.textMuted, marginTop: 2 },
+  notifMessage: { fontSize: theme.metrics.normalize(13), fontWeight: '600', color: theme.colors.text },
+  notifTime: { fontSize: theme.metrics.normalize(11), color: theme.colors.textMuted, marginTop: 2 },
   viewAll: { fontSize: 12, color: theme.colors.primary, fontWeight: '600' },
   emptyNotif: { textAlign: 'center', paddingVertical: 12, fontSize: 12, color: theme.colors.textMuted },
 });

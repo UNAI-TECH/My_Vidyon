@@ -9,6 +9,7 @@ import { AdCard } from '../../../../src/components/common/AdCard';
 import { ShortcutGrid } from '../../../../src/components/common/ShortcutGrid';
 import { useAuth } from '../../../../src/hooks/useAuth';
 import { useFacultyDashboard } from '../../../../src/hooks/useFacultyDashboard';
+import { DashboardBanner } from '../../../../src/components/common/Ads/DashboardBanner';
 import { useRouter } from 'expo-router';
 import { 
   Users, 
@@ -53,6 +54,7 @@ export default function FacultyDashboard() {
 
   const shortcuts = [
     { label: 'Attendance', icon: CheckSquare, href: '/faculty/attendance', color: '#3B82F6' },
+    { label: 'My Attendance', icon: UserCheck, href: '/faculty/my-attendance', color: '#0EA5E9' },
     { label: 'Leaves', icon: UserCheck, href: '/faculty/leave', color: '#10B981' },
     { label: 'Directory', icon: Contact, href: '/faculty/directory', color: '#F59E0B' },
     { label: 'Schedule', icon: Calendar, href: '/faculty/timetable', color: '#8B5CF6' },
@@ -258,6 +260,7 @@ export default function FacultyDashboard() {
         />
       </View>
 
+      <DashboardBanner type="FACULTY" />
     </ScrollView>
   );
 }
@@ -327,3 +330,4 @@ const styles = StyleSheet.create({
   manageTitle: { fontSize: 16, fontWeight: 'bold', color: theme.colors.text },
   manageSub: { fontSize: 13, color: theme.colors.textMuted, marginTop: 2 },
 });
+

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, createContext, useContext } from 'react';
-import { Platform } from 'react-native';
+import { Platform, Alert } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { Session, User } from '@supabase/supabase-js';
 import { LargeSecureStore } from '../lib/storage';
@@ -165,13 +165,25 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       // 1. Fetch from profiles first (Primary source for all)
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('role, institution_id, full_name, image_url, profile_image_url, avatar_url')
+        .select('role, institution_id, full_name, image_url, profile_image_url, avatar_url, is_active')
         .eq('id', userId)
         .maybeSingle() as any;
       
       if (profileError) throw profileError;
       
       if (profile) {
+        // Enforce access control: If user is disabled, boot them out
+        if (profile.is_active === false) {
+          console.warn('[Auth] User account is disabled. Booting...');
+          await signOut();
+          Alert.alert(
+            "Account Disabled", 
+            "Id is disabled by the institute admin. and contact the admin to get enabled.",
+            [{ text: "OK" }]
+          );
+          return;
+        }
+
         console.log('[Auth] Role found:', profile.role);
         setRole(profile.role as AuthContextType['role']);
         setInstitutionId(profile.institution_id);

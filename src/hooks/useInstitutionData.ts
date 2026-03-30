@@ -21,6 +21,11 @@ export interface ClassDistribution {
     value: number;
 }
 
+export interface TrendData {
+    name: string;
+    value: number;
+}
+
 export function useInstitutionData(institutionId: string | null, academicYear: string) {
     const queryClient = useQueryClient();
     const today = format(new Date(), 'yyyy-MM-dd');
@@ -53,11 +58,11 @@ export function useInstitutionData(institutionId: string | null, academicYear: s
         enabled: !!institutionId,
     });
 
-    // 2. Charts Data (Enrollment & Distribution)
-    const { data: charts = { enrollmentTrend: [], classDistribution: [] }, isLoading: isChartsLoading } = useQuery({
-        queryKey: ['inst-charts', institutionId, academicYear],
+    // 2. Charts Data (Enrollment, Distribution, Trends)
+    const { data: charts = { enrollmentTrend: [], classDistribution: [], dailyAttendanceTrend: [], facultyAttendanceTrend: [], facultyLeaveTrend: [] }, isLoading: isChartsLoading } = useQuery({
+        queryKey: ['inst-charts-v3', institutionId, academicYear],
         queryFn: async () => {
-            if (!institutionId) return { enrollmentTrend: [], classDistribution: [] };
+            if (!institutionId) return { enrollmentTrend: [], classDistribution: [], dailyAttendanceTrend: [], facultyAttendanceTrend: [], facultyLeaveTrend: [] };
 
             const { data: studentData } = await supabase
                 .from('students')
@@ -65,17 +70,17 @@ export function useInstitutionData(institutionId: string | null, academicYear: s
                 .eq('institution_id', institutionId)
                 .eq('academic_year', academicYear) as { data: { created_at: string; class_name: string }[] | null };
 
-            if (!studentData) return { enrollmentTrend: [], classDistribution: [] };
-
-            // Process Trend
+            // Process Enrollment Trend
             const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
             const monthlyCounts: Record<string, number> = {};
             months.forEach(m => monthlyCounts[m] = 0);
 
-            studentData.forEach(s => {
-                const m = months[new Date(s.created_at).getMonth()];
-                monthlyCounts[m]++;
-            });
+            if (studentData) {
+                studentData.forEach(s => {
+                    const m = months[new Date(s.created_at).getMonth()];
+                    monthlyCounts[m]++;
+                });
+            }
 
             let cumulative = 0;
             const enrollmentTrend = months.map(name => {
@@ -83,21 +88,63 @@ export function useInstitutionData(institutionId: string | null, academicYear: s
                 return { name, value: cumulative };
             });
 
-            // Process Distribution
+            // Process Class Distribution
             const classCounts: Record<string, number> = {};
-            studentData.forEach(s => {
-                const cls = s.class_name || 'Unassigned';
-                classCounts[cls] = (classCounts[cls] || 0) + 1;
-            });
+            if (studentData) {
+                studentData.forEach(s => {
+                    const cls = s.class_name || 'Unassigned';
+                    classCounts[cls] = (classCounts[cls] || 0) + 1;
+                });
+            }
 
             const classDistribution = Object.keys(classCounts).map(name => ({
                 name,
                 value: classCounts[name]
             })).sort((a, b) => b.value - a.value).slice(0, 5);
 
-            return { enrollmentTrend, classDistribution };
+            // 3. Process Daily Attendance Trend (Last 7 Days)
+            const last7Days = Array.from({ length: 7 }, (_, i) => {
+                const d = new Date();
+                d.setDate(d.getDate() - (6 - i));
+                return format(d, 'yyyy-MM-dd');
+            });
+
+            const [studentDaily, staffDaily, leaveDaily] = await Promise.all([
+                supabase.from('student_attendance').select('attendance_date, status').eq('institution_id', institutionId).in('attendance_date', last7Days),
+                supabase.from('staff_attendance').select('attendance_date, status').eq('institution_id', institutionId).in('attendance_date', last7Days),
+                supabase.from('staff_leaves').select('created_at, status').eq('institution_id', institutionId).gte('created_at', last7Days[0])
+            ]);
+
+            const sRecords = (studentDaily.data || []) as { attendance_date: string, status: string }[];
+            const stRecords = (staffDaily.data || []) as { attendance_date: string, status: string }[];
+            const lRecords = (leaveDaily.data || []) as { created_at: string, status: string }[];
+
+            const dailyAttendanceTrend = last7Days.map(date => {
+                const sCount = sRecords.filter(a => a.attendance_date === date && (a.status === 'present' || a.status === 'late')).length;
+                const stTotal = stRecords.filter(a => a.attendance_date === date && (a.status === 'present' || a.status === 'late')).length;
+                
+                const total = stats.totalPeople || 100;
+                const percent = Math.round(((sCount + stTotal) / total) * 100);
+                return { name: format(new Date(date), 'EEE'), value: percent > 100 ? 100 : percent };
+            });
+
+            // 4. Process Faculty Attendance Trend (Last 7 Days - Percentage)
+            const facultyAttendanceTrend = last7Days.map(date => {
+                const stTotal = stRecords.filter(a => a.attendance_date === date && (a.status === 'present' || a.status === 'late')).length;
+                const totalTeachers = stats.teachers || 10;
+                const percent = Math.round((stTotal / totalTeachers) * 100);
+                return { name: format(new Date(date), 'EEE'), value: percent > 100 ? 100 : percent };
+            });
+
+            // 5. Process Faculty Leave Trend (Last 7 Days)
+            const facultyLeaveTrend = last7Days.map(date => {
+                const lCount = lRecords.filter(l => format(new Date(l.created_at), 'yyyy-MM-dd') === date).length;
+                return { name: format(new Date(date), 'EEE'), value: lCount };
+            });
+
+            return { enrollmentTrend, classDistribution, dailyAttendanceTrend, facultyAttendanceTrend, facultyLeaveTrend };
         },
-        enabled: !!institutionId,
+        enabled: !!institutionId && !isStatsLoading,
     });
 
     // 3. Live Attendance Feed

@@ -8,6 +8,7 @@ import { StatCard } from '../../../src/components/common/StatCard';
 import { AdCard } from '../../../src/components/common/AdCard';
 import { ShortcutGrid } from '../../../src/components/common/ShortcutGrid';
 import { useAuth } from '../../../src/hooks/useAuth';
+import { DashboardBanner } from '../../../src/components/common/Ads/DashboardBanner';
 import { useStudentDashboard } from '../../../src/hooks/useStudentDashboard';
 import { useStudentTimetable } from '../../../src/hooks/useStudentTimetable';
 import { 
@@ -174,6 +175,8 @@ export default function StudentDashboard() {
           style={styles.chart}
         />
       </View>
+
+      <DashboardBanner type="STUDENT" />
     </ScrollView>
   );
 }

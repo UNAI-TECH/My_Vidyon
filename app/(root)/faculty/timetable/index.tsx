@@ -9,7 +9,6 @@ import {
   Clock, 
   MapPin, 
   Calendar as CalendarIcon,
-  ChevronRight,
   BookOpen
 } from 'lucide-react-native';
 
@@ -107,8 +106,6 @@ export default function FacultyTimetable() {
                     </View>
                   </View>
                 </View>
-                
-                <ChevronRight size={18} color={theme.colors.textMuted} {...({} as any)} />
               </View>
             ))
           )}

@@ -1,45 +1,77 @@
-import React, { useState, useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, ActivityIndicator, Alert, Modal, ScrollView } from 'react-native';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, ActivityIndicator, Alert, Modal, ScrollView, Image, RefreshControl } from 'react-native';
 import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
 import { useAuth } from '../../../../src/hooks/useAuth';
 import { useInstitutionUsers } from '../../../../src/hooks/useInstitutionUsers';
 import { 
-  Users, Search, Plus, UserMinus, UserCheck, ChevronRight, Filter, Download, X, Edit2, Save, ChevronDown, Copy, Check, CheckCircle, Camera
+  GraduationCap, Users, UserMinus, UserCheck, Save, Search, X, Camera, Copy, CheckCircle, Building2, ChevronDown, RefreshCw,
+  Mail, Hash, ChevronRight, Download, Plus, Filter, Edit2, Check
 } from 'lucide-react-native';
+import { useQueryClient } from '@tanstack/react-query';
 import * as ImagePicker from 'expo-image-picker';
 import { Badge } from '../../../../src/components/common/Badge';
 import { AlertModal } from '../../../../src/components/common/AlertModal';
 import { CalendarModal } from '../../../../src/components/common/CalendarPicker';
+import { SelectionModal } from '../../../../src/components/common/SelectionModal';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../../../src/lib/supabase';
 import { useQuery } from '@tanstack/react-query';
-import * as XLSX from 'xlsx';
-import * as FileSystem from 'expo-file-system/legacy';
-import * as Sharing from 'expo-sharing';
 import * as Clipboard from 'expo-clipboard';
-import { Image } from 'react-native';
 
 type UserCategory = 'students' | 'staff' | 'parents' | 'accountants' | 'canteen' | 'drivers';
 
 export default function UserManagementScreen() {
+  const queryClient = useQueryClient();
   const { institutionId } = useAuth();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<UserCategory>('students');
   const [searchQuery, setSearchQuery] = useState('');
-  const { students, staff, parents, isLoading, toggleUserStatus, updateUser } = useInstitutionUsers(institutionId);
+  const { students, staff, parents, isLoading, toggleUserStatus, deleteUser, updateUser } = useInstitutionUsers(institutionId);
+
+  useEffect(() => {
+    console.log('[User Data Stats]', {
+      tab: activeTab,
+      students: students.length,
+      staff: staff.length,
+      parents: parents.length
+    });
+  }, [activeTab, students, staff, parents]);
 
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
+
+  // Helper to determine status consistently
+  const checkIsActive = (user: any) => {
+    if (!user) return true;
+    // Explicitly check for false. null/undefined/true are considered active by default
+    return user.is_active !== false;
+  };
+
+  // Sync selectedUser if the background data changes (after a refetch)
+  useEffect(() => {
+    if (selectedUser && isModalVisible) {
+      const allUsers = [...(students || []), ...(staff || []), ...(parents || [])];
+      const updated = allUsers.find((u: any) => u.id === selectedUser.id);
+      if (updated && (updated as any).is_active !== (selectedUser as any).is_active) {
+        console.log('[Sync] Updating selectedUser from background data:', (updated as any).is_active);
+        setSelectedUser(updated);
+      }
+    }
+  }, [students, staff, parents, isModalVisible, selectedUser]);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isPhotoUploading, setIsPhotoUploading] = useState(false);
   const [editForm, setEditForm] = useState<any>({});
-  const [copied, setCopied] = useState(false);
   const [pendingPhoto, setPendingPhoto] = useState<string | null>(null);
   const [showPhotoPreview, setShowPhotoPreview] = useState(false);
 
   const [availableClasses, setAvailableClasses] = useState<any[]>([]);
   const [availableDepartments, setAvailableDepartments] = useState<string[]>([]);
+
+  // Filter state
+  const [filterClass, setFilterClass] = useState<string | null>(null);
+  const [filterSection, setFilterSection] = useState<string | null>(null);
+  const [filterDept, setFilterDept] = useState<string | null>(null);
 
   // Parent search state (for student edit)
   const [parentSearchQuery, setParentSearchQuery] = useState('');
@@ -56,6 +88,10 @@ export default function UserManagementScreen() {
   }>({ visible: false, title: '', message: '' });
 
   const [showDOBPicker, setShowDOBPicker] = useState(false);
+  const [showFilterBar, setShowFilterBar] = useState(false);
+  const [showClassModal, setShowClassModal] = useState(false);
+  const [showSectionModal, setShowSectionModal] = useState(false);
+  const [showDeptModal, setShowDeptModal] = useState(false);
 
   const showAlert = (title: string, message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info', buttons?: any[]) => {
     setAlertConfig({ visible: true, title, message, type, buttons });
@@ -75,7 +111,8 @@ export default function UserManagementScreen() {
         .limit(10);
       return data || [];
     },
-    enabled: !!institutionId && parentSearchQuery.length >= 2
+    enabled: !!institutionId && parentSearchQuery.length >= 2,
+    staleTime: 5000
   });
 
   const handleSelectParent = useCallback((parent: any) => {
@@ -142,12 +179,37 @@ export default function UserManagementScreen() {
 
   const filteredData = useMemo(() => {
     let baseData: any[] = [];
-    if (activeTab === 'students') baseData = students;
-    else if (activeTab === 'parents') baseData = parents;
-    else if (activeTab === 'staff') baseData = staff.filter((s: any) => s.role === 'teacher' || s.role === 'faculty');
-    else if (activeTab === 'accountants') baseData = staff.filter((s: any) => s.role === 'accountant');
-    else if (activeTab === 'canteen') baseData = staff.filter((s: any) => s.role === 'canteen_manager');
-    else if (activeTab === 'drivers') baseData = staff.filter((s: any) => s.role === 'driver');
+    if (activeTab === 'students') {
+      baseData = [...students].sort((a: any, b: any) => {
+        const classA = parseInt(a.class_name) || 0;
+        const classB = parseInt(b.class_name) || 0;
+        if (classA !== classB) return classA - classB;
+        const secA = a.section || '';
+        const secB = b.section || '';
+        if (secA !== secB) return secA.localeCompare(secB);
+        return (a.name || '').localeCompare(b.name || '');
+      });
+      if (filterClass) baseData = baseData.filter(u => u.class_name === filterClass);
+      if (filterSection) baseData = baseData.filter(u => u.section === filterSection);
+    } else if (activeTab === 'parents') {
+      baseData = parents;
+    } else if (activeTab === 'staff') {
+      baseData = staff
+        .filter((s: any) => s.role === 'teacher' || s.role === 'faculty')
+        .sort((a: any, b: any) => {
+          const deptA = a.department || 'Z_None'; 
+          const deptB = b.department || 'Z_None';
+          if (deptA !== deptB) return deptA.localeCompare(deptB);
+          return (a.full_name || '').localeCompare(b.full_name || '');
+        });
+      if (filterDept) baseData = baseData.filter(u => u.department === filterDept);
+    } else if (activeTab === 'accountants') {
+      baseData = staff.filter((s: any) => s.role === 'accountant');
+    } else if (activeTab === 'canteen') {
+      baseData = staff.filter((s: any) => s.role === 'canteen_manager');
+    } else if (activeTab === 'drivers') {
+      baseData = staff.filter((s: any) => s.role === 'driver');
+    }
 
     if (!searchQuery) return baseData;
 
@@ -159,30 +221,46 @@ export default function UserManagementScreen() {
              email.toLowerCase().includes(searchQuery.toLowerCase()) ||
              id.toLowerCase().includes(searchQuery.toLowerCase());
     });
-  }, [activeTab, students, staff, parents, searchQuery]);
+  }, [activeTab, students, staff, parents, searchQuery, filterClass, filterSection, filterDept]);
 
-  const handleToggleStatus = async (item: any) => {
+  const handleUserAction = async (item: any) => {
+    if (!item) return;
     const type = activeTab === 'students' ? 'student' : (activeTab === 'parents' ? 'parent' : 'staff');
-    const isActive = item.is_active !== false;
+    const isActive = checkIsActive(item);
     
     showAlert(
-      isActive ? "Disable User" : "Enable User",
-      `Are you sure you want to ${isActive ? "disable" : "enable"} ${item.name || item.full_name}?`,
-      'warning',
+      "Manage User",
+      `Choose an action for ${item.name || item.full_name}`,
+      'info',
       [
         { text: "Cancel", style: "secondary", onPress: () => {} },
         { 
-          text: isActive ? "Disable" : "Enable", 
-          style: isActive ? "destructive" : "primary",
+          text: isActive ? "Disable & Hide" : "Restore Access", 
+          style: isActive ? "secondary" : "primary",
           onPress: async () => {
+            const actionText = isActive ? 'disabling' : 'restoring';
+            showAlert("Processing", `Please wait, ${actionText} user...`, "info");
+            
             const res = await toggleUserStatus(item.id, type, isActive);
-            if (!res.success) {
+            if (res.success) {
+              if (selectedUser?.id === item.id) {
+                setSelectedUser((prev: any) => ({ ...prev, is_active: !isActive }));
+                setIsModalVisible(false); // Close modal since they are hidden now
+              }
+              showAlert("Success", `User ${isActive ? 'disabled and hidden' : 'restored'} successfully`, "success");
+            } else {
               showAlert("Error", "Failed to update user status", "error");
             }
           }
         }
       ]
     );
+  };
+
+  const handleCopyEmail = async (email: string) => {
+    if (!email) return;
+    await Clipboard.setStringAsync(email);
+    showAlert("Copied", "Email copied to clipboard", "success");
   };
 
   const handleOpenDetails = (user: any) => {
@@ -196,22 +274,20 @@ export default function UserManagementScreen() {
       section: user.section,
       register_number: user.register_number,
       staff_id: user.staff_id,
+      employee_id: user.employee_id,
       department: user.department,
       image_url: user.image_url || user.profile_image_url || user.avatar_url,
-      // Parent info (pre-fill if already linked)
       parent_id: user.parent_id || undefined,
       parent_name: user.parents?.full_name || '',
       parent_email: user.parents?.email || '',
       parent_phone: user.parents?.phone || '',
     });
-    // Pre-fill parent search if already linked
     setParentSearchQuery(user.parents?.email || '');
     setSelectedParent(user.parent_id ? { 
       id: user.parent_id, 
       full_name: user.parents?.full_name, 
       email: user.parents?.email 
     } : null);
-    setCopied(false);
     setIsModalVisible(true);
   };
 
@@ -222,68 +298,34 @@ export default function UserManagementScreen() {
         allowsEditing: false,
         quality: 0.7,
       });
-
       if (result.canceled || !result.assets[0]) return;
-
-      // Show preview modal instead of directly uploading
       setPendingPhoto(result.assets[0].uri);
       setShowPhotoPreview(true);
     } catch (error: any) {
       console.error('Photo pick error:', error);
-      showAlert("Error", "Failed to pick photo: " + error.message, "error");
+      showAlert("Error", "Failed to pick photo", "error");
     }
   };
 
   const confirmPhotoUpload = async () => {
     if (!pendingPhoto) return;
     setShowPhotoPreview(false);
-
     try {
       setIsPhotoUploading(true);
       const uri = pendingPhoto;
       const fileExt = uri.split('.').pop();
       const fileName = `${selectedUser.id}_${Date.now()}.${fileExt}`;
       const filePath = `avatars/${activeTab}/${fileName}`;
-
       const formData = new FormData();
-      formData.append('file', {
-        uri,
-        name: fileName,
-        type: `image/${fileExt}`,
-      } as any);
-
-      // 1. Upload new image
-      const { data, error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(filePath, formData);
-
+      formData.append('file', { uri, name: fileName, type: `image/${fileExt}` } as any);
+      const { error: uploadError } = await supabase.storage.from('avatars').upload(filePath, formData);
       if (uploadError) throw uploadError;
-
-      // 2. Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('avatars')
-        .getPublicUrl(filePath);
-
-      // 3. Delete old image if it exists in our storage
-      const oldUrl = editForm.image_url;
-      if (oldUrl && oldUrl.includes('supabase.co')) {
-        try {
-          const urlParts = oldUrl.split('avatars/');
-          if (urlParts.length > 1) {
-            const oldPath = urlParts[1].split('?')[0];
-            await supabase.storage.from('avatars').remove([oldPath]);
-            console.log('Cleaned up old avatar:', oldPath);
-          }
-        } catch (cleanupErr) {
-          console.error('Failed to cleanup old avatar:', cleanupErr);
-        }
-      }
-
-      setEditForm({ ...editForm, image_url: publicUrl });
-      showAlert("Success", "Photo uploaded! Don't forget to save changes.", "success");
+      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(filePath);
+      setEditForm((prev: any) => ({ ...prev, image_url: publicUrl }));
+      showAlert("Success", "Photo changed! Save changes to finalize.", "success");
     } catch (error: any) {
-      console.error('Photo update error:', error);
-      showAlert("Error", "Failed to upload photo: " + error.message, "error");
+      console.error('Photo upload error:', error);
+      showAlert("Error", "Failed to upload photo", "error");
     } finally {
       setIsPhotoUploading(false);
       setPendingPhoto(null);
@@ -299,37 +341,23 @@ export default function UserManagementScreen() {
     if (!selectedUser) return;
     setIsUpdating(true);
     const type = activeTab === 'students' ? 'student' : (activeTab === 'parents' ? 'parent' : 'staff');
-    
     const updates: any = {};
     if (activeTab === 'students') {
       updates.name = editForm.name;
       updates.phone = editForm.phone;
       updates.dob = editForm.dob;
-      updates.class_name = editForm.class_name;
-      updates.section = editForm.section;
-      updates.register_number = editForm.register_number;
-      // Parent linking
-      if (editForm.parent_id) updates.parent_id = editForm.parent_id;
-      if (editForm.parent_name) updates.parent_name = editForm.parent_name;
-      if (editForm.parent_email) updates.parent_email = editForm.parent_email;
-      if (editForm.parent_phone) updates.parent_phone = editForm.parent_phone;
+      updates.parent_id = editForm.parent_id;
     } else if (activeTab === 'parents') {
-      updates.name = editForm.name;
+      updates.full_name = editForm.name;
       updates.phone = editForm.phone;
-      updates.dob = editForm.dob;
     } else {
       updates.full_name = editForm.name;
       updates.phone = editForm.phone;
-      updates.dob = editForm.dob;
-      updates.staff_id = editForm.staff_id;
       updates.department = editForm.department;
     }
-
-    // Common updates
-    if (editForm.image_url !== selectedUser.image_url && editForm.image_url !== selectedUser.profile_image_url && editForm.image_url !== selectedUser.avatar_url) {
+    if (editForm.image_url !== (selectedUser.image_url || selectedUser.profile_image_url || selectedUser.avatar_url)) {
       updates.image_url = editForm.image_url;
     }
-
     const res = await updateUser(selectedUser.id, type, updates);
     setIsUpdating(false);
     if (res.success) {
@@ -340,57 +368,66 @@ export default function UserManagementScreen() {
     }
   };
 
-  const renderUserItem = ({ item }: { item: any }) => (
-    <TouchableOpacity 
-      style={styles.userCard}
-      onPress={() => handleOpenDetails(item)}
-      activeOpacity={0.7}
-    >
-      <View style={styles.userMain}>
-        <View style={styles.avatar}>
-          {item.image_url || item.profile_image_url || item.avatar_url ? (
-            <Image 
-              source={{ uri: item.image_url || item.profile_image_url || item.avatar_url }} 
-              style={styles.avatarImage} 
-            />
-          ) : (
-            <Text style={styles.avatarText}>{(item.name || item.full_name || 'U')[0]}</Text>
-          )}
-        </View>
-        <View style={styles.userDetails}>
-          <Text style={styles.userName}>{item.name || item.full_name}</Text>
-          <Text style={styles.userSub}>{item.email || 'No email'}</Text>
-          <View style={styles.userMeta}>
-            {item.register_number && <Badge variant="info">{item.register_number}</Badge>}
-            {item.class_name && <Text style={styles.metaText}>{item.class_name}{item.section ? ` - ${item.section}` : ''}</Text>}
-            <Badge 
-              variant={item.is_active !== false ? "success" : "destructive"} 
-            >
-              {item.is_active !== false ? 'Active' : 'Disabled'}
-            </Badge>
+  const renderUserItem = ({ item }: { item: any }) => {
+    const isActive = checkIsActive(item);
+    const statusColor = isActive ? "#10B981" : "#EF4444";
+    return (
+      <TouchableOpacity style={styles.userCard} onPress={() => handleOpenDetails(item)} activeOpacity={0.7}>
+        <View style={[styles.statusStrip, { backgroundColor: statusColor }]} />
+        <View style={styles.cardMain}>
+          <View style={styles.avatar}>
+            {item.image_url || item.profile_image_url || item.avatar_url ? (
+              <Image source={{ uri: item.image_url || item.profile_image_url || item.avatar_url }} style={styles.avatarImage} />
+            ) : (
+              <Text style={styles.avatarText}>{(item.name || item.full_name || 'U')[0]}</Text>
+            )}
+            <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+          </View>
+          <View style={styles.userDetails}>
+            <View style={styles.nameRow}>
+              <Text style={styles.userName} numberOfLines={1}>{item.name || item.full_name}</Text>
+              <Badge variant={isActive ? "success" : "destructive"} style={{ height: 20, paddingHorizontal: 6 }}>
+                {isActive ? 'Active' : 'Disabled'}
+              </Badge>
+            </View>
+            <View style={styles.emailRow}>
+              <Mail size={12} color={theme.colors.textMuted} {...({} as any)} />
+              <Text style={styles.userSub} numberOfLines={1}>{item.email || 'No email'}</Text>
+            </View>
+            <View style={styles.userMeta}>
+              {(item.register_number || item.employee_id || item.staff_id) && (
+                <View style={styles.metaItem}>
+                  <Hash size={12} color={theme.colors.primary} {...({} as any)} />
+                  <Text style={styles.metaText}>{item.register_number || item.employee_id || item.staff_id}</Text>
+                </View>
+              )}
+              {item.class_name && (
+                <View style={styles.metaItem}>
+                  <GraduationCap size={12} color={theme.colors.secondary} {...({} as any)} />
+                  <Text style={styles.metaText}>{item.class_name}{item.section ? ` - ${item.section}` : ''}</Text>
+                </View>
+              )}
+              {item.department && (
+                <View style={styles.metaItem}>
+                  <Building2 size={12} color={theme.colors.secondary} {...({} as any)} />
+                  <Text style={styles.metaText}>{item.department}</Text>
+                </View>
+              )}
+            </View>
           </View>
         </View>
-      </View>
-      <View style={styles.userActions}>
-        <TouchableOpacity 
-          style={[styles.actionBtn, item.is_active !== false ? styles.disableBtn : styles.enableBtn]} 
-          onPress={(e) => {
-            e.stopPropagation();
-            handleToggleStatus(item);
-          }}
-        >
-          {item.is_active !== false ? (
-            <UserMinus size={18} color="#EF4444" {...({} as any)} />
-          ) : (
-            <UserCheck size={18} color="#10B981" {...({} as any)} />
-          )}
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.detailsBtn}>
+        <View style={styles.userActions}>
+          <TouchableOpacity 
+            style={[styles.actionBtn, styles.manageBtn]} 
+            onPress={(e) => { e.stopPropagation(); handleUserAction(item); }}
+          >
+            <UserMinus size={18} color={theme.colors.primary} {...({} as any)} />
+          </TouchableOpacity>
           <ChevronRight size={18} color={theme.colors.textMuted} {...({} as any)} />
-        </TouchableOpacity>
-      </View>
-    </TouchableOpacity>
-  );
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -399,40 +436,15 @@ export default function UserManagementScreen() {
         subtitle={`${filteredData.length} total users found`}
         actions={
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            <TouchableOpacity 
-              style={[styles.addBtn, { backgroundColor: '#6366F1' }]} 
-              onPress={async () => {
-                try {
-                  const ws = XLSX.utils.json_to_sheet(filteredData.map((u: any) => ({
-                    name: u.name || u.full_name,
-                    email: u.email,
-                    role: activeTab,
-                    register_number: u.register_number || '',
-                    class_name: u.class_name || '',
-                    section: u.section || '',
-                    phone: u.phone || '',
-                    status: u.is_active !== false ? 'Active' : 'Disabled'
-                  })));
-                  const wb = XLSX.utils.book_new();
-                  XLSX.utils.book_append_sheet(wb, ws, 'Users');
-                  const wbout = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
-                  const fileUri = `${(FileSystem as any).cacheDirectory}users_${activeTab}_${Date.now()}.xlsx`;
-                  await FileSystem.writeAsStringAsync(fileUri, wbout, { encoding: (FileSystem as any).EncodingType.Base64 });
-                  if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(fileUri);
-                } catch (e: any) { Alert.alert('Error', e.message); }
-              }}
-            >
-              <Download size={16} color="white" {...({} as any)} />
-            </TouchableOpacity>
+            <TouchableOpacity style={styles.filterBtn}><Download size={16} color={theme.colors.text} {...({} as any)} /></TouchableOpacity>
             <TouchableOpacity 
               style={styles.addBtn} 
               onPress={() => {
-                const roleMap: Record<string, string> = { students: 'student', staff: 'faculty', parents: 'parent', accountants: 'accountant', canteen: 'canteen_manager', drivers: 'driver' };
-                router.push({ pathname: '/(root)/institution/students/add', params: { role: roleMap[activeTab] || 'student' } }  as any);
+                const roleMap: any = { students: 'student', staff: 'faculty', parents: 'parent', accountants: 'accountant', canteen: 'canteen_manager', drivers: 'driver' };
+                router.push({ pathname: '/(root)/institution/students/add', params: { role: roleMap[activeTab] || 'student' } } as any);
               }}
             >
-              <Plus size={20} color="white" {...({} as any)} />
-              <Text style={styles.addBtnText}>Add</Text>
+              <Plus size={20} color="white" {...({} as any)} /><Text style={styles.addBtnText}>Add</Text>
             </TouchableOpacity>
           </View>
         }
@@ -441,338 +453,167 @@ export default function UserManagementScreen() {
       <View style={styles.searchContainer}>
         <View style={styles.searchBar}>
           <Search size={18} color={theme.colors.textMuted} {...({} as any)} />
-          <TextInput 
-            style={styles.searchInput} 
-            placeholder="Search by name, email or ID..." 
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
+          <TextInput style={styles.searchInput} placeholder="Search by name, email or ID..." value={searchQuery} onChangeText={setSearchQuery} />
         </View>
-        <TouchableOpacity style={styles.filterBtn}>
-          <Filter size={18} color={theme.colors.text} {...({} as any)} />
+        <TouchableOpacity 
+          style={[styles.filterBtn, showFilterBar && styles.activeFilterBtn]}
+          onPress={() => setShowFilterBar(!showFilterBar)}
+        >
+          {showFilterBar ? <X size={18} color="white" {...({} as any)} /> : <Filter size={18} color={theme.colors.text} {...({} as any)} />}
         </TouchableOpacity>
       </View>
 
+      {showFilterBar && (activeTab === 'students' || activeTab === 'staff') && (
+        <View style={styles.filterBarContainer}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterBar} contentContainerStyle={styles.filterBarContent}>
+            {activeTab === 'students' && (
+              <>
+                <TouchableOpacity 
+                  style={[styles.filterChip, filterClass && styles.activeFilterChip]} 
+                  onPress={() => setShowClassModal(true)}
+                >
+                  <Text style={[styles.filterChipText, filterClass && styles.activeFilterChipText]}>{filterClass || 'Class'}</Text>
+                  <ChevronDown size={14} color={filterClass ? 'white' : theme.colors.textMuted} {...({} as any)} />
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={[styles.filterChip, filterSection && styles.activeFilterChip]} 
+                  onPress={() => {
+                    if (!filterClass) {
+                      showAlert("Selection Required", "Please select a class first", "info");
+                      return;
+                    }
+                    setShowSectionModal(true);
+                  }}
+                >
+                  <Text style={[styles.filterChipText, filterSection && styles.activeFilterChipText]}>{filterSection || 'Section'}</Text>
+                  <ChevronDown size={14} color={filterSection ? 'white' : theme.colors.textMuted} {...({} as any)} />
+                </TouchableOpacity>
+              </>
+            )}
+
+            {activeTab === 'staff' && (
+              <TouchableOpacity 
+                style={[styles.filterChip, filterDept && styles.activeFilterChip]} 
+                onPress={() => setShowDeptModal(true)}
+              >
+                <Text style={[styles.filterChipText, filterDept && styles.activeFilterChipText]}>{filterDept || 'Department'}</Text>
+                <ChevronDown size={14} color={filterDept ? 'white' : theme.colors.textMuted} {...({} as any)} />
+              </TouchableOpacity>
+            )}
+
+            {(filterClass || filterSection || filterDept) && (
+              <TouchableOpacity 
+                onPress={() => { setFilterClass(null); setFilterSection(null); setFilterDept(null); }} 
+                style={styles.clearFiltersBtn}
+              >
+                <Text style={styles.clearFiltersText}>Clear All</Text>
+              </TouchableOpacity>
+            )}
+          </ScrollView>
+        </View>
+      )}
+
       <View style={styles.tabsContainer}>
-        <FlatList
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          data={tabs}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <TouchableOpacity 
-              style={[styles.tab, activeTab === item.id && styles.activeTab]}
-              onPress={() => setActiveTab(item.id)}
-            >
-              <Text style={[styles.tabText, activeTab === item.id && styles.activeTabText]}>
-                {item.label}
-              </Text>
-            </TouchableOpacity>
-          )}
-        />
+        <FlatList horizontal showsHorizontalScrollIndicator={false} data={tabs} keyExtractor={(item) => item.id} renderItem={({ item }) => (
+          <TouchableOpacity style={[styles.tab, activeTab === item.id && styles.activeTab]} onPress={() => setActiveTab(item.id)}>
+            <Text style={[styles.tabText, activeTab === item.id && styles.activeTabText]}>{item.label}</Text>
+          </TouchableOpacity>
+        )} />
       </View>
 
       {isLoading ? (
-        <View style={styles.loader}>
-          <ActivityIndicator size="large" color={theme.colors.primary} />
-        </View>
+        <View style={styles.loader}><ActivityIndicator size="large" color={theme.colors.primary} /></View>
       ) : (
-        <FlatList
-          data={filteredData}
-          keyExtractor={(item) => item.id}
-          renderItem={renderUserItem}
+        <FlatList 
+          data={filteredData} 
+          keyExtractor={(item) => item.id} 
+          renderItem={renderUserItem} 
           contentContainerStyle={styles.listContent}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Users size={48} color="#E2E8F0" {...({} as any)} />
-              <Text style={styles.emptyText}>No users found in this category</Text>
-            </View>
+          refreshControl={
+            <RefreshControl 
+              refreshing={isLoading} 
+              onRefresh={() => queryClient.invalidateQueries({ queryKey: [activeTab === 'students' ? 'institution-students' : (activeTab === 'parents' ? 'institution-parents' : 'institution-staff')] })} 
+            />
           }
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}><Users size={48} color="#E2E8F0" {...({} as any)} /><Text style={styles.emptyText}>No users found in this category</Text></View>
+          } 
         />
       )}
 
-      {/* User Details Modal */}
-      <Modal
-        visible={isModalVisible}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setIsModalVisible(false)}
-      >
+      {/* Pop-up Card (User Details Modal) */}
+      <Modal visible={isModalVisible} animationType="slide" transparent onRequestClose={() => setIsModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>User Details</Text>
-              <TouchableOpacity onPress={() => setIsModalVisible(false)}>
-                <X size={24} color={theme.colors.text} {...({} as any)} />
-              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setIsModalVisible(false)}><X size={24} color={theme.colors.text} {...({} as any)} /></TouchableOpacity>
             </View>
 
-            <ScrollView 
-              style={styles.modalBody}
-              contentContainerStyle={styles.modalScrollContent}
-            >
-              <View style={styles.modalAvatarContainer}>
-                <TouchableOpacity 
-                  style={styles.largeAvatar} 
-                  onPress={handlePhotoUpdate}
-                  disabled={isPhotoUploading}
-                >
-                  {isPhotoUploading ? (
-                    <ActivityIndicator color={theme.colors.primary} />
-                  ) : editForm.image_url ? (
-                    <Image source={{ uri: editForm.image_url }} style={styles.largeAvatarImage} />
-                  ) : (
-                    <Text style={styles.largeAvatarText}>{(editForm.name || 'U')[0]}</Text>
-                  )}
-                  <View style={styles.avatarOverlay}>
-                    <Camera size={20} color="white" {...({} as any)} />
-                  </View>
+            <ScrollView style={styles.modalBody} contentContainerStyle={styles.modalScrollContent} showsVerticalScrollIndicator={false}>
+              <View style={styles.modalHeaderCard}>
+                <TouchableOpacity style={styles.largeAvatar} onPress={handlePhotoUpdate} disabled={isPhotoUploading}>
+                  {isPhotoUploading ? <ActivityIndicator color={theme.colors.primary} /> : (editForm.image_url ? <Image source={{ uri: editForm.image_url }} style={styles.largeAvatarImage} /> : <Text style={styles.largeAvatarText}>{(editForm.name || 'U')[0]}</Text>)}
+                  <View style={styles.avatarOverlay}><Camera size={16} color="white" {...({} as any)} /></View>
                 </TouchableOpacity>
-                <Text style={styles.modalName}>{editForm.name}</Text>
-                <View style={styles.emailContainer}>
-                  <Text style={styles.modalSub}>{editForm.email}</Text>
-                  <TouchableOpacity 
-                    style={styles.copyBtn}
-                    onPress={async () => {
-                      if (editForm.email) {
-                        await Clipboard.setStringAsync(editForm.email);
-                        setCopied(true);
-                        setTimeout(() => setCopied(false), 2000);
-                      }
-                    }}
-                  >
-                    {copied ? (
-                      <Check size={14} color="#10B981" {...({} as any)} />
-                    ) : (
-                      <Copy size={14} color={theme.colors.textMuted} {...({} as any)} />
-                    )}
-                  </TouchableOpacity>
+                <View style={styles.headerInfo}>
+                  <Text style={styles.modalName}>{editForm.name}</Text>
+                  <View style={styles.statusBadgeRow}>
+                    <Badge variant={checkIsActive(selectedUser) ? "success" : "destructive"} style={{ height: 24, paddingHorizontal: 10 }}>
+                      {checkIsActive(selectedUser) ? "ACTIVE ACCOUNT" : "DISABLED ACCOUNT"}
+                    </Badge>
+                  </View>
                 </View>
               </View>
 
-              <View style={styles.formSection}>
-                <Text style={styles.sectionLabel}>Basic Information</Text>
-                
-                <View style={styles.inputWrap}>
-                  <Text style={styles.fieldLabel}>Full Name</Text>
-                  <TextInput 
-                    style={styles.modalInput}
-                    value={editForm.name}
-                    onChangeText={(v) => setEditForm({...editForm, name: v})}
-                  />
-                </View>
-
-                <View style={styles.inputWrap}>
-                  <Text style={styles.fieldLabel}>Phone Number</Text>
-                  <TextInput 
-                    style={styles.modalInput}
-                    value={editForm.phone}
-                    onChangeText={(v) => setEditForm({...editForm, phone: v})}
-                    keyboardType="phone-pad"
-                  />
-                </View>
-
-                <View style={styles.inputWrap}>
-                  <Text style={styles.fieldLabel}>Date of Birth (YYYY-MM-DD)</Text>
-                  <TouchableOpacity 
-                    style={[styles.modalInput, { justifyContent: 'center' }]} 
-                    onPress={() => setShowDOBPicker(true)}
-                  >
-                    <Text style={{ color: editForm.dob ? theme.colors.text : '#94A3B8' }}>
-                      {editForm.dob || 'Select Date'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                {activeTab === 'students' && (
-                  <>
-                    <View style={styles.inputWrap}>
-                      <Text style={styles.fieldLabel}>Class</Text>
-                      <TouchableOpacity 
-                        style={styles.modalInput}
-                        onPress={() => {
-                          if (availableClasses.length === 0) return Alert.alert("Error", "No classes found");
-                          Alert.alert("Select Class", "", availableClasses.map(c => ({
-                            text: c.name,
-                            onPress: () => setEditForm({...editForm, class_name: c.name, section: ''})
-                          })).concat([{ text: "Cancel", style: "cancel" } as any]));
-                        }}
-                      >
-                        <Text style={{ color: editForm.class_name ? theme.colors.text : '#94A3B8' }}>
-                          {editForm.class_name || 'Select Class'}
-                        </Text>
-                        <ChevronDown size={16} color={theme.colors.textMuted} style={{ position: 'absolute', right: 16, top: 12 }} {...({} as any)} />
-                      </TouchableOpacity>
-                    </View>
-                    <View style={styles.inputWrap}>
-                      <Text style={styles.fieldLabel}>Section</Text>
-                      <TouchableOpacity 
-                        style={styles.modalInput}
-                        onPress={() => {
-                          const cls = availableClasses.find(c => c.name === editForm.class_name);
-                          if (!cls) return Alert.alert("Error", "Select a class first");
-                          const sections = Array.isArray(cls.sections) ? cls.sections : [cls.sections];
-                          Alert.alert("Select Section", "", sections.map((s: string) => ({
-                            text: s,
-                            onPress: () => setEditForm({...editForm, section: s})
-                          })).concat([{ text: "Cancel", style: "cancel" } as any]));
-                        }}
-                      >
-                        <Text style={{ color: editForm.section ? theme.colors.text : '#94A3B8' }}>
-                          {editForm.section || 'Select Section'}
-                        </Text>
-                        <ChevronDown size={16} color={theme.colors.textMuted} style={{ position: 'absolute', right: 16, top: 12 }} {...({} as any)} />
-                      </TouchableOpacity>
-                    </View>
-                    <View style={styles.inputWrap}>
-                      <Text style={styles.fieldLabel}>Register Number</Text>
-                      <TextInput 
-                        style={styles.modalInput}
-                        value={editForm.register_number}
-                        onChangeText={(v) => setEditForm({...editForm, register_number: v})}
-                      />
-                    </View>
-
-
-
-                    {/* Parent Linking integrated here */}
-                    <View style={styles.divider} />
-                    <Text style={[styles.sectionLabel, { marginTop: 16 }]}>Parent Linking</Text>
-
-                    <View style={styles.inputWrap}>
-                      <Text style={styles.fieldLabel}>Search Parent by Email</Text>
-                      <View style={styles.parentSearchRow}>
-                        <Search size={16} color={theme.colors.textMuted} {...({} as any)} />
-                        <TextInput
-                          style={styles.parentSearchInput}
-                          value={parentSearchQuery}
-                          onChangeText={(v) => {
-                            setParentSearchQuery(v);
-                            setShowParentDropdown(true);
-                            if (!v) handleClearParent();
-                          }}
-                          onFocus={() => setShowParentDropdown(true)}
-                          placeholder="Search existing parent..."
-                          keyboardType="email-address"
-                          autoCapitalize="none"
-                        />
-                        {selectedParent && (
-                          <TouchableOpacity onPress={handleClearParent}>
-                            <X size={16} color={theme.colors.textMuted} {...({} as any)} />
-                          </TouchableOpacity>
-                        )}
-                      </View>
-
-                      {showParentDropdown && parentResults.length > 0 && (
-                        <View style={styles.parentDropdown}>
-                          {(parentResults as any[]).map((p: any) => (
-                            <TouchableOpacity
-                              key={p.id}
-                              style={styles.parentDropdownItem}
-                              onPress={() => handleSelectParent(p)}
-                            >
-                              <View style={{ flex: 1 }}>
-                                <Text style={styles.parentDropdownName}>{p.full_name || 'Parent'}</Text>
-                                <Text style={styles.parentDropdownEmail}>{p.email}</Text>
-                              </View>
-                              {selectedParent?.id === p.id && (
-                                <CheckCircle size={16} color="#10B981" {...({} as any)} />
-                              )}
-                            </TouchableOpacity>
-                          ))}
-                        </View>
-                      )}
-
-                      {selectedParent && (
-                        <View style={styles.parentLinkedCard}>
-                          <View style={styles.parentLinkedDot} />
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.parentLinkedName}>{selectedParent.full_name}</Text>
-                            <Text style={styles.parentLinkedEmail}>{selectedParent.email}</Text>
-                          </View>
-                          <CheckCircle size={18} color="#10B981" {...({} as any)} />
-                        </View>
-                      )}
-                    </View>
-
-                    <View style={styles.inputWrap}>
-                      <Text style={styles.fieldLabel}>Parent Name {selectedParent && '(Linked)'}</Text>
-                      <TextInput
-                        style={[styles.modalInput, selectedParent && styles.readOnlyInput]}
-                        value={editForm.parent_name || ''}
-                        onChangeText={(v) => setEditForm({...editForm, parent_name: v})}
-                        editable={!selectedParent}
-                        placeholder="Parent Name"
-                      />
-                    </View>
-
-                    <View style={styles.inputWrap}>
-                      <Text style={styles.fieldLabel}>Parent Phone</Text>
-                      <TextInput
-                        style={[styles.modalInput, selectedParent && styles.readOnlyInput]}
-                        value={editForm.parent_phone || ''}
-                        onChangeText={(v) => setEditForm({...editForm, parent_phone: v})}
-                        editable={!selectedParent}
-                        placeholder="Phone Number"
-                        keyboardType="phone-pad"
-                      />
-                    </View>
-                  </>
-                )}
-              </View>
-
-              {activeTab !== 'students' && activeTab !== 'parents' && (
-                <View style={styles.formSection}>
+              <View style={styles.infoGrid}>
+                <View style={styles.sectionCard}>
+                  <View style={styles.sectionHeader}><Users size={18} color={theme.colors.primary} {...({} as any)} /><Text style={styles.sectionTitle}>Personal Info</Text></View>
+                  <View style={styles.inputWrap}><Text style={styles.fieldLabel}>Display Name</Text><TextInput style={styles.modalInput} value={editForm.name} onChangeText={(val) => setEditForm((p: any) => ({ ...p, name: val }))} /></View>
                   <View style={styles.inputWrap}>
-                    <Text style={styles.fieldLabel}>Department</Text>
+                    <Text style={styles.fieldLabel}>Email (Static)</Text>
                     <TouchableOpacity 
-                      style={styles.modalInput}
-                      onPress={() => {
-                        if (availableDepartments.length === 0) {
-                          Alert.alert("Departments", "No existing departments found. Please type it in.");
-                          return;
-                        }
-                        Alert.alert("Select Department", "", availableDepartments.map(d => ({
-                          text: d,
-                          onPress: () => setEditForm({...editForm, department: d})
-                        })).concat([
-                          { text: "Cancel", style: "cancel" }
-                        ] as any));
-                      }}
+                      style={styles.readOnlyBox} 
+                      onPress={() => handleCopyEmail(editForm.email)}
+                      activeOpacity={0.7}
                     >
-                       <TextInput 
-                         style={{ color: theme.colors.text, padding: 0 }}
-                         value={editForm.department}
-                         onChangeText={(v) => setEditForm({...editForm, department: v})}
-                         placeholder="Type or select..."
-                       />
-                       <ChevronDown size={16} color={theme.colors.textMuted} style={{ position: 'absolute', right: 16, top: 12 }} {...({} as any)} />
+                      <Text style={styles.readOnlyText} numberOfLines={1}>{editForm.email}</Text>
+                      <Copy size={14} color={theme.colors.primary} {...({} as any)} />
                     </TouchableOpacity>
                   </View>
+                  <View style={styles.inputWrap}><Text style={styles.fieldLabel}>Phone</Text><TextInput style={styles.modalInput} value={editForm.phone} onChangeText={(val) => setEditForm((p: any) => ({ ...p, phone: val }))} keyboardType="phone-pad" /></View>
                 </View>
-              )}
+
+                {(activeTab === 'students' || activeTab === 'staff') && (
+                  <View style={styles.sectionCard}>
+                    <View style={styles.sectionHeader}><GraduationCap size={18} color={theme.colors.secondary} {...({} as any)} /><Text style={styles.sectionTitle}>{activeTab === 'students' ? 'Campus Details' : 'Professional'}</Text></View>
+                    <View style={styles.inputWrap}><Text style={styles.fieldLabel}>Identity ID</Text><View style={styles.readOnlyBox}><Text style={styles.readOnlyText}>{editForm.register_number || editForm.employee_id || editForm.staff_id}</Text></View></View>
+                    {activeTab === 'students' ? (
+                      <View style={styles.inputWrap}><Text style={styles.fieldLabel}>Class & Section</Text><View style={styles.readOnlyBox}><Text style={styles.readOnlyText}>{editForm.class_name || 'N/A'} - {editForm.section || 'N/A'}</Text></View></View>
+                    ) : (
+                      <View style={styles.inputWrap}><Text style={styles.fieldLabel}>Department</Text><TextInput style={styles.modalInput} value={editForm.department} onChangeText={(val) => setEditForm((p: any) => ({ ...p, department: val }))} /></View>
+                    )}
+                  </View>
+                )}
+
+                <View style={styles.sectionCard}>
+                  <View style={styles.sectionHeader}><CheckCircle size={18} color="#10B981" {...({} as any)} /><Text style={styles.sectionTitle}>Security & Access</Text></View>
+                  <TouchableOpacity style={[styles.statusToggle, checkIsActive(selectedUser) ? styles.statusToggleActive : styles.statusToggleDisabled]} onPress={() => handleUserAction(selectedUser)}>
+                    <View style={styles.statusToggleInfo}>
+                      <Text style={styles.statusToggleTitle}>{checkIsActive(selectedUser) ? 'Block Access' : 'Restore Access'}</Text>
+                      <Text style={styles.statusToggleSub}>{checkIsActive(selectedUser) ? 'Immediately terminate user sessions.' : 'Enable user login to the app.'}</Text>
+                    </View>
+                    {checkIsActive(selectedUser) ? <UserMinus size={20} color="#EF4444" {...({} as any)} /> : <UserCheck size={20} color="#10B981" {...({} as any)} />}
+                  </TouchableOpacity>
+                </View>
+              </View>
             </ScrollView>
 
             <View style={styles.modalFooter}>
-              <TouchableOpacity 
-                style={styles.cancelBtn}
-                onPress={() => setIsModalVisible(false)}
-              >
-                <Text style={styles.cancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.saveChangesBtn, isUpdating && { opacity: 0.7 }]}
-                onPress={handleUpdate}
-                disabled={isUpdating}
-              >
-                {isUpdating ? (
-                  <ActivityIndicator color="white" />
-                ) : (
-                  <>
-                    <Save size={18} color="white" {...({} as any)} />
-                    <Text style={styles.saveChangesBtnText}>Save Changes</Text>
-                  </>
-                )}
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => setIsModalVisible(false)}><Text style={styles.cancelBtnText}>Cancel</Text></TouchableOpacity>
+              <TouchableOpacity style={[styles.saveChangesBtn, isUpdating && { opacity: 0.7 }]} onPress={handleUpdate} disabled={isUpdating}>
+                {isUpdating ? <ActivityIndicator color="white" /> : <><Save size={18} color="white" {...({} as any)} /><Text style={styles.saveChangesBtnText}>Save Changes</Text></>}
               </TouchableOpacity>
             </View>
           </View>
@@ -783,39 +624,57 @@ export default function UserManagementScreen() {
       <Modal visible={showPhotoPreview} transparent animationType="fade" onRequestClose={cancelPhotoUpload}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 32 }}>
           <View style={{ backgroundColor: 'white', borderRadius: 24, width: '100%', maxWidth: 360, overflow: 'hidden' }}>
-            <Text style={{ fontSize: 18, fontWeight: 'bold', color: theme.colors.text, textAlign: 'center', paddingTop: 24, paddingBottom: 12 }}>Preview Photo</Text>
-            <View style={{ alignItems: 'center', paddingVertical: 20, paddingHorizontal: 24 }}>
-              {pendingPhoto && (
-                <Image source={{ uri: pendingPhoto }} style={{ width: 180, height: 180, borderRadius: 90, borderWidth: 3, borderColor: theme.colors.primary + '30' }} />
-              )}
-            </View>
+            <Text style={{ fontSize: 18, fontWeight: 'bold', color: theme.colors.text, textAlign: 'center', paddingTop: 24, paddingBottom: 12 }}>Preview Avatar</Text>
+            <View style={{ alignItems: 'center', paddingVertical: 20 }}>{pendingPhoto && <Image source={{ uri: pendingPhoto }} style={{ width: 180, height: 180, borderRadius: 90, borderWidth: 3, borderColor: theme.colors.primary + '30' }} />}</View>
             <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#F1F5F9' }}>
-              <TouchableOpacity style={{ flex: 1, paddingVertical: 16, alignItems: 'center', borderRightWidth: 1, borderRightColor: '#F1F5F9' }} onPress={cancelPhotoUpload}>
-                <Text style={{ fontSize: 16, fontWeight: '600', color: '#EF4444' }}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={{ flex: 1, paddingVertical: 16, alignItems: 'center' }} onPress={confirmPhotoUpload}>
-                <Text style={{ fontSize: 16, fontWeight: 'bold', color: theme.colors.primary }}>Submit</Text>
-              </TouchableOpacity>
+              <TouchableOpacity style={{ flex: 1, paddingVertical: 16, alignItems: 'center', borderRightWidth: 1, borderRightColor: '#F1F5F9' }} onPress={cancelPhotoUpload}><Text style={{ color: '#EF4444', fontWeight: 'bold' }}>Discard</Text></TouchableOpacity>
+              <TouchableOpacity style={{ flex: 1, paddingVertical: 16, alignItems: 'center' }} onPress={confirmPhotoUpload}><Text style={{ color: theme.colors.primary, fontWeight: 'bold' }}>Confirm</Text></TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
 
-      <AlertModal
-        visible={alertConfig.visible}
-        title={alertConfig.title}
-        message={alertConfig.message}
-        type={alertConfig.type}
-        buttons={alertConfig.buttons}
-        onClose={() => setAlertConfig(prev => ({ ...prev, visible: false }))}
+      <AlertModal visible={alertConfig.visible} title={alertConfig.title} message={alertConfig.message} type={alertConfig.type} buttons={alertConfig.buttons} onClose={() => setAlertConfig(prev => ({ ...prev, visible: false }))} />
+      <CalendarModal visible={showDOBPicker} title="Select DOB" initialDate={editForm.dob} onSelect={(d: string) => setEditForm((p: any) => ({ ...p, dob: d }))} onClose={() => setShowDOBPicker(false)} />
+      
+      {/* Premium Filter Selectors */}
+      <SelectionModal
+        visible={showClassModal}
+        title="Select Class"
+        options={availableClasses.map(c => ({ id: c.id, label: c.name, icon: <GraduationCap size={18} color={theme.colors.primary} {...({} as any)} /> }))}
+        selectedValue={filterClass}
+        showClear
+        onSelect={(opt) => {
+          setFilterClass(opt.label);
+          setFilterSection(null);
+        }}
+        onClear={() => {
+          setFilterClass(null);
+          setFilterSection(null);
+        }}
+        onClose={() => setShowClassModal(false)}
       />
 
-      <CalendarModal
-        visible={showDOBPicker}
-        title="Select Date of Birth"
-        initialDate={editForm.dob}
-        onSelect={(date: string) => setEditForm((prev: any) => ({ ...prev, dob: date }))}
-        onClose={() => setShowDOBPicker(false)}
+      <SelectionModal
+        visible={showSectionModal}
+        title={`Select Section for ${filterClass}`}
+        options={(availableClasses.find(c => c.name === filterClass)?.sections || []).map((s: string) => ({ id: s, label: s, icon: <Users size={18} color={theme.colors.secondary} {...({} as any)} /> }))}
+        selectedValue={filterSection}
+        showClear
+        onSelect={(opt) => setFilterSection(opt.label)}
+        onClear={() => setFilterSection(null)}
+        onClose={() => setShowSectionModal(false)}
+      />
+
+      <SelectionModal
+        visible={showDeptModal}
+        title="Select Department"
+        options={availableDepartments.map(d => ({ id: d, label: d, icon: <Building2 size={18} color={theme.colors.primary} {...({} as any)} /> }))}
+        selectedValue={filterDept}
+        showClear
+        onSelect={(opt) => setFilterDept(opt.label)}
+        onClear={() => setFilterDept(null)}
+        onClose={() => setShowDeptModal(false)}
       />
     </View>
   );
@@ -829,68 +688,75 @@ const styles = StyleSheet.create({
   searchBar: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', height: 44 },
   searchInput: { flex: 1, marginLeft: 8, fontSize: 14, color: theme.colors.text },
   filterBtn: { width: 44, height: 44, backgroundColor: 'white', borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center' },
+  activeFilterBtn: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
+  filterBarContainer: { marginBottom: 12 },
+  filterBar: { maxHeight: 50 },
+  filterBarContent: { paddingHorizontal: 16, gap: 10, alignItems: 'center', paddingBottom: 4 },
+  filterChip: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', gap: 8, elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2 },
+  activeFilterChip: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
+  filterChipText: { fontSize: 13, color: theme.colors.textMuted, fontWeight: '600' },
+  activeFilterChipText: { color: 'white' },
+  clearFiltersBtn: { marginLeft: 8 },
+  clearFiltersText: { fontSize: 13, color: '#EF4444', fontWeight: 'bold' },
   tabsContainer: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
   tab: { paddingHorizontal: 20, paddingVertical: 8, marginHorizontal: 4, borderRadius: 20, backgroundColor: '#F1F5F9' },
   activeTab: { backgroundColor: theme.colors.primary },
   tabText: { fontSize: 13, fontWeight: '600', color: theme.colors.textMuted },
   activeTabText: { color: 'white' },
   listContent: { padding: 16, paddingBottom: 40 },
-  userCard: { backgroundColor: 'white', borderRadius: 16, padding: 12, marginBottom: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: '#F1F5F9' },
-  userMain: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
-  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
-  avatarImage: { width: '100%', height: '100%' },
-  avatarText: { fontSize: 16, fontWeight: 'bold', color: theme.colors.primary },
-  userDetails: { flex: 1 },
-  userName: { fontSize: 15, fontWeight: 'bold', color: theme.colors.text },
-  userSub: { fontSize: 12, color: theme.colors.textMuted, marginBottom: 4 },
-  userMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  metaText: { fontSize: 11, color: theme.colors.textMuted },
-  userActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  actionBtn: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center', borderWidth: 1 },
-  disableBtn: { borderColor: '#FEE2E2', backgroundColor: '#FEF2F2' },
-  enableBtn: { borderColor: '#DCFCE7', backgroundColor: '#F0FDF4' },
-  detailsBtn: { padding: 4 },
+  userCard: { backgroundColor: 'white', borderRadius: 24, marginBottom: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: '#F1F5F9' },
+  statusStrip: { width: 6, height: '100%', position: 'absolute', left: 0 },
+  cardMain: { flexDirection: 'row', alignItems: 'center', gap: 16, flex: 1, padding: 16, paddingLeft: 22 },
+  avatar: { width: 52, height: 52, borderRadius: 26, backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center', overflow: 'visible' },
+  avatarImage: { width: '100%', height: '100%', borderRadius: 26 },
+  avatarText: { fontSize: 20, fontWeight: 'bold', color: theme.colors.primary },
+  statusDot: { position: 'absolute', bottom: 0, right: 0, width: 14, height: 14, borderRadius: 7, borderWidth: 2, borderColor: 'white' },
+  userDetails: { flex: 1, gap: 4 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'space-between' },
+  userName: { fontSize: 16, fontWeight: 'bold', color: theme.colors.text, flex: 1 },
+  emailRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  userSub: { fontSize: 12, color: theme.colors.textMuted },
+  userMeta: { flexDirection: 'row', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 4 },
+  metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#F8FAFC', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: '#F1F5F9' },
+  metaText: { fontSize: 11, fontWeight: '600', color: theme.colors.textMuted },
+  userActions: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingRight: 16 },
+  actionBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', borderWidth: 1.5, backgroundColor: 'white' },
+  manageBtn: { borderColor: theme.colors.primary + '20', backgroundColor: '#F8FAFC' },
   loader: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 12 },
   emptyText: { color: theme.colors.textMuted, fontSize: 14 },
-  
-  // Modal Styles
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalContent: { backgroundColor: 'white', borderTopLeftRadius: 32, borderTopRightRadius: 32, height: '90%', paddingBottom: 20 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
   modalTitle: { fontSize: 20, fontWeight: 'bold', color: theme.colors.text },
-  modalBody: { flex: 1 },
-  modalScrollContent: { padding: 24, paddingBottom: 40 },
-  modalAvatarContainer: { alignItems: 'center', marginBottom: 32 },
-  largeAvatar: { width: 100, height: 100, borderRadius: 50, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', marginBottom: 16, borderWidth: 4, borderColor: 'white', elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, overflow: 'hidden', position: 'relative' },
-  avatarOverlay: { position: 'absolute', bottom: 0, right: 0, backgroundColor: theme.colors.primary, width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'white' },
-  largeAvatarImage: { width: '100%', height: '100%' },
-  largeAvatarText: { fontSize: 32, fontWeight: 'bold', color: theme.colors.primary },
-  modalName: { fontSize: 24, fontWeight: 'bold', color: theme.colors.text },
-  emailContainer: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  modalSub: { fontSize: 14, color: theme.colors.textMuted },
-  copyBtn: { padding: 4, backgroundColor: '#F1F5F9', borderRadius: 6 },
-  formSection: { marginBottom: 24 },
-  sectionLabel: { fontSize: 16, fontWeight: 'bold', color: theme.colors.text, marginBottom: 16 },
-  divider: { height: 1, backgroundColor: '#F1F5F9', marginVertical: 8 },
-  inputWrap: { marginBottom: 20 },
+  modalBody: { flex: 1, backgroundColor: '#F8FAFC' },
+  modalScrollContent: { padding: 20, paddingBottom: 40 },
+  modalHeaderCard: { backgroundColor: 'white', padding: 24, borderRadius: 24, alignItems: 'center', marginBottom: 20, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8 },
+  largeAvatar: { width: 90, height: 90, borderRadius: 45, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', marginBottom: 16, borderWidth: 4, borderColor: 'white', overflow: 'visible', position: 'relative' },
+  avatarOverlay: { position: 'absolute', bottom: 0, right: 0, backgroundColor: theme.colors.primary, width: 28, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'white' },
+  largeAvatarImage: { width: '100%', height: '100%', borderRadius: 45 },
+  largeAvatarText: { fontSize: 28, fontWeight: 'bold', color: theme.colors.primary },
+  headerInfo: { alignItems: 'center' },
+  modalName: { fontSize: 20, fontWeight: 'bold', color: theme.colors.text, marginBottom: 8 },
+  statusBadgeRow: { flexDirection: 'row', alignItems: 'center' },
+  infoGrid: { gap: 16 },
+  sectionCard: { backgroundColor: 'white', padding: 20, borderRadius: 20, elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', paddingBottom: 10 },
+  sectionTitle: { fontSize: 16, fontWeight: 'bold', color: theme.colors.text },
+  inputWrap: { marginBottom: 16 },
   fieldLabel: { fontSize: 12, fontWeight: '600', color: theme.colors.textMuted, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
   modalInput: { backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, fontSize: 15, color: theme.colors.text },
-  readOnlyInput: { backgroundColor: '#F1F5F9', color: theme.colors.textMuted },
-  modalFooter: { flexDirection: 'row', padding: 24, gap: 12, borderTopWidth: 1, borderTopColor: '#F1F5F9' },
+  readOnlyBox: { backgroundColor: '#F8FAFC', paddingHorizontal: 16, paddingVertical: 14, borderRadius: 14, borderWidth: 1, borderColor: '#F1F5F9', borderStyle: 'dashed', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  readOnlyText: { fontSize: 15, color: theme.colors.textMuted, flex: 1, marginRight: 8 },
+  statusToggle: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 12, borderWidth: 1, gap: 12 },
+  statusToggleActive: { backgroundColor: '#FEF2F2', borderColor: '#FEE2E2' },
+  statusToggleDisabled: { backgroundColor: '#F0FDF4', borderColor: '#DCFCE7' },
+  statusToggleInfo: { flex: 1 },
+  statusToggleTitle: { fontSize: 14, fontWeight: 'bold', color: theme.colors.text },
+  statusToggleSub: { fontSize: 12, color: theme.colors.textMuted, marginTop: 2 },
+  modalFooter: { flexDirection: 'row', padding: 20, gap: 12, borderTopWidth: 1, borderTopColor: '#F1F5F9', backgroundColor: 'white' },
   cancelBtn: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F1F5F9' },
-  cancelBtnText: { fontSize: 16, fontWeight: 'bold', color: theme.colors.textMuted },
+  cancelBtnText: { fontSize: 15, fontWeight: 'bold', color: theme.colors.textMuted },
   saveChangesBtn: { flex: 2, flexDirection: 'row', backgroundColor: theme.colors.primary, paddingVertical: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: 8 },
-  saveChangesBtnText: { color: 'white', fontSize: 16, fontWeight: 'bold' },
-  // Parent search styles
-  parentSearchRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
-  parentSearchInput: { flex: 1, fontSize: 14, color: theme.colors.text, padding: 0 },
-  parentDropdown: { marginTop: 4, backgroundColor: 'white', borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', overflow: 'hidden' },
-  parentDropdownItem: { flexDirection: 'row', alignItems: 'center', padding: 14, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', gap: 10 },
-  parentDropdownName: { fontSize: 14, fontWeight: '600', color: theme.colors.text },
-  parentDropdownEmail: { fontSize: 12, color: theme.colors.textMuted },
-  parentLinkedCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#F0FDF4', borderRadius: 12, padding: 12, marginTop: 8, borderWidth: 1, borderColor: '#D1FAE5' },
-  parentLinkedDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#10B981' },
-  parentLinkedName: { fontSize: 13, fontWeight: 'bold', color: '#065F46' },
-  parentLinkedEmail: { fontSize: 12, color: '#10B981' },
+  saveChangesBtnText: { color: 'white', fontSize: 15, fontWeight: 'bold' },
 });

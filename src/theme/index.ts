@@ -1,6 +1,16 @@
 import { Dimensions } from 'react-native';
 
 const { width, height } = Dimensions.get('window');
+const [shortDimension, longDimension] = width < height ? [width, height] : [height, width];
+
+// Guidelines for normalization based on a standard phone size
+const guidelineBaseWidth = 350;
+const guidelineBaseHeight = 680;
+
+const scale = (size: number) => (shortDimension / guidelineBaseWidth) * size;
+const verticalScale = (size: number) => (longDimension / guidelineBaseHeight) * size;
+const moderateScale = (size: number, factor = 0.5) => size + (scale(size) - size) * factor;
+
 const isSmallDevice = width < 375;
 
 export const theme = {
@@ -35,6 +45,8 @@ export const theme = {
     isSmallDevice,
     isTablet: width > 768,
     headerHeight: 60,
+    normalize: moderateScale,
+    verticalScale,
   },
   gradients: {
     primary: ['#FAB75A', '#F59E0B'] as const,

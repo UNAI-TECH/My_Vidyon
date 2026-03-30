@@ -4,9 +4,11 @@ import { View, Text, StyleSheet } from 'react-native';
 interface BadgeProps {
   children: string;
   variant?: 'success' | 'warning' | 'info' | 'destructive' | 'default';
+  style?: any;
+  textStyle?: any;
 }
 
-export const Badge = ({ children, variant = 'default' }: BadgeProps) => {
+export const Badge = ({ children, variant = 'default', style, textStyle }: BadgeProps) => {
   const getStyles = () => {
     switch (variant) {
       case 'success': return { bg: '#10B98120', text: '#10B981' };
@@ -20,8 +22,8 @@ export const Badge = ({ children, variant = 'default' }: BadgeProps) => {
   const colors = getStyles();
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      <Text style={[styles.text, { color: colors.text }]}>
+    <View style={[styles.container, { backgroundColor: colors.bg }, style]}>
+      <Text style={[styles.text, { color: colors.text }, textStyle]}>
         {children.toUpperCase()}
       </Text>
     </View>

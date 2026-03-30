@@ -42,24 +42,34 @@ BEGIN
     END IF;
 
     -- Disable user based on type and get auth user ID
-    IF user_type = 'student' THEN
-        SELECT id INTO auth_user_id
+    IF disable_user_access.user_type = 'student' THEN
+        -- Link the auth user ID from student's profile_id
+        SELECT profile_id INTO auth_user_id
         FROM public.students
-        WHERE id = user_id;
+        WHERE id = disable_user_access.user_id OR profile_id = disable_user_access.user_id
+        LIMIT 1;
         
-        IF auth_user_id IS NULL THEN
-            RAISE EXCEPTION 'Student not found';
+        -- Fallback if no profile link exists but students matches by ID
+        IF auth_user_id IS NULL AND EXISTS (SELECT 1 FROM public.students WHERE id = disable_user_access.user_id) THEN
+            auth_user_id := disable_user_access.user_id;
         END IF;
         
-        -- Mark student as inactive
+        -- Mark student as inactive in BOTH tables
         UPDATE public.students 
         SET is_active = false 
-        WHERE id = user_id;
+        WHERE id = disable_user_access.user_id OR profile_id = disable_user_access.user_id;
         
-    ELSIF user_type = 'parent' THEN
+        IF auth_user_id IS NOT NULL THEN
+            -- Sync the profile status (crucial for useAuth checks)
+            UPDATE public.profiles
+            SET is_active = false
+            WHERE id = auth_user_id;
+        END IF;
+        
+    ELSIF disable_user_access.user_type = 'parent' THEN
         SELECT profile_id INTO auth_user_id
         FROM public.parents
-        WHERE id = user_id;
+        WHERE id = disable_user_access.user_id;
         
         IF auth_user_id IS NULL THEN
             RAISE EXCEPTION 'Parent not found';
@@ -68,24 +78,24 @@ BEGIN
         -- Mark parent as inactive
         UPDATE public.parents 
         SET is_active = false 
-        WHERE id = user_id;
+        WHERE id = disable_user_access.user_id;
         
         -- Also mark the profile as inactive
         UPDATE public.profiles 
         SET is_active = false 
         WHERE id = auth_user_id;
         
-    ELSIF user_type = 'staff' THEN
-        auth_user_id := user_id;
+    ELSIF disable_user_access.user_type = 'staff' THEN
+        auth_user_id := disable_user_access.user_id;
         
-        IF NOT EXISTS (SELECT 1 FROM public.profiles WHERE id = user_id) THEN
+        IF NOT EXISTS (SELECT 1 FROM public.profiles WHERE id = disable_user_access.user_id) THEN
             RAISE EXCEPTION 'Staff member not found';
         END IF;
         
         -- Mark staff profile as inactive
         UPDATE public.profiles 
         SET is_active = false 
-        WHERE id = user_id;
+        WHERE id = disable_user_access.user_id;
         
     ELSE
         RAISE EXCEPTION 'Invalid user_type. Must be student, parent, or staff.';
@@ -99,22 +109,14 @@ BEGIN
         updated_at = now()
     WHERE id = auth_user_id;
 
-    result := json_build_object(
+    RETURN json_build_object(
         'success', true,
-        'message', user_type || ' access disabled successfully',
-        'disabled_user_id', user_id,
+        'message', disable_user_access.user_type || ' access disabled successfully',
+        'disabled_user_id', disable_user_access.user_id,
         'disabled_auth_user_id', auth_user_id
     );
 
-    RETURN result;
-
-EXCEPTION
-    WHEN OTHERS THEN
-        result := json_build_object(
-            'success', false,
-            'error', SQLERRM
-        );
-        RETURN result;
+-- Removed silient Exception catch-all to expose real database errors
 END;
 $$;
 
@@ -148,9 +150,11 @@ BEGIN
 
     -- Enable user based on type
     IF user_type = 'student' THEN
-        SELECT id INTO auth_user_id FROM public.students WHERE id = user_id;
-        IF auth_user_id IS NULL THEN RAISE EXCEPTION 'Student not found'; END IF;
+        SELECT COALESCE(profile_id, user_id) INTO auth_user_id FROM public.students WHERE id = user_id;
+        IF auth_user_id IS NULL THEN auth_user_id := user_id; END IF;
+        
         UPDATE public.students SET is_active = true WHERE id = user_id;
+        UPDATE public.profiles SET is_active = true WHERE id = auth_user_id;
         
     ELSIF user_type = 'parent' THEN
         SELECT profile_id INTO auth_user_id FROM public.parents WHERE id = user_id;

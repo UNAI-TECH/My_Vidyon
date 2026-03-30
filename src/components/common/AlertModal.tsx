@@ -135,15 +135,18 @@ const styles = StyleSheet.create({
   },
   actions: { 
     width: '100%', 
-    flexDirection: 'row', 
+    flexDirection: 'row',
+    flexWrap: 'wrap-reverse', 
+    justifyContent: 'center',
     gap: 12 
   },
   btn: { 
-    height: 56, 
+    height: 52, 
     borderRadius: 18, 
     justifyContent: 'center', 
     alignItems: 'center', 
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
+    minWidth: '45%'
   },
   primaryBtn: { 
     backgroundColor: theme.colors.primary,

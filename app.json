@@ -38,7 +38,14 @@
       "expo-asset",
       "expo-secure-store",
       "expo-notifications",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-8782577961794696~4810132296",
+          "iosAppId": "ca-app-pub-8782577961794696~4810132296"
+        }
+      ]
     ],
     "extra": {
       "router": {},

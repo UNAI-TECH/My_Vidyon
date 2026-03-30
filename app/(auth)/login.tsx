@@ -2,17 +2,20 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, Image, ScrollView, Animated, Dimensions, Easing } from 'react-native';
 import { theme } from '../../src/theme';
 import { supabase } from '../../src/lib/supabase';
-import { Lock, Mail, ChevronRight, User as UserIcon, X } from 'lucide-react-native';
+import { Lock, Mail, ChevronRight, User as UserIcon, X, Phone, ShieldAlert } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { useQuickLogin } from '../../src/hooks/useQuickLogin';
 import { useAuth } from '../../src/hooks/useAuth';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Modal, Linking } from 'react-native';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showBlockedModal, setShowBlockedModal] = useState(false);
+  const [blockedContact, setBlockedContact] = useState<{name: string, phone: string} | null>(null);
   const { savedAccounts, saveAccount, switchToAccount, removeAccount, switchingAccount } = useQuickLogin();
   
   const { session } = useAuth();
@@ -68,6 +71,27 @@ export default function LoginScreen() {
     };
     syncImages();
   }, [savedAccounts.length]);
+  
+  const checkBlockedStatus = async (identifier: string) => {
+    try {
+      // @ts-ignore - Direct RPC call might not be in types yet
+      const { data, error: rpcError } = await (supabase as any).rpc('get_blocked_user_contact', { 
+        identifier 
+      });
+      
+      if (data && !rpcError) {
+        setBlockedContact({
+          name: (data as any).institution_name,
+          phone: (data as any).phone
+        });
+        setShowBlockedModal(true);
+        return true;
+      }
+    } catch (e) {
+      console.warn('[Login] Blocked check failed:', e);
+    }
+    return false;
+  };
 
   const handleLogin = async () => {
     setLoading(true);
@@ -78,7 +102,11 @@ export default function LoginScreen() {
         password,
       });
       if (error) {
-        setError(error.message);
+        // Specifically check if the user is actually blocked/disabled in our DB
+        const isBlocked = await checkBlockedStatus(email);
+        if (!isBlocked) {
+          setError(error.message);
+        }
       } else if (data.user) {
         // Fetch profile to save locally
         const { data: profile } = await supabase
@@ -189,10 +217,15 @@ export default function LoginScreen() {
             duration: 200,
             useNativeDriver: true,
           })
-        ]).start(() => {
+        ]).start(async () => {
           setAnimatingAccount(null);
-          setError('Session expired. Please log in with your password.');
-          setEmail(account.email);
+          
+          // Check if this saved account was recently blocked
+          const isBlocked = await checkBlockedStatus(account.id);
+          if (!isBlocked) {
+            setError('Session expired. Please log in with your password.');
+            setEmail(account.email);
+          }
         });
       }
     });
@@ -340,6 +373,60 @@ export default function LoginScreen() {
           </Animated.View>
         </Animated.View>
       )}
+
+      {/* Blocked User Modal */}
+      <Modal
+        visible={showBlockedModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowBlockedModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View style={styles.alertIconContainer}>
+                <ShieldAlert size={32} color="#EF4444" {...({} as any)} />
+              </View>
+              <Text style={styles.modalTitle}>Account Blocked</Text>
+            </View>
+            
+            <View style={styles.modalBody}>
+              <Text style={styles.modalMessage}>
+                Your account has been disabled by <Text style={{ fontWeight: 'bold', color: theme.colors.text }}>{blockedContact?.name || 'the institution'}</Text>.
+              </Text>
+              <Text style={styles.modalSubMessage}>
+                Please contact the institution administration to resolve this.
+              </Text>
+              
+              <View style={styles.contactInfoBox}>
+                <Text style={styles.contactLabel}>Institution Contact:</Text>
+                <Text style={styles.contactPhone}>{blockedContact?.phone || 'N/A'}</Text>
+              </View>
+            </View>
+            
+            <View style={styles.modalFooter}>
+              <TouchableOpacity 
+                style={styles.closeBtn}
+                onPress={() => setShowBlockedModal(false)}
+              >
+                <Text style={styles.closeBtnText}>Dismiss</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.callBtn}
+                onPress={() => {
+                  if (blockedContact?.phone) {
+                    Linking.openURL(`tel:${blockedContact.phone}`);
+                  }
+                }}
+              >
+                <Phone size={18} color="white" style={{ marginRight: 8 }} {...({} as any)} />
+                <Text style={styles.callBtnText}>Call Now</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
     </SafeAreaView>
   );
@@ -510,5 +597,114 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: theme.colors.textMuted,
     fontWeight: '500',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalContent: {
+    width: '100%',
+    backgroundColor: 'white',
+    borderRadius: 24,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  modalHeader: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  alertIconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#FEE2E2',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: theme.colors.text,
+  },
+  modalBody: {
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  modalMessage: {
+    fontSize: 16,
+    color: theme.colors.textMuted,
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 8,
+  },
+  modalSubMessage: {
+    fontSize: 14,
+    color: theme.colors.textMuted,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  contactInfoBox: {
+    width: '100%',
+    backgroundColor: theme.colors.background,
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  contactLabel: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: theme.colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  contactPhone: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: theme.colors.primary,
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    width: '100%',
+    gap: 12,
+  },
+  closeBtn: {
+    flex: 1,
+    height: 52,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9',
+  },
+  closeBtnText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.textMuted,
+  },
+  callBtn: {
+    flex: 1.5,
+    height: 52,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 12,
+    backgroundColor: theme.colors.text,
+  },
+  callBtnText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: 'white',
   },
 });
