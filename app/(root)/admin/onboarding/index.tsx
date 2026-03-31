@@ -62,6 +62,7 @@ export default function InstitutionOnboarding() {
     office_phone: '',
     guard_phone: '',
     transport_phone: '',
+    allowed_roles: { canteen: true, finance: true, transport: true },
   });
   const [logo, setLogo] = useState<string | null>(null);
   const [pendingLogo, setPendingLogo] = useState<string | null>(null);
@@ -140,6 +141,7 @@ export default function InstitutionOnboarding() {
           office_phone: '',
           guard_phone: '',
           transport_phone: '',
+          allowed_roles: { canteen: true, finance: true, transport: true },
         });
         setLogo(null);
         setPendingLogo(null);
@@ -181,6 +183,7 @@ export default function InstitutionOnboarding() {
           office_phone: data.office_phone || '',
           guard_phone: data.guard_phone || '',
           transport_phone: data.transport_phone || '',
+          allowed_roles: data.allowed_roles || { canteen: true, finance: true, transport: true },
         });
         setLogo(data.logo_url);
         setExistingCreds({
@@ -407,6 +410,32 @@ export default function InstitutionOnboarding() {
           />
         </View>
       </View>
+
+      <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Module Permissions</Text>
+      <Text style={[styles.helperText, { marginTop: -12, marginBottom: 12 }]}>Select which modules this institution can access. Disabling a module hides it entirely.</Text>
+      <View style={{ gap: 12, marginBottom: 24 }}>
+        {[
+          { id: 'canteen', label: 'Canteen Management' },
+          { id: 'finance', label: 'Finance & Accounts' },
+          { id: 'transport', label: 'Transport Management' }
+        ].map(role => (
+          <TouchableOpacity 
+            key={role.id}
+            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F8FAFC', padding: 16, borderRadius: 12 }}
+            onPress={() => {
+              const current = (basicInfo.allowed_roles || { canteen: true, finance: true, transport: true }) as any;
+              const updated = { ...current, [role.id]: current[role.id] === false ? true : false };
+              setBasicInfo({...basicInfo, allowed_roles: updated});
+            }}
+          >
+            <Text style={{ fontSize: 15, fontWeight: '500', color: theme.colors.text }}>{role.label}</Text>
+            <View style={{ width: 44, height: 24, borderRadius: 12, backgroundColor: (basicInfo.allowed_roles as any)?.[role.id] !== false ? theme.colors.primary : '#E2E8F0', padding: 2, justifyContent: 'center', alignItems: (basicInfo.allowed_roles as any)?.[role.id] !== false ? 'flex-end' : 'flex-start' }}>
+              <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: 'white', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2 }} />
+            </View>
+          </TouchableOpacity>
+        ))}
+      </View>
+
       {isEditMode && (
         <TouchableOpacity 
           style={[styles.saveProgressBtn, { marginTop: 24, borderStyle: 'solid' }]} 
@@ -1133,7 +1162,8 @@ export default function InstitutionOnboarding() {
           office_phone: basicInfo.office_phone,
           guard_phone: basicInfo.guard_phone,
           transport_phone: basicInfo.transport_phone,
-        });
+          allowed_roles: basicInfo.allowed_roles,
+        }, { onConflict: 'institution_id' });
         if (error) throw error;
         showAlert('Saved', 'Basic information updated successfully.', 'success');
       } 
@@ -1280,6 +1310,7 @@ export default function InstitutionOnboarding() {
           office_phone: basicInfo.office_phone,
           guard_phone: basicInfo.guard_phone,
           transport_phone: basicInfo.transport_phone,
+          allowed_roles: basicInfo.allowed_roles,
           // Only set status on new creation; omit it entirely on edit to preserve existing value
           ...(isEditMode ? {} : { status: 'active' }),
           // Include admin credentials during new creation

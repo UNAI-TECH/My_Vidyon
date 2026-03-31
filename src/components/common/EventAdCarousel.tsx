@@ -43,6 +43,7 @@ export const EventAdCarousel: React.FC<EventAdCarouselProps> = ({
   const [modalVisible, setModalVisible] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
+  const indexRef = useRef(0);
  
   // 1. Fetch Events
   const { data: events = [], isLoading } = useQuery({
@@ -89,29 +90,43 @@ export const EventAdCarousel: React.FC<EventAdCarouselProps> = ({
     return result;
   }, [events, adInterval]);
 
+  // Sync ref when activeIndex changes manually (e.g. from user scroll)
+  useEffect(() => {
+    indexRef.current = activeIndex;
+  }, [activeIndex]);
+
   // Auto-scroll logic for infinite loop
   useEffect(() => {
     if (mixedData.length <= 1) return;
 
-    const timeout = setTimeout(() => {
-      const interval = setInterval(() => {
-        const nextIndex = (activeIndex + 1) % mixedData.length;
-        try {
-          flatListRef.current?.scrollToIndex({
-            index: nextIndex,
-            animated: true,
-          });
-          setActiveIndex(nextIndex);
-        } catch (err) {
-          console.warn("Carousel scroll failed:", err);
-        }
-      }, 5000); // 5 seconds interval
+    const interval = setInterval(() => {
+      // Calculate next index using the ref so we don't need to rebuild the interval
+      const nextIndex = (indexRef.current + 1) % mixedData.length;
+      try {
+        flatListRef.current?.scrollToIndex({
+          index: nextIndex,
+          animated: true,
+        });
+        setActiveIndex(nextIndex);
+        indexRef.current = nextIndex;
+      } catch (err) {
+        console.warn("Carousel scroll failed:", err);
+      }
+    }, 4000); // Scroll every 4 seconds
 
-      return () => clearInterval(interval);
-    }, 1000); // Wait 1 second after mount/data change before starting
+    return () => clearInterval(interval);
+  }, [mixedData.length]);
 
-    return () => clearTimeout(timeout);
-  }, [activeIndex, mixedData.length]);
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current;
+  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+    if (viewableItems && viewableItems.length > 0) {
+      const index = viewableItems[0].index;
+      if (index !== null && index !== undefined) {
+        setActiveIndex(index);
+        indexRef.current = index;
+      }
+    }
+  }).current;
 
   const renderItem = ({ item }: { item: any }) => {
     if (item.type === 'ad') {
@@ -204,10 +219,8 @@ export const EventAdCarousel: React.FC<EventAdCarouselProps> = ({
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
-        onMomentumScrollEnd={(ev) => {
-          const index = Math.round(ev.nativeEvent.contentOffset.x / CAROUSEL_WIDTH);
-          if (!isNaN(index)) setActiveIndex(index);
-        }}
+        onViewableItemsChanged={onViewableItemsChanged}
+        viewabilityConfig={viewabilityConfig}
         getItemLayout={(data, index) => ({
           length: CAROUSEL_WIDTH,
           offset: CAROUSEL_WIDTH * index,

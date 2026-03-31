@@ -2,6 +2,8 @@ import { useAuth } from './useAuth';
 import { supabase } from '../lib/supabase';
 import { formatDistanceToNow } from 'date-fns';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { LargeSecureStore } from '../lib/storage';
+import { useState, useEffect } from 'react';
 
 export type NotificationType =
   | 'assignment'
@@ -31,11 +33,25 @@ export interface NotificationItem {
 }
 
 export function useNotifications() {
-  const { user, role, institutionUuid } = useAuth();
+  const { user, role, institutionUuid, lastReadEventsAt } = useAuth();
   const queryClient = useQueryClient();
+  const [localLastReadAt, setLocalLastReadAt] = useState<string | null>(null);
+  const [readEventIds, setReadEventIds] = useState<Set<string>>(new Set());
+
+  // Effective timestamp: use local (optimistic) or database value
+  const effectiveReadAt = localLastReadAt || lastReadEventsAt;
+
+  // Load individual read IDs from storage (keep these local for now)
+  useEffect(() => {
+    const loadState = async () => {
+      const ids = await LargeSecureStore.getItem(`read_event_ids_${user?.id}`);
+      if (ids) setReadEventIds(new Set(JSON.parse(ids)));
+    };
+    if (user?.id) loadState();
+  }, [user?.id]);
 
   const { data: notifications = [], isLoading: loading } = useQuery({
-    queryKey: ['aggregated-notifications', user?.id],
+    queryKey: ['aggregated-notifications', user?.id, effectiveReadAt, Array.from(readEventIds).length],
     queryFn: async () => {
       if (!institutionUuid || !user?.id) return [];
 
@@ -82,7 +98,7 @@ export function useNotifications() {
         type: 'event',
         date: formatDistanceToNow(new Date(e.created_at || e.event_date || e.start_date), { addSuffix: true }),
         rawDate: e.created_at || e.event_date || e.start_date,
-        read: false,
+        read: readEventIds.has(e.id) || (effectiveReadAt ? new Date(e.created_at || e.event_date || e.start_date).getTime() <= new Date(effectiveReadAt).getTime() : false),
         priority: 'normal',
         source: 'calendar',
         actionUrl: `/events`
@@ -97,7 +113,13 @@ export function useNotifications() {
   });
 
   const markAsRead = async (notificationId: string) => {
-    if (notificationId.startsWith('event-')) return; // Events are broadcast, handle differently if needed
+    if (notificationId.startsWith('event-')) {
+      const eventId = notificationId.replace('event-', '');
+      const newReadIds = new Set(readEventIds).add(eventId);
+      setReadEventIds(newReadIds);
+      await LargeSecureStore.setItem(`read_event_ids_${user?.id}`, JSON.stringify(Array.from(newReadIds)));
+      return;
+    }
 
     try {
       const { error } = await (supabase
@@ -107,10 +129,8 @@ export function useNotifications() {
       
       if (error) throw error;
       
-      // Local optimistic update
-      queryClient.setQueryData(['aggregated-notifications', user?.id], (old: NotificationItem[] | undefined) => 
-        old?.map((n: NotificationItem) => n.id === notificationId ? { ...n, read: true } : n)
-      );
+      // Force refresh data
+      queryClient.invalidateQueries({ queryKey: ['aggregated-notifications'] });
     } catch (err) {
       console.error('Error marking notification as read:', err);
     }
@@ -128,6 +148,18 @@ export function useNotifications() {
       
       if (error) throw error;
       
+      // Update database for broadcast events persistence
+      const now = new Date().toISOString();
+      const { error: profileError } = await (supabase
+        .from('profiles') as any)
+        .update({ last_read_events_at: now })
+        .eq('id', user.id);
+
+      if (profileError) console.error('Error updating profile read status:', profileError);
+
+      // Update local timestamp for instant UI feedback
+      setLocalLastReadAt(now);
+
       queryClient.invalidateQueries({ queryKey: ['aggregated-notifications'] });
     } catch (err) {
       console.error('Error marking all notifications as read:', err);

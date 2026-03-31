@@ -43,7 +43,7 @@ export default function AdminDashboard() {
 
   const data = {
     labels: ["Institutions", "Revenue", "Users"],
-    data: [0.92, 0.78, 0.85] // Keeping mock percentages for the chart
+    data: stats.performanceRatios
   };
 
   return (
@@ -131,10 +131,10 @@ export default function AdminDashboard() {
         <Text style={styles.chartTitle}>Platform Performance</Text>
         <ProgressChart
           data={data}
-          width={screenWidth - 48}
+          width={screenWidth - 64}
           height={200}
-          strokeWidth={16}
-          radius={32}
+          strokeWidth={12}
+          radius={28}
           chartConfig={chartConfig}
           hideLegend={false}
           style={styles.chart}

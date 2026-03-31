@@ -36,23 +36,31 @@ export function useInstitutionData(institutionId: string | null, academicYear: s
         queryFn: async () => {
             if (!institutionId) return { students: 0, teachers: 0, classes: 0, presentToday: 0, totalPeople: 0 };
 
-            const [students, teachers, classes, studentAtt, staffAtt] = await Promise.all([
+            // 1. Get groups first to support indirect class counting
+            const { data: groups } = await supabase.from('groups').select('id').eq('institution_id', institutionId);
+            const groupIds = (groups || []).map(g => (g as any).id);
+
+            // 2. Perform counts
+            const [students, staff, classes, studentAtt, staffAtt] = await Promise.all([
                 supabase.from('students').select('id', { count: 'exact', head: true }).eq('institution_id', institutionId).eq('academic_year', academicYear),
                 supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('institution_id', institutionId).eq('role', 'faculty'),
-                supabase.from('classes').select('id', { count: 'exact', head: true }).eq('institution_id', institutionId), // classes are often global or fixed
+                groupIds.length > 0 
+                    ? supabase.from('classes').select('id', { count: 'exact', head: true }).in('group_id', groupIds).eq('academic_year', academicYear)
+                    : supabase.from('classes').select('id', { count: 'exact', head: true }).eq('institution_id', institutionId).eq('academic_year', academicYear),
                 supabase.from('student_attendance').select('id', { count: 'exact', head: true }).eq('institution_id', institutionId).eq('attendance_date', today).eq('academic_year', academicYear).in('status', ['present', 'late']),
                 supabase.from('staff_attendance').select('id', { count: 'exact', head: true }).eq('institution_id', institutionId).eq('attendance_date', today).in('status', ['present', 'late']),
             ]);
 
             const totalStudents = students.count || 0;
-            const totalTeachers = teachers.count || 0;
+            const totalStaff = staff.count || 0;
 
             return {
                 students: totalStudents,
-                teachers: totalTeachers,
+                teachers: totalStaff,
                 classes: classes.count || 0,
-                presentToday: (studentAtt.count || 0) + (staffAtt.count || 0),
-                totalPeople: totalStudents + totalTeachers
+                presentToday: studentAtt.count || 0,
+                staffPresent: staffAtt.count || 0,
+                totalPeople: totalStudents + totalStaff
             };
         },
         enabled: !!institutionId,
@@ -237,7 +245,7 @@ export function useInstitutionData(institutionId: string | null, academicYear: s
             const { data } = await supabase
                 .from('institutions')
                 .select('*')
-                .eq('institution_id', institutionId)
+                .eq('id', institutionId)
                 .maybeSingle();
             return data as any;
         },
@@ -263,6 +271,9 @@ export function useInstitutionData(institutionId: string | null, academicYear: s
             })
             .on('postgres_changes', { event: '*', schema: 'public', table: 'staff_leaves', filter: `institution_id=eq.${institutionId}` }, () => {
                 queryClient.invalidateQueries({ queryKey: ['inst-pending-leaves'] });
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'classes', filter: `institution_id=eq.${institutionId}` }, () => {
+                queryClient.invalidateQueries({ queryKey: ['inst-stats'] });
             })
             .subscribe();
 

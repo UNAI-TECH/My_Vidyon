@@ -227,7 +227,7 @@ export const ProfileSettings = () => {
       </TouchableOpacity>
 
       <Text style={styles.footerNote}>
-        MY VIDYON ERP v2.0.0 • Secured by Supabase
+        MY VIDYON ERP v2.0.0
       </Text>
     </ScrollView>
   );

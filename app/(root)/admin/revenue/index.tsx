@@ -15,9 +15,9 @@ export default function AdminRevenue() {
   if (isLoading) return <View style={styles.container}><ActivityIndicator size="large" color={theme.colors.primary} /></View>;
 
   const lineData = {
-    labels: ["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
+    labels: stats.revenueTrend.labels,
     datasets: [{
-      data: [20, 45, 28, 80, 99, 43],
+      data: stats.revenueTrend.data,
       color: (opacity = 1) => `rgba(250, 183, 90, ${opacity})`,
       strokeWidth: 2
     }]
@@ -30,9 +30,9 @@ export default function AdminRevenue() {
   ];
 
   const barData = {
-    labels: ["Week 1", "Week 2", "Week 3", "Week 4"],
+    labels: stats.onboardingTrend.labels,
     datasets: [{
-      data: [12, 19, 15, 22]
+      data: stats.onboardingTrend.data
     }]
   };
 
@@ -65,26 +65,31 @@ export default function AdminRevenue() {
           height={180}
           chartConfig={chartConfig}
           bezier
+          verticalLabelRotation={45}
           style={styles.chart}
         />
       </View>
 
       <View style={styles.grid}>
-        <View style={[styles.chartCard, { flex: 1, marginRight: 8 }]}>
-          <Text style={styles.chartTitle}>Onboarding Growth</Text>
+        <View style={[styles.chartCard, { flex: 1, marginRight: 8, padding: 12 }]}>
+          <Text style={[styles.chartTitle, { fontSize: 13 }]}>Onboarding</Text>
           <BarChart
             data={barData}
             width={screenWidth / 2 - 40}
             height={150}
             yAxisLabel=""
             yAxisSuffix=""
-            chartConfig={{...chartConfig, barPercentage: 0.6}}
+            chartConfig={{
+              ...chartConfig, 
+              barPercentage: 0.6,
+              propsForLabels: { fontSize: 10 }
+            }}
             style={styles.chart}
-            verticalLabelRotation={30}
+            verticalLabelRotation={45}
           />
         </View>
-        <View style={[styles.chartCard, { flex: 1, marginLeft: 8 }]}>
-          <Text style={styles.chartTitle}>Inst. Types</Text>
+        <View style={[styles.chartCard, { flex: 1, marginLeft: 8, padding: 12 }]}>
+          <Text style={[styles.chartTitle, { fontSize: 13 }]}>Inst. Types</Text>
           <PieChart
             data={pieData}
             width={screenWidth / 2 - 20}
@@ -92,8 +97,9 @@ export default function AdminRevenue() {
             chartConfig={chartConfig}
             accessor="population"
             backgroundColor="transparent"
-            paddingLeft="15"
+            paddingLeft="0"
             absolute
+            hasLegend={false} // Hide legend to fit on small screens, users can see colors
           />
         </View>
       </View>

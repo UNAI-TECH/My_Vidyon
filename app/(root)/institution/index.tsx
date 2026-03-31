@@ -137,13 +137,17 @@ export default function InstitutionDashboard() {
         <Text style={styles.chartTitle}>Enrollment Trend (Cumulative)</Text>
         <LineChart
           data={{
-            labels: charts.enrollmentTrend.length > 0 ? charts.enrollmentTrend.map(t => t.name) : ["Jan"],
+            labels: charts.enrollmentTrend.length > 0 
+              ? charts.enrollmentTrend.map((t, i) => i % 2 === 0 ? t.name : "") 
+              : ["Jan", "", "Mar", "", "May", "", "Jul", "", "Sep", "", "Nov", ""],
             datasets: [{
-              data: charts.enrollmentTrend.length > 0 ? charts.enrollmentTrend.map(t => t.value) : [0]
+              data: charts.enrollmentTrend.length > 0 ? charts.enrollmentTrend.map(t => t.value) : [0,0,0,0,0,0,0,0,0,0,0,0],
+              color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
+              strokeWidth: 3
             }]
           }}
           width={containerWidth - 36}
-          height={180}
+          height={200}
           chartConfig={{
             backgroundColor: "#fff",
             backgroundGradientFrom: "#fff",
@@ -151,11 +155,22 @@ export default function InstitutionDashboard() {
             decimalPlaces: 0,
             color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
             labelColor: (opacity = 1) => `rgba(100, 116, 139, ${opacity})`,
-            propsForDots: { r: "4", strokeWidth: "2", stroke: "#3B82F6" },
+            propsForDots: { r: "5", strokeWidth: "2", stroke: "#3B82F6" },
+            fillShadowGradient: "#3B82F6",
+            fillShadowGradientOpacity: 0.1,
+            propsForBackgroundLines: {
+              strokeDasharray: "5",
+              stroke: "rgba(100, 116, 139, 0.1)"
+            },
             style: { borderRadius: 16 },
           }}
           bezier
-          style={styles.chartStyle}
+          style={{ ...styles.chartStyle, marginLeft: -10 }}
+          withInnerLines={true}
+          withOuterLines={false}
+          withHorizontalLabels={true}
+          withVerticalLabels={true}
+          formatYLabel={(val) => Math.floor(Number(val)).toString()}
         />
       </View>
 

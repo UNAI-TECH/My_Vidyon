@@ -58,6 +58,31 @@ export default function AddUserScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
 
+  // Fetch allowed roles
+  const { data: allowedRoles } = useQuery({
+    queryKey: ['institution-allowed-roles', institutionId],
+    queryFn: async () => {
+      if (!institutionId) return null;
+      const { data } = await supabase
+        .from('institutions')
+        .select('allowed_roles')
+        .eq('institution_id', institutionId)
+        .maybeSingle() as any;
+      return data?.allowed_roles || {};
+    },
+    enabled: !!institutionId,
+  });
+
+  const displayRoles = useMemo(() => {
+    const roles = allowedRoles || {};
+    return ROLES.filter(r => {
+      if (r.id === 'accountant' && roles.finance === false) return false;
+      if (r.id === 'canteen_manager' && roles.canteen === false) return false;
+      if (r.id === 'driver' && roles.transport === false) return false;
+      return true;
+    });
+  }, [allowedRoles]);
+
   const [selectedRole, setSelectedRole] = useState<UserRole>((params.role as UserRole) || 'student');
   const [isLoading, setIsLoading] = useState(false);
   const [image, setImage] = useState<string | null>(null);
@@ -493,7 +518,7 @@ export default function AddUserScreen() {
     <View style={styles.container}>
       <PageHeader
         title="Add User"
-        subtitle={`Create ${ROLES.find(r => r.id === selectedRole)?.label || 'User'} Account`}
+        subtitle={`Create ${displayRoles.find(r => r.id === selectedRole)?.label || 'User'} Account`}
         leftAction={
           <TouchableOpacity onPress={() => router.back()}>
             <ArrowLeft size={24} color={theme.colors.text} {...({} as any)} />
@@ -503,7 +528,7 @@ export default function AddUserScreen() {
 
       {/* Role Selector */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.roleBar} contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}>
-        {ROLES.map(role => (
+        {displayRoles.map(role => (
           <TouchableOpacity
             key={role.id}
             style={[styles.roleChip, selectedRole === role.id && { backgroundColor: role.color }]}

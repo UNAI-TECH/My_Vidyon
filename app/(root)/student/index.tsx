@@ -171,8 +171,8 @@ export default function StudentDashboard() {
         <Text style={styles.chartTitle}>Attendance Trend</Text>
         <LineChart
           data={{
-            labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
-            datasets: [{ data: [80, 85, 90, 88, 92, 95] }]
+            labels: stats.attendanceTrend.labels,
+            datasets: [{ data: stats.attendanceTrend.data }]
           }}
           width={screenWidth - 48}
           height={200}

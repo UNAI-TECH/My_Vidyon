@@ -13,6 +13,7 @@ type AuthContextType = {
   academicYear: string | null;
   fullName: string | null;
   imageUrl: string | null;
+  lastReadEventsAt: string | null;
   loading: boolean;
   signOut: () => Promise<void>;
 };
@@ -26,6 +27,7 @@ const AuthContext = createContext<AuthContextType>({
   academicYear: null,
   fullName: null,
   imageUrl: null,
+  lastReadEventsAt: null,
   loading: true,
   signOut: async () => {},
 });
@@ -39,6 +41,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [academicYear, setAcademicYear] = useState<string | null>(null);
   const [fullName, setFullName] = useState<string | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [lastReadEventsAt, setLastReadEventsAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const signOut = async () => {
@@ -62,6 +65,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setAcademicYear(null);
     setFullName(null);
     setImageUrl(null);
+    setLastReadEventsAt(null);
   };
 
   useEffect(() => {
@@ -165,7 +169,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       // 1. Fetch from profiles first (Primary source for all)
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('role, institution_id, full_name, image_url, profile_image_url, avatar_url, is_active')
+        .select('role, institution_id, full_name, image_url, profile_image_url, avatar_url, is_active, last_read_events_at')
         .eq('id', userId)
         .maybeSingle() as any;
       
@@ -187,6 +191,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         console.log('[Auth] Role found:', profile.role);
         setRole(profile.role as AuthContextType['role']);
         setInstitutionId(profile.institution_id);
+        setLastReadEventsAt(profile.last_read_events_at);
         
         // Initial values from profile - look for any image url available
         let name = profile.full_name;
@@ -241,6 +246,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       academicYear,
       fullName,
       imageUrl,
+      lastReadEventsAt,
       loading,
       signOut 
     }}>

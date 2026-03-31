@@ -168,14 +168,35 @@ export default function UserManagementScreen() {
     fetchData();
   }, [institutionId]);
 
-  const tabs: { id: UserCategory, label: string }[] = [
-    { id: 'students', label: 'Students' },
-    { id: 'staff', label: 'Faculty' },
-    { id: 'parents', label: 'Parents' },
-    { id: 'accountants', label: 'Finance' },
-    { id: 'canteen', label: 'Canteen' },
-    { id: 'drivers', label: 'Transport' },
-  ];
+  // Fetch allowed roles
+  const { data: allowedRoles } = useQuery({
+    queryKey: ['institution-allowed-roles', institutionId],
+    queryFn: async () => {
+      if (!institutionId) return null;
+      const { data } = await supabase
+        .from('institutions')
+        .select('allowed_roles')
+        .eq('institution_id', institutionId)
+        .maybeSingle() as any;
+      return data?.allowed_roles || {};
+    },
+    enabled: !!institutionId,
+  });
+
+  const tabs: { id: UserCategory, label: string }[] = useMemo(() => {
+    const roles = allowedRoles || {};
+    const allTabs: { id: UserCategory, label: string }[] = [
+      { id: 'students', label: 'Students' },
+      { id: 'staff', label: 'Faculty' },
+      { id: 'parents', label: 'Parents' },
+    ];
+    
+    if (roles.finance !== false) allTabs.push({ id: 'accountants', label: 'Finance' });
+    if (roles.canteen !== false) allTabs.push({ id: 'canteen', label: 'Canteen' });
+    if (roles.transport !== false) allTabs.push({ id: 'drivers', label: 'Transport' });
+    
+    return allTabs;
+  }, [allowedRoles]);
 
   const filteredData = useMemo(() => {
     let baseData: any[] = [];

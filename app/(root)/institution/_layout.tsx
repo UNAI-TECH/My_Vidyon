@@ -72,6 +72,7 @@ export default function InstitutionTabs() {
       <Tabs.Screen name="timetable/special" options={{ href: null, headerTitle: "" }} />
       <Tabs.Screen name="communication" options={{ href: null, headerTitle: "" }} />
       <Tabs.Screen name="notifications" options={{ href: null, headerTitle: "" }} />
+      <Tabs.Screen name="events/index" options={{ href: null, headerTitle: "" }} />
     </Tabs>
   );
 }

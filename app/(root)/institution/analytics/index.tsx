@@ -34,10 +34,12 @@ const chartConfig = {
     borderRadius: 16
   },
   propsForDots: {
-    r: "6",
+    r: "4",
     strokeWidth: "2",
     stroke: "#3B82F6"
-  }
+  },
+  verticalLabelRotation: 60,
+  formatXLabel: (label: string) => label
 };
 
 export default function AnalyticsScreen() {
@@ -61,7 +63,7 @@ export default function AnalyticsScreen() {
   ];
 
   const lineData = {
-    labels: analytics.attendance.trend.map(d => d.date),
+    labels: analytics.attendance.trend.map((d, i) => i % 2 === 0 ? d.date : ''),
     datasets: [{
       data: analytics.attendance.trend.map(d => d.percentage),
       color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,

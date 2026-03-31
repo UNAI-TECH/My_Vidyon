@@ -18,6 +18,10 @@ export interface StudentDashboardStats {
     averageGrade: string;
     upcomingEvents: number;
     pendingFees: number;
+    attendanceTrend: {
+        labels: string[];
+        data: number[];
+    };
 }
 
 export function useStudentDashboard(authUserId?: string, institutionId?: string) {
@@ -192,6 +196,7 @@ export function useStudentDashboard(authUserId?: string, institutionId?: string)
             : 'N/A',
         upcomingEvents: eventsCount,
         pendingFees: (fees as Fee[]).reduce((acc: number, f: Fee) => acc + (f.amount_due || 0), 0),
+        attendanceTrend: calculateAttendanceTrend(attendanceRecords as Attendance[]),
     };
 
     // 6. Fetch Institution Logo/Name
@@ -330,4 +335,54 @@ export function useStudentDashboard(authUserId?: string, institutionId?: string)
         materials,
         isLoading: isProfileLoading || isCertificatesLoading || isMaterialsLoading,
     };
+}
+
+/**
+ * Calculates a daily attendance percentage trend for the latest 6 records.
+ * Map 'present', 'late', 'excused' -> 100, others -> 0.
+ */
+function calculateAttendanceTrend(records: Attendance[]) {
+    const labels: string[] = [];
+    const data: number[] = [];
+    
+    // Sort all records by date descending (latest first) to pick the window
+    const sorted = [...records].sort((a, b) => 
+        new Date(b.attendance_date).getTime() - new Date(a.attendance_date).getTime()
+    );
+
+    if (sorted.length === 0) {
+        return { 
+            labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], 
+            data: [0, 0, 0, 0, 0, 0] 
+        };
+    }
+
+    // 1. Determine the latest record date to anchor our 6-day window
+    const latestDate = new Date(sorted[0].attendance_date);
+    
+    // 2. Iterate BACKWARDS from latest date for 6 consecutive days to show "all the days"
+    for (let i = 5; i >= 0; i--) {
+        const targetDate = new Date(latestDate);
+        targetDate.setDate(latestDate.getDate() - i);
+        
+        const dateStr = targetDate.toISOString().split('T')[0];
+        const dayLabel = targetDate.toLocaleDateString('en-US', { weekday: 'short' });
+        
+        // Find if we have a record for this exact date
+        // Use string comparison (YYYY-MM-DD) to be robust against timezones
+        const dayRecord = sorted.find(r => r.attendance_date === dateStr);
+        
+        labels.push(dayLabel);
+        
+        if (dayRecord) {
+            // Map status directly: present/late/excused count as "in school" (100)
+            const isPresent = ['present', 'late', 'excused'].includes(dayRecord.status.toLowerCase());
+            data.push(isPresent ? 100 : 0);
+        } else {
+            // No record for this day (holiday, weekend, or missed) -> 0
+            data.push(0);
+        }
+    }
+
+    return { labels, data };
 }
