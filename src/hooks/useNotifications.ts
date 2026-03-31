@@ -31,13 +31,13 @@ export interface NotificationItem {
 }
 
 export function useNotifications() {
-  const { user, role, institutionId } = useAuth();
+  const { user, role, institutionUuid } = useAuth();
   const queryClient = useQueryClient();
 
   const { data: notifications = [], isLoading: loading } = useQuery({
     queryKey: ['aggregated-notifications', user?.id],
     queryFn: async () => {
-      if (!institutionId || !user?.id) return [];
+      if (!institutionUuid || !user?.id) return [];
 
       // 1. Fetch Personal Notifications
       const { data: userNotifs, error: notifError } = await supabase
@@ -61,7 +61,7 @@ export function useNotifications() {
       const { data: events, error: eventError } = await supabase
         .from('academic_events')
         .select('*')
-        .eq('institution_id', institutionId)
+        .eq('institution_id', institutionUuid)
         .gte('created_at', thirtyDaysAgo.toISOString())
         .order('created_at', { ascending: false });
 
@@ -85,7 +85,7 @@ export function useNotifications() {
         read: false,
         priority: 'normal',
         source: 'calendar',
-        actionUrl: `/${role === 'superadmin' ? 'admin' : role}/calendar`
+        actionUrl: `/events`
       }));
 
       // Merge and Sort
@@ -93,7 +93,7 @@ export function useNotifications() {
         new Date(b.rawDate).getTime() - new Date(a.rawDate).getTime()
       );
     },
-    enabled: !!institutionId && !!user?.id
+    enabled: !!institutionUuid && !!user?.id
   });
 
   const markAsRead = async (notificationId: string) => {

@@ -244,6 +244,26 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
         enabled: !!facultyId,
     });
 
+    // 10. My Materials
+    const { data: myMaterials = [], isLoading: isLoadingMyMaterials, refetch: refetchMaterials } = useQuery({
+        queryKey: ['faculty-materials', facultyId],
+        queryFn: async () => {
+            if (!facultyId) return [];
+            const { data, error } = await supabase
+                .from('subject_materials')
+                .select('*, subjects:subject_id(name), classes:class_id(name)')
+                .eq('uploaded_by', facultyId)
+                .order('created_at', { ascending: false });
+
+            if (error) {
+                console.error('Error fetching materials:', error);
+                return [];
+            }
+            return data || [];
+        },
+        enabled: !!facultyId,
+    });
+
     const stats: FacultyDashboardStats = {
         totalStudents,
         assignedStudents,
@@ -288,9 +308,10 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
         return true;
     };
 
-    const deleteMaterial = async (id: string) => {
+    const deleteMaterial = async (id: string, fileUrl?: string) => {
         const { error } = await supabase.from('subject_materials').delete().eq('id', id);
         if (error) throw error;
+        // Optionally handle storage deletion here if fileUrl is provided
         return true;
     };
 
@@ -345,7 +366,23 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
         myAssignments,
         isLoadingMyAssignments,
         refetchAssignments,
-        isLoading: isLoadingTotal || isLoadingAssigned || isLoadingSchedule || isLoadingReviews || isLoadingLeaves || isLoadingGrading || isProfileLoading || isLoadingMyAssignments,
+        myMaterials,
+        isLoadingMyMaterials,
+        refetchMaterials,
+        // Individual loading states to prevent buffering
+        loadingStates: {
+            isTotalStudentsLoading: isLoadingTotal,
+            isAssignedLoading: isLoadingAssigned,
+            isScheduleLoading: isLoadingSchedule,
+            isReviewsLoading: isLoadingReviews,
+            isLeavesLoading: isLoadingLeaves,
+            isGradingLoading: isLoadingGrading,
+            isProfileLoading: isProfileLoading,
+            isAssignmentsLoading: isLoadingMyAssignments,
+            isMaterialsLoading: isLoadingMyMaterials,
+        },
+        // The main isLoading will now be a safer union or we can just use the specific ones above
+        isLoading: isLoadingAssigned || isProfileLoading, // Only block core dashboard data
         uploadCertificate,
         uploadMaterial,
         deleteMaterial,

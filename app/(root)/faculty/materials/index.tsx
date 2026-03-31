@@ -12,7 +12,15 @@ import { AlertModal } from '../../../../src/components/common/AlertModal';
 export default function FacultyMaterialsManagement() {
   const { user, institutionId, institutionUuid } = useAuth();
   const router = useRouter();
-  const { myMaterials, isLoadingMyMaterials, refetchMaterials, deleteMaterial } = useFacultyDashboard(user?.id, (institutionUuid || institutionId) || undefined);
+  const { 
+    myMaterials, 
+    loadingStates,
+    isLoading: loadingDashboard,
+    refetchMaterials, 
+    deleteMaterial 
+  } = useFacultyDashboard(user?.id, (institutionUuid || institutionId) || undefined);
+  
+  const isLoadingMyMaterials = loadingStates?.isMaterialsLoading || loadingDashboard;
   
   const [isDeleting, setIsDeleting] = React.useState<string | null>(null);
   const [alertConfig, setAlertConfig] = React.useState({

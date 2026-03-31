@@ -18,6 +18,8 @@ export default function CanteenTabs() {
         headerTintColor: theme.colors.text,
         headerLeft: () => <HeaderLogo />,
         headerTitle: "",
+        headerShadowVisible: false,
+        headerTitleAlign: 'center',
         headerRight: () => (
           <TouchableOpacity 
             onPress={signOut} 

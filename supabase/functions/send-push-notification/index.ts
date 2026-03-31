@@ -109,9 +109,29 @@ serve(async (req: Request) => {
         }
 
         const serviceAccount = JSON.parse(serviceAccountJson)
-        const { userId, title, body, data } = await req.json()
+        const payload = await req.json()
+        
+        let userId, title, body, action_url, notification_id
+
+        // Webhook Format vs Direct Post Format
+        if (payload.type === 'INSERT' && payload.record) {
+            userId = payload.record.user_id
+            title = payload.record.title
+            body = payload.record.message
+            action_url = payload.record.action_url
+            notification_id = payload.record.id
+        } else {
+            userId = payload.userId
+            title = payload.title
+            body = payload.body
+            action_url = payload.data?.action_url
+            notification_id = payload.data?.notification_id
+        }
+
+        const data = { action_url, notification_id }
 
         if (!userId || !title || !body) {
+            console.error('Missing fields in payload', payload)
             return new Response(
                 JSON.stringify({ error: 'Missing required fields: userId, title, body' }),
                 { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -149,10 +169,14 @@ serve(async (req: Request) => {
                     message: {
                         token: tokenRecord.fcm_token,
                         notification: {
-                            title,
-                            body,
+                            title: title || 'My Vidyon Notification',
+                            body: body || 'You have a new update. Open the app to view.',
                         },
-                        data: data || {},
+                        data: {
+                            ...(data || {}),
+                            originalTitle: title,
+                            originalBody: body,
+                        },
                         android: {
                             priority: 'high',
                             notification: {

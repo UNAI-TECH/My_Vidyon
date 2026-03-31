@@ -18,6 +18,8 @@ export default function InstitutionTabs() {
         headerTintColor: theme.colors.text,
         headerLeft: () => <HeaderLogo />,
         headerTitle: "",
+        headerShadowVisible: false,
+        headerTitleAlign: 'center',
         headerRight: () => (
           <TouchableOpacity 
             onPress={signOut} 
@@ -55,21 +57,21 @@ export default function InstitutionTabs() {
       />
 
       {/* Hidden Screens — Accessible via dashboard shortcuts, not in bottom nav */}
-      <Tabs.Screen name="faculty/index" options={{ href: null }} />
-      <Tabs.Screen name="faculty/assign" options={{ href: null }} />
-      <Tabs.Screen name="reports/index" options={{ href: null }} />
-      <Tabs.Screen name="org/index" options={{ href: null }} />
-      <Tabs.Screen name="leaves/index" options={{ href: null }} />
-      <Tabs.Screen name="analytics/index" options={{ href: null }} />
-      <Tabs.Screen name="departments/index" options={{ href: null }} />
-      <Tabs.Screen name="exams/index" options={{ href: null }} />
-      <Tabs.Screen name="users/index" options={{ href: null }} />
-      <Tabs.Screen name="students/add" options={{ href: null }} />
-      <Tabs.Screen name="timetable/index" options={{ href: null }} />
-      <Tabs.Screen name="timetable/edit" options={{ href: null }} />
-      <Tabs.Screen name="timetable/special" options={{ href: null }} />
-      <Tabs.Screen name="communication" options={{ href: null }} />
-      <Tabs.Screen name="notifications" options={{ href: null }} />
+      <Tabs.Screen name="faculty/index" options={{ href: null, headerTitle: "" }} />
+      <Tabs.Screen name="faculty/assign" options={{ href: null, headerTitle: "" }} />
+      <Tabs.Screen name="reports/index" options={{ href: null, headerTitle: "" }} />
+      <Tabs.Screen name="org/index" options={{ href: null, headerTitle: "" }} />
+      <Tabs.Screen name="leaves/index" options={{ href: null, headerTitle: "" }} />
+      <Tabs.Screen name="analytics/index" options={{ href: null, headerTitle: "" }} />
+      <Tabs.Screen name="departments/index" options={{ href: null, headerTitle: "" }} />
+      <Tabs.Screen name="exams/index" options={{ href: null, headerTitle: "" }} />
+      <Tabs.Screen name="users/index" options={{ href: null, headerTitle: "" }} />
+      <Tabs.Screen name="students/add" options={{ href: null, headerTitle: "" }} />
+      <Tabs.Screen name="timetable/index" options={{ href: null, headerTitle: "" }} />
+      <Tabs.Screen name="timetable/edit" options={{ href: null, headerTitle: "" }} />
+      <Tabs.Screen name="timetable/special" options={{ href: null, headerTitle: "" }} />
+      <Tabs.Screen name="communication" options={{ href: null, headerTitle: "" }} />
+      <Tabs.Screen name="notifications" options={{ href: null, headerTitle: "" }} />
     </Tabs>
   );
 }

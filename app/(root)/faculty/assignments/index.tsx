@@ -25,6 +25,7 @@ import { useRouter } from 'expo-router';
 import { Platform } from 'react-native';
 import { CalendarModal } from '../../../../src/components/common/CalendarPicker';
 import { AlertModal } from '../../../../src/components/common/AlertModal';
+import { AdBanner } from '../../../../src/components/common/Ads/AdBanner';
 
 export default function FacultyAssignments() {
   const { user, institutionId, institutionUuid } = useAuth();
@@ -33,9 +34,12 @@ export default function FacultyAssignments() {
     assignedSubjects, 
     deleteAssignment, 
     myAssignments: assignments = [], 
-    isLoadingMyAssignments: isLoading, 
+    loadingStates,
+    isLoading: loadingDashboard,
     refetchAssignments: refetch 
   } = useFacultyDashboard(user?.id, (institutionUuid || institutionId) || undefined);
+  
+  const isLoading = loadingStates?.isAssignmentsLoading || loadingDashboard;
   
   const [showCreateModal, setShowCreateModal] = React.useState(false);
   const [isEditing, setIsEditing] = React.useState(false);
@@ -300,6 +304,7 @@ export default function FacultyAssignments() {
             ))
           )}
         </View>
+        <AdBanner type="FACULTY" />
       </ScrollView>
 
       <Modal

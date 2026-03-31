@@ -4,6 +4,7 @@ import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
 import { useAuth } from '../../../../src/hooks/useAuth';
 import { useStudentTimetable } from '../../../../src/hooks/useStudentTimetable';
+import { AdBanner } from '../../../../src/components/common/Ads/AdBanner';
 import { 
   Clock, 
   User, 
@@ -134,6 +135,8 @@ export default function StudentTimetable() {
             </View>
           </View>
         </View>
+
+        <AdBanner type="STUDENT" />
       </ScrollView>
     </View>
   );

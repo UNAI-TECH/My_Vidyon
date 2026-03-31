@@ -7,6 +7,7 @@ import { useStudentDashboard } from '../../../../src/hooks/useStudentDashboard';
 import { Badge } from '../../../../src/components/common/Badge';
 import { FileText, Clock } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
+import { AdBanner } from '../../../../src/components/common/Ads/AdBanner';
 
 export default function StudentAssignments() {
   const { user } = useAuth();
@@ -46,6 +47,7 @@ export default function StudentAssignments() {
           </TouchableOpacity>
         )}
         ListEmptyComponent={<Text style={styles.empty}>No assignments assigned.</Text>}
+        ListFooterComponent={<AdBanner type="STUDENT" />}
       />
     </View>
   );

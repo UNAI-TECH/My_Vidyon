@@ -26,8 +26,7 @@
       "package": "com.myvidyon.app",
       "googleServicesFile": "./google-services.json",
       "notification": {
-        "icon": "./assets/android-icon-monochrome.png",
-        "color": "#1E3A8A"
+        "icon": "./assets/notification-icon.png"
       }
     },
     "web": {
@@ -53,9 +52,7 @@
         "projectId": "e43bedd5-6bcc-4eeb-9a4b-4588ac9d04aa"
       }
     },
-    "runtimeVersion": {
-      "policy": "appVersion"
-    },
+    "runtimeVersion": "1.0.0",
     "updates": {
       "url": "https://u.expo.dev/e43bedd5-6bcc-4eeb-9a4b-4588ac9d04aa"
     }

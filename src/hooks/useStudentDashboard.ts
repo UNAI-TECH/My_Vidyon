@@ -150,15 +150,32 @@ export function useStudentDashboard(authUserId?: string, institutionId?: string)
         enabled: !!studentId,
     });
 
-    // 5. Fetch Upcoming Events
+    // 5. Fetch Upcoming Events (Filtered by Institution)
     const { data: eventsCount = 0 } = useQuery({
         queryKey: ['upcoming-events', institutionId],
         queryFn: async () => {
+            if (!institutionId) return 0;
             const now = new Date().toISOString().split('T')[0];
+
+            // Resolve UUID if needed
+            const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+            let targetUuid = institutionId;
+            if (!isUUID(institutionId)) {
+                const { data } = await supabase.from('institutions').select('id').eq('institution_id', institutionId).maybeSingle();
+                if (data) targetUuid = (data as any).id;
+                else return 0;
+            }
+
             const { count, error } = await supabase
                 .from('academic_events')
                 .select('*', { count: 'exact', head: true })
+                .eq('institution_id', targetUuid)
                 .gte('event_date', now);
+            
+            if (error) {
+                console.error('Error fetching events count:', error);
+                return 0;
+            }
             return count || 0;
         },
         enabled: !!institutionId,

@@ -37,15 +37,16 @@ export function useParentDashboard(parentId?: string): ParentDashboardData & { i
                 .select('student_id, status')
                 .in('student_id', studentIds);
             
-            const { data: allGrd } = await supabase
-                .from('grades')
-                .select('student_id, grade, created_at')
+            const { data: allRes } = await supabase
+                .from('exam_results')
+                .select('student_id, total_marks, status, created_at')
                 .in('student_id', studentIds)
+                .eq('status', 'PUBLISHED')
                 .order('created_at', { ascending: false });
 
             return (linkedStudents as any[]).map((s: any) => {
                 const studentAtt = (allAtt as any[] || []).filter(a => a.student_id === s.id);
-                const studentGrd = (allGrd as any[] || []).find(g => g.student_id === s.id);
+                const studentRes = (allRes as any[] || []).find(g => g.student_id === s.id);
 
                 const presentCount = studentAtt.filter(a => a.status === 'present').length;
                 const totalAtt = studentAtt.length;
@@ -54,9 +55,9 @@ export function useParentDashboard(parentId?: string): ParentDashboardData & { i
                 return {
                     ...s,
                     name: s.profiles?.full_name || s.name,
-                    image_url: s.image_url || s.profiles?.image_url,
+                    image_url: s.image_url || s.profiles?.image_url || null,
                     attendance,
-                    grade: studentGrd?.grade || 'N/A',
+                    grade: studentRes ? `${studentRes.total_marks}` : 'N/A',
                     roll_no: s.register_number,
                     class_name: s.class_name,
                     section: s.section
@@ -157,7 +158,7 @@ export function useParentDashboard(parentId?: string): ParentDashboardData & { i
         const channel = supabase.channel(`parent-dashboard-${parentId}`)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'students', filter: `parent_id=eq.${parentId}` }, () => refetchChildren())
             .on('postgres_changes', { event: '*', schema: 'public', table: 'student_attendance' }, () => refetchChildren())
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'grades' }, () => refetchChildren())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'exam_results' }, () => refetchChildren())
             .on('postgres_changes', { event: '*', schema: 'public', table: 'student_fees' }, () => { refetchMetrics(); })
             .on('postgres_changes', { event: '*', schema: 'public', table: 'fee_payments' }, () => { refetchHistory(); refetchMetrics(); })
             .on('postgres_changes', { event: '*', schema: 'public', table: 'institutions' }, () => { refetchInstitution(); })

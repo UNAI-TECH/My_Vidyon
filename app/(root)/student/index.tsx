@@ -5,10 +5,10 @@ import { NotificationBell } from '../../../src/components/common/NotificationBel
 import { theme } from '../../../src/theme';
 import { PageHeader } from '../../../src/components/common/PageHeader';
 import { StatCard } from '../../../src/components/common/StatCard';
-import { AdCard } from '../../../src/components/common/AdCard';
+import { EventAdCarousel } from '../../../src/components/common/EventAdCarousel';
 import { ShortcutGrid } from '../../../src/components/common/ShortcutGrid';
 import { useAuth } from '../../../src/hooks/useAuth';
-import { DashboardBanner } from '../../../src/components/common/Ads/DashboardBanner';
+import { AdBanner } from '../../../src/components/common/Ads/AdBanner';
 import { useStudentDashboard } from '../../../src/hooks/useStudentDashboard';
 import { useStudentTimetable } from '../../../src/hooks/useStudentTimetable';
 import { 
@@ -58,6 +58,7 @@ export default function StudentDashboard() {
     { label: 'Courses', icon: BookOpen, href: '/student/courses', color: '#F97316' },
     { label: 'Assignments', icon: ClipboardList, href: '/student/assignments', color: '#10B981' },
     { label: 'Exams', icon: ClipboardList, href: '/student/exams', color: '#F87171' },
+    { label: 'Events', icon: Calendar, href: '/events', color: '#8B5CF6' },
     { label: 'Leave', icon: FileText, href: '/student/leave', color: '#EF4444' },
     { label: 'Grades', icon: TrendingUp, href: '/student/grades', color: '#F59E0B' },
     { label: 'Certificates', icon: Award, href: '/student/certificates', color: '#6366F1' },
@@ -89,6 +90,11 @@ export default function StudentDashboard() {
         userAvatar={imageUrl || (studentProfile as any)?.image_url || undefined}
         userSubtitle={studentProfile ? `Class ${studentProfile.class_name} - ${studentProfile.section}` : undefined}
         actions={<NotificationBell />}
+      />
+
+      <EventAdCarousel 
+        nativeAdUnitID="ca-app-pub-3940256099942544/2247696110" 
+        adInterval={2}
       />
 
 
@@ -176,7 +182,7 @@ export default function StudentDashboard() {
         />
       </View>
 
-      <DashboardBanner type="STUDENT" />
+      <AdBanner type="STUDENT" />
     </ScrollView>
   );
 }

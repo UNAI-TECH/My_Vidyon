@@ -5,9 +5,9 @@ import { NotificationBell } from '../../../../src/components/common/Notification
 import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
 import { StatCard } from '../../../../src/components/common/StatCard';
-import { AdCard } from '../../../../src/components/common/AdCard';
+import { EventAdCarousel } from '../../../../src/components/common/EventAdCarousel';
 import { useAuth } from '../../../../src/hooks/useAuth';
-import { DashboardBanner } from '../../../../src/components/common/Ads/DashboardBanner';
+import { AdBanner } from '../../../../src/components/common/Ads/AdBanner';
 import { 
   Users, 
   Calendar, 
@@ -15,7 +15,8 @@ import {
   ShieldAlert, 
   Phone,
   ArrowRight,
-  ChevronRight
+  ChevronRight,
+  Megaphone
 } from 'lucide-react-native';
 import { ShortcutGrid } from '../../../../src/components/common/ShortcutGrid';
 import { Link, useRouter } from 'expo-router';
@@ -52,12 +53,10 @@ export default function ParentDashboard() {
         actions={<NotificationBell />}
       />
 
-      <View style={{ paddingBottom: 16 }}>
-        <AdCard 
-          title="Secure Your Child's Future" 
-          description="Discover premium educational plans for smart parenting. Learn more."
-        />
-      </View>
+      <EventAdCarousel 
+        nativeAdUnitID="ca-app-pub-3940256099942544/2247696110" 
+        adInterval={2}
+      />
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Child Services</Text>
@@ -65,6 +64,7 @@ export default function ParentDashboard() {
           { label: 'Fee Gateway', icon: CreditCard, href: '/(root)/parent/fee-gateway', color: '#3B82F6' },
           { label: 'Safety Hub', icon: ShieldAlert, href: '/(root)/parent/safety', color: '#EF4444' },
           { label: 'Leave Apply', icon: Calendar, href: '/(root)/parent/leaves', color: '#F59E0B' },
+          { label: 'Events', icon: Megaphone, href: '/events', color: '#8B5CF6' },
         ]} />
       </View>
 
@@ -113,6 +113,12 @@ export default function ParentDashboard() {
             <Text style={styles.childMeta}>No linked children found.</Text>
           </View>
         )}
+        {/* Ad integration within children section */}
+        {children.length > 0 && (
+          <View style={{ marginTop: 12 }}>
+            <AdBanner type="PARENT" />
+          </View>
+        )}
       </View>
 
       <View style={styles.statsGrid}>
@@ -157,7 +163,7 @@ export default function ParentDashboard() {
         </View>
       </View>
       
-      <DashboardBanner type="PARENT" />
+      <AdBanner type="PARENT" />
 
       <View style={{ alignItems: 'center', marginVertical: 40, opacity: 0.4 }}>
         <Image source={require('../../../../assets/logo.png')} style={{ width: 100, height: 30, resizeMode: 'contain' }} />

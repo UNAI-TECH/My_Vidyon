@@ -16,9 +16,11 @@ import {
   TrendingUp,
   FileText,
   MessageSquare,
-  CalendarRange
+  CalendarRange,
+  Megaphone
 } from 'lucide-react-native';
 import { ShortcutGrid } from '../../../src/components/common/ShortcutGrid';
+import { EventAdCarousel } from '../../../src/components/common/EventAdCarousel';
 import { ProgressChart } from 'react-native-chart-kit';
 import { Dimensions } from 'react-native';
 
@@ -54,12 +56,18 @@ export default function AdminDashboard() {
         actions={<NotificationBell />}
       />
 
+      <EventAdCarousel 
+        nativeAdUnitID="ca-app-pub-3940256099942544/2247696110" 
+        adInterval={2}
+      />
+
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Quick Actions</Text>
         <ShortcutGrid items={[
           { label: 'Add Institution', icon: Building2, href: '/(root)/admin/onboarding', color: '#3B82F6' },
           { label: 'Broadcast', icon: MessageSquare, href: '/(root)/admin/communication', color: '#10B981' },
           { label: 'View Reports', icon: BarChart3, href: '/(root)/admin/revenue', color: '#F97316' },
+          { label: 'Ad Management', icon: Megaphone, href: '/(root)/admin/ads', color: '#EF4444' },
           { label: 'Promotions', icon: CalendarRange, href: '/(root)/admin/promotions', color: '#EAB308' },
           { label: 'Config', icon: Shield, href: '/(root)/admin/settings', color: '#A855F7' },
         ]} />

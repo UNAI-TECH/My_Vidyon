@@ -10,6 +10,7 @@ import {
   MapPin,
   Mail
 } from 'lucide-react-native';
+import { AdBanner } from '../../../../src/components/common/Ads/AdBanner';
 
 export default function InstitutionFaculty() {
   const faculty = [
@@ -69,6 +70,7 @@ export default function InstitutionFaculty() {
             </View>
           </View>
         )}
+        ListFooterComponent={<AdBanner type="INSTITUTION" />}
       />
     </View>
   );

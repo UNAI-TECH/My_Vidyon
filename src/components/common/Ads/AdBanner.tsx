@@ -1,16 +1,16 @@
 import React from 'react';
 import { View, StyleSheet, Platform } from 'react-native';
-import { AD_UNITS, AdType } from '../../../lib/AdsConfig';
+import { AD_UNITS, AdType, FORCE_TEST_ADS } from '../../../lib/AdsConfig';
 
-interface DashboardBannerProps {
+interface AdBannerProps {
   type: AdType;
 }
 
 /**
  * A reusable Banner Ad component that dynamically selects the Ad Unit ID
- * based on the provided dashboard type.
+ * based on the provided user type (e.g. STUDENT, FACULTY).
  */
-export const DashboardBanner: React.FC<DashboardBannerProps> = ({ type }) => {
+export const AdBanner: React.FC<AdBannerProps> = ({ type }) => {
   // Safety check for Expo Go or environments without the native module
   try {
     const adsModule = require('react-native-google-mobile-ads');
@@ -21,7 +21,7 @@ export const DashboardBanner: React.FC<DashboardBannerProps> = ({ type }) => {
     const adUnitId = AD_UNITS[type] || TestIds.BANNER;
 
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, FORCE_TEST_ADS && styles.testContainer]}>
         <BannerAd
           unitId={adUnitId}
           size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
@@ -29,7 +29,7 @@ export const DashboardBanner: React.FC<DashboardBannerProps> = ({ type }) => {
             requestNonPersonalizedAdsOnly: true,
           }}
           onAdFailedToLoad={(error: any) => {
-            if (__DEV__) {
+            if (__DEV__ || FORCE_TEST_ADS) {
               console.warn(`[AdMob] ${type} Banner failed to load:`, error);
             }
           }}
@@ -52,5 +52,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     overflow: 'hidden',
     width: '100%',
+    minHeight: 60, // Ensure space is reserved for the banner
+  },
+  testContainer: {
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderStyle: 'dashed',
+    borderRadius: 8,
+    marginVertical: 8,
   },
 });
+

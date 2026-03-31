@@ -29,7 +29,7 @@ export default function MyAttendanceScreen() {
       const { data, error } = await supabase
         .from('staff_attendance')
         .select('*')
-        .eq('profile_id', user.id)
+        .eq('staff_id', user.id)
         .order('attendance_date', { ascending: false });
       
       if (error) throw error;

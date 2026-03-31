@@ -7,6 +7,7 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../../../../src/lib/supabase';
 import { useAuth } from '../../../../src/hooks/useAuth';
 import { AlertCircle, ChevronDown } from 'lucide-react-native';
+import { AdBanner } from '../../../../src/components/common/Ads/AdBanner';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -21,7 +22,7 @@ export default function ParentStats() {
       const { data } = await supabase
         .from('students')
         .select('id, name')
-        .eq('parent_id', user?.id);
+        .eq('parent_id', user?.id as string);
       const studentData = (data || []) as any[];
       if (studentData.length > 0 && !selectedChildId) {
         setSelectedChildId(studentData[0].id);
@@ -156,6 +157,8 @@ export default function ParentStats() {
           <Text style={styles.emptyText}>No data available for the selected child.</Text>
         </View>
       )}
+
+      <AdBanner type="PARENT" />
     </ScrollView>
   );
 }

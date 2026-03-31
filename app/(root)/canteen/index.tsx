@@ -8,7 +8,8 @@ import { PageHeader } from '../../../src/components/common/PageHeader';
 import { useAuth } from '../../../src/hooks/useAuth';
 import { useCanteenDashboard } from '../../../src/hooks/useCanteenDashboard';
 import { supabase } from '../../../src/lib/supabase';
-import { DashboardBanner } from '../../../src/components/common/Ads/DashboardBanner';
+import { AdBanner } from '../../../src/components/common/Ads/AdBanner';
+import { EventAdCarousel } from '../../../src/components/common/EventAdCarousel';
 import { 
   Users, CheckCircle, XCircle, ShieldAlert, Lock, User, 
   HelpCircle, CheckSquare, XSquare, PartyPopper, 
@@ -171,7 +172,7 @@ export default function CanteenDashboard() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />
         }
         contentContainerStyle={styles.list}
-        ListFooterComponent={<DashboardBanner type="CANTEEN" />}
+        ListFooterComponent={<AdBanner type="CANTEEN" />}
         ListHeaderComponent={
           <View>
             {/* Greeting */}
@@ -182,7 +183,12 @@ export default function CanteenDashboard() {
               institutionLogo={institution?.logo_url}
               userRole={role || 'canteen'}
               userAvatar={imageUrl || undefined}
-              actions={<NotificationBell />}
+               actions={null}
+            />
+
+            <EventAdCarousel 
+              nativeAdUnitID="ca-app-pub-3940256099942544/2247696110" 
+              adInterval={2}
             />
 
             {/* Stats Strip */}

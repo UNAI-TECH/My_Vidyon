@@ -5,11 +5,11 @@ import { NotificationBell } from '../../../../src/components/common/Notification
 import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
 import { StatCard } from '../../../../src/components/common/StatCard';
-import { AdCard } from '../../../../src/components/common/AdCard';
+import { EventAdCarousel } from '../../../../src/components/common/EventAdCarousel';
 import { ShortcutGrid } from '../../../../src/components/common/ShortcutGrid';
 import { useAuth } from '../../../../src/hooks/useAuth';
 import { useFacultyDashboard } from '../../../../src/hooks/useFacultyDashboard';
-import { DashboardBanner } from '../../../../src/components/common/Ads/DashboardBanner';
+import { AdBanner } from '../../../../src/components/common/Ads/AdBanner';
 import { useRouter } from 'expo-router';
 import { 
   Users, 
@@ -60,6 +60,7 @@ export default function FacultyDashboard() {
     { label: 'Schedule', icon: Calendar, href: '/faculty/timetable', color: '#8B5CF6' },
     { label: 'Exams', icon: FileText, href: '/faculty/exams', color: '#EF4444' },
     { label: 'Notices', icon: Megaphone, href: '/faculty/announcements', color: '#A855F7' },
+    { label: 'Events', icon: Calendar, href: '/events', color: '#8B5CF6' },
     { label: 'Assignments', icon: ClipboardList, href: '/faculty/assignments', color: '#16A34A' },
     { label: 'Classes', icon: BookOpen, href: '/faculty/courses', color: '#64748B' },
   ];
@@ -83,12 +84,10 @@ export default function FacultyDashboard() {
         actions={<NotificationBell />}
       />
 
-      <View style={{ paddingBottom: 16 }}>
-        <AdCard 
-          title="Upgrade your Classroom!" 
-          description="Access premium interactive tools for teachers. Click to explore."
-        />
-      </View>
+      <EventAdCarousel 
+        nativeAdUnitID="ca-app-pub-3940256099942544/2247696110" 
+        adInterval={2}
+      />
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Quick Actions</Text>
@@ -260,7 +259,7 @@ export default function FacultyDashboard() {
         />
       </View>
 
-      <DashboardBanner type="FACULTY" />
+      <AdBanner type="FACULTY" />
     </ScrollView>
   );
 }

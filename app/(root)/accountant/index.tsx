@@ -4,10 +4,10 @@ import { NotificationBell } from '../../../src/components/common/NotificationBel
 import { theme } from '../../../src/theme';
 import { PageHeader } from '../../../src/components/common/PageHeader';
 import { StatCard } from '../../../src/components/common/StatCard';
-import { AdCard } from '../../../src/components/common/AdCard';
+import { EventAdCarousel } from '../../../src/components/common/EventAdCarousel';
 import { useAuth } from '../../../src/hooks/useAuth';
 import { useAccountantDashboard } from '../../../src/hooks/useAccountantDashboard';
-import { DashboardBanner } from '../../../src/components/common/Ads/DashboardBanner';
+import { AdBanner } from '../../../src/components/common/Ads/AdBanner';
 import {
   CreditCard,
   TrendingUp,
@@ -46,17 +46,14 @@ export default function AccountantDashboard() {
                <Wifi size={10} color="#10B981" {...({} as any)} />
                <Text style={styles.liveBadgeText}>LIVE</Text>
             </View>
-            <NotificationBell />
           </View>
         }
       />
 
-      <View style={{ paddingBottom: 16 }}>
-        <AdCard 
-          title="Streamline Your Finances" 
-          description="Explore our automated fee collection and reconciliation tools."
-        />
-      </View>
+      <EventAdCarousel 
+        nativeAdUnitID="ca-app-pub-3940256099942544/2247696110" 
+        adInterval={2}
+      />
 
       <View style={styles.section2}>
         <Text style={styles.sectionTitle}>Financial Console</Text>
@@ -146,7 +143,7 @@ export default function AccountantDashboard() {
         </View>
       </View>
 
-      <DashboardBanner type="ACCOUNTANT" />
+      <AdBanner type="ACCOUNTANT" />
 
       <TouchableOpacity style={styles.actionButton}>
         <Download size={20} color="white" {...({} as any)} />

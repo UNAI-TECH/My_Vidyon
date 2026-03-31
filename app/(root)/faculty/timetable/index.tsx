@@ -14,6 +14,7 @@ import {
 
 import { useInstitutionTimetable } from '../../../../src/hooks/useInstitutionTimetable';
 import { format, parseISO } from 'date-fns';
+import { AdBanner } from '../../../../src/components/common/Ads/AdBanner';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -120,6 +121,8 @@ export default function FacultyTimetable() {
             </View>
           </View>
         </View>
+
+        <AdBanner type="FACULTY" />
       </ScrollView>
     </View>
   );

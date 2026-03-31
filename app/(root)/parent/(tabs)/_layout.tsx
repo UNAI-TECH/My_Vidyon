@@ -19,6 +19,8 @@ export default function ParentTabsLayout() {
         headerTintColor: theme.colors.text,
         headerLeft: () => <HeaderLogo />,
         headerTitle: "",
+        headerShadowVisible: false,
+        headerTitleAlign: 'center',
         headerRight: () => (
           <TouchableOpacity 
             onPress={signOut} 

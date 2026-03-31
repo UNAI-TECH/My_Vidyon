@@ -18,7 +18,13 @@ import { useRouter } from 'expo-router';
 export default function FacultyCourses() {
   const { user, institutionId } = useAuth();
   const router = useRouter();
-  const { assignedSubjects, isLoading } = useFacultyDashboard(user?.id, institutionId || undefined);
+  const { 
+    assignedSubjects, 
+    loadingStates,
+    isLoading: loadingDashboard
+  } = useFacultyDashboard(user?.id, institutionId || undefined);
+
+  const isLoading = loadingStates?.isAssignedLoading || loadingDashboard;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>

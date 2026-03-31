@@ -31,6 +31,8 @@ export default function AdminTabs() {
         headerTintColor: theme.colors.text,
         headerLeft: () => <HeaderLogo />,
         headerTitle: "",
+        headerShadowVisible: false,
+        headerTitleAlign: 'center',
         headerRight: () => (
           <TouchableOpacity 
             onPress={signOut} 

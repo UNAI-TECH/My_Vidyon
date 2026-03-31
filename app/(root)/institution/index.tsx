@@ -5,10 +5,10 @@ import { theme } from '../../../src/theme';
 import { PageHeader } from '../../../src/components/common/PageHeader';
 import { useNotifications } from '../../../src/hooks/useNotifications';
 import { StatCard } from '../../../src/components/common/StatCard';
-import { AdCard } from '../../../src/components/common/AdCard';
+import { EventAdCarousel } from '../../../src/components/common/EventAdCarousel';
 import { useAuth } from '../../../src/hooks/useAuth';
 import { useInstitutionData } from '../../../src/hooks/useInstitutionData';
-import { DashboardBanner } from '../../../src/components/common/Ads/DashboardBanner';
+import { AdBanner } from '../../../src/components/common/Ads/AdBanner';
 import { 
   Users, 
   Briefcase, 
@@ -21,7 +21,8 @@ import {
   Clock,
   ChevronDown,
   Bell,
-  ClipboardList
+  ClipboardList,
+  Calendar
 } from 'lucide-react-native';
 import { ShortcutGrid } from '../../../src/components/common/ShortcutGrid';
 import { LineChart, PieChart } from 'react-native-chart-kit';
@@ -50,6 +51,7 @@ export default function InstitutionDashboard() {
     { label: 'Communication', icon: Bell, href: '/(root)/institution/communication', color: '#F43F5E' },
     { label: 'Staff Assigning', icon: UserCheck, href: '/(root)/institution/faculty/assign', color: '#8B5CF6' },
     { label: 'Analytics', icon: TrendingUp, href: '/(root)/institution/analytics', color: '#0EA5E9' },
+    { label: 'Events', icon: Calendar, href: '/(root)/institution/events', color: '#F59E0B' },
     { label: 'Reports', icon: FileText, href: '/(root)/institution/reports', color: '#6366F1' },
     { label: 'Settings', icon: Settings, href: '/(root)/institution/settings', color: '#64748B' },
   ];
@@ -86,12 +88,10 @@ export default function InstitutionDashboard() {
         }
       />
 
-      <View style={{ paddingBottom: 16 }}>
-        <AdCard 
-          title="Premium Institution Features" 
-          description="Unlock advanced analytics and seamless integrations for your school."
-        />
-      </View>
+      <EventAdCarousel 
+        nativeAdUnitID="ca-app-pub-3940256099942544/2247696110" 
+        adInterval={2}
+      />
 
       {/* Shortcuts - Moved to Top */}
       <View style={styles.section}>
@@ -293,7 +293,7 @@ export default function InstitutionDashboard() {
         </View>
       </View>
       
-      <DashboardBanner type="INSTITUTION" />
+      <AdBanner type="INSTITUTION" />
     </ScrollView>
   );
 }

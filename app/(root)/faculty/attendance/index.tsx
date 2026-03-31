@@ -19,11 +19,13 @@ import { ActivityIndicator } from 'react-native';
 
 import { useRouter } from 'expo-router';
 import { Modal } from 'react-native';
+import { AdBanner } from '../../../../src/components/common/Ads/AdBanner';
 
 export default function FacultyAttendance() {
   const { user, institutionId } = useAuth();
   const router = useRouter();
-  const { assignedSubjects, isLoading: loadingAssignments } = useFacultyDashboard(user?.id, institutionId || undefined);
+  const { assignedSubjects, loadingStates, isLoading: loadingDashboard } = useFacultyDashboard(user?.id, institutionId || undefined);
+  const loadingAssignments = loadingStates?.isAssignedLoading || loadingDashboard;
   const [method, setMethod] = React.useState<'scan' | 'manual'>('manual');
   const [selectedAssignment, setSelectedAssignment] = React.useState<any>(null);
   const [alertConfig, setAlertConfig] = React.useState<{
@@ -243,6 +245,7 @@ export default function FacultyAttendance() {
             )}
           </View>
         )}
+        <AdBanner type="FACULTY" />
       </ScrollView>
 
       {/* Unified Alert Modal */}

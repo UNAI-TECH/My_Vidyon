@@ -5,6 +5,7 @@ import { PageHeader } from '../../../../src/components/common/PageHeader';
 import { useAuth } from '../../../../src/hooks/useAuth';
 import { useStudentDashboard } from '../../../../src/hooks/useStudentDashboard';
 import { Badge } from '../../../../src/components/common/Badge';
+import { AdBanner } from '../../../../src/components/common/Ads/AdBanner';
 
 export default function StudentAttendance() {
   const { user } = useAuth();
@@ -30,6 +31,7 @@ export default function StudentAttendance() {
           </View>
         )}
         ListEmptyComponent={<Text style={styles.empty}>No records found.</Text>}
+        ListFooterComponent={<AdBanner type="STUDENT" />}
       />
     </View>
   );
