@@ -172,29 +172,44 @@ RETURNS TRIGGER AS $$
 DECLARE
     faculty_uid UUID;
 BEGIN
-    -- 1. Notify Faculty
+    -- 1. Notify Faculty (if assigned and not already notified in the last 60s)
     IF NEW.faculty_id IS NOT NULL THEN
-        INSERT INTO public.notifications (user_id, title, message, type, action_url, metadata)
-        VALUES (
-            NEW.faculty_id,
-            'Timetable Update',
-            'Your timetable for ' || NEW.day_of_week || ' at ' || NEW.start_time || ' has been updated.',
-            'timetable',
-            '/faculty/timetable',
-            jsonb_build_object('event_type', 'timetable_change', 'record', row_to_json(NEW))
-        );
+        IF NOT EXISTS (
+            SELECT 1 FROM public.notifications 
+            WHERE user_id = NEW.faculty_id 
+            AND type = 'timetable'
+            AND title = 'Timetable Update'
+            AND created_at > (NOW() - INTERVAL '1 minute')
+        ) THEN
+            INSERT INTO public.notifications (user_id, title, message, type, action_url, metadata)
+            VALUES (
+                NEW.faculty_id,
+                'Timetable Update',
+                'Your timetable for ' || NEW.day_of_week || ' at ' || NEW.start_time || ' has been updated.',
+                'timetable',
+                '/faculty/timetable',
+                jsonb_build_object('event_type', 'timetable_change', 'record_id', NEW.id)
+            );
+        END IF;
     END IF;
     
-    -- 2. Notify All Students in the Class
-    -- We join students with classes table to match NEW.class_id via name
+    -- 2. Notify All Students in the Class (if not already notified in the last 60s)
+    -- This query matches students by class name
     INSERT INTO public.notifications (user_id, title, message, type, action_url, metadata)
     SELECT s.id, 'Timetable Updated', 
            'Your timetable for ' || NEW.day_of_week || ' has been updated. Check the new schedule.', 
            'timetable', 
            '/student/timetable',
-           jsonb_build_object('event_type', 'timetable_change', 'record', row_to_json(NEW))
+           jsonb_build_object('event_type', 'timetable_change', 'record_id', NEW.id)
     FROM public.students s
-    WHERE s.class_name = (SELECT name FROM public.classes WHERE id = NEW.class_id);
+    WHERE s.class_name = (SELECT name FROM public.classes WHERE id = NEW.class_id)
+    AND NOT EXISTS (
+        SELECT 1 FROM public.notifications n
+        WHERE n.user_id = s.id 
+        AND n.type = 'timetable'
+        AND n.title = 'Timetable Updated'
+        AND n.created_at > (NOW() - INTERVAL '1 minute')
+    );
     
     RETURN NEW;
 END;
@@ -209,32 +224,46 @@ CREATE TRIGGER trigger_timetable_notification
 -- Notifies student and parent when status changes to 'PUBLISHED'
 CREATE OR REPLACE FUNCTION public.on_exam_result_published()
 RETURNS TRIGGER AS $$
+DECLARE
+    exam_name TEXT;
+    student_name TEXT;
 BEGIN
+    -- Only run when status changes to 'PUBLISHED'
     IF (NEW.status = 'PUBLISHED' AND (OLD.status IS NULL OR OLD.status != 'PUBLISHED')) THEN
-        -- 1. Notify Student
-        INSERT INTO public.notifications (user_id, title, message, type, action_url, metadata)
-        SELECT id, 'Exam Results Published', 
-               'Your results for ' || (SELECT name FROM public.exams WHERE id = NEW.exam_id) || ' are now available.',
-               'exam',
-               '/student/exams',
-               jsonb_build_object('event_type', 'exam_result_published', 'record', row_to_json(NEW))
-        FROM public.profiles
-        WHERE id = NEW.student_id;
+        
+        -- 1. Get Exam Name from exam_schedules (id is UUID, NEW.exam_id might be TEXT)
+        SELECT exam_display_name INTO exam_name 
+        FROM public.exam_schedules 
+        WHERE id = NEW.exam_id::uuid;
 
-        -- 2. Notify Parent(s)
+        -- 2. Get Student Name from profiles (id is UUID, NEW.student_id might be TEXT)
+        SELECT full_name INTO student_name 
+        FROM public.profiles 
+        WHERE id = NEW.student_id::uuid;
+
+        -- 3. Notify Student
+        IF NEW.student_id IS NOT NULL THEN
+            INSERT INTO public.notifications (user_id, title, message, type, action_url, metadata)
+            VALUES (
+                NEW.student_id::uuid, 
+                'Exam Results Published', 
+                'Your results for ' || COALESCE(exam_name, 'the exam') || ' are now available.',
+                'exam',
+                '/student/exams',
+                jsonb_build_object('event_type', 'exam_result_published', 'record_id', NEW.id)
+            );
+        END IF;
+
+        -- 4. Notify Parent(s) from students table (Primary)
         INSERT INTO public.notifications (user_id, title, message, type, action_url, metadata)
-        SELECT pid, 'Child''s Exam Results', 
-               'Examination results for ' || (SELECT name FROM public.profiles WHERE id = NEW.student_id) || ' have been published.',
+        SELECT parent_id, 'Child''s Exam Results', 
+               'Examination results for ' || COALESCE(student_name, 'your child') || ' have been published.',
                'exam',
                '/(root)/parent/student/' || NEW.student_id,
-               jsonb_build_object('event_type', 'exam_result_published', 'record', row_to_json(NEW))
-        FROM (
-            SELECT p.profile_id as pid FROM public.student_parents sp
-            JOIN public.parents p ON sp.parent_id = p.id
-            WHERE sp.student_id = NEW.student_id
-            UNION
-            SELECT parent_id as pid FROM public.students WHERE id = NEW.student_id
-        ) sub WHERE pid IS NOT NULL;
+               jsonb_build_object('event_type', 'exam_result_published', 'record_id', NEW.id)
+        FROM public.students 
+        WHERE id = NEW.student_id::uuid AND parent_id IS NOT NULL;
+        
     END IF;
     
     RETURN NEW;

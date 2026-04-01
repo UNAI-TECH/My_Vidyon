@@ -8,6 +8,13 @@ const corsHeaders = {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+const sanitizeUUID = (id: any) => {
+    if (!id || typeof id !== 'string' || id.trim() === '') return null;
+    // Relaxed UUID validation regex (checks only format)
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(id.trim()) ? id.trim() : null;
+};
+
 Deno.serve(async (req: Request) => {
     // Handle CORS
     if (req.method === 'OPTIONS') {
@@ -15,18 +22,23 @@ Deno.serve(async (req: Request) => {
     }
 
     try {
-        const body = await req.json();
-        console.log("Received request body:", body);
+        const { 
+            email, password, role, full_name, institution_id, 
+            class_name, section, academic_year, 
+            parent_name, parent_email, parent_phone, parent_id, parent_relation,
+            register_number, staff_id, phone, date_of_birth, gender, address,
+            blood_group, city, zip_code, image_url,
+            student_id, student_ids, parent_contact, department, subjects, // optional override
+        } = await req.json();
 
-        const {
-            email, password, role, full_name, institution_id, register_number, staff_id, phone,
-            student_id, student_ids, parent_email, parent_phone, parent_name, class_name, section,
-            department, subjects, date_of_birth, image_url, gender, address,
-            blood_group, city, zip_code, parent_relation, academic_year, parent_contact
-        } = body;
+        console.log(`Creating user: ${email} (Role: ${role}, InstUUID: ${institution_id})`);
+        if (class_name) console.log(`Student Detail: Class ${class_name}, Section ${section}`);
 
         if (!email || !role || !institution_id) {
-            throw new Error("Missing required fields: email, role, and institution_id are required.")
+            return new Response(
+                JSON.stringify({ error: "Missing required fields: email, role, and institution_id are required." }),
+                { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
         }
 
         // Initialize Supabase Admin Client
@@ -133,36 +145,42 @@ Deno.serve(async (req: Request) => {
         // 3. Role-specific table updates
         if (finalRole === 'student') {
             console.log("Syncing student record...");
+            const studentData: any = {
+                id: student_id || userId,
+                profile_id: userId,
+                institution_id: institution_id,
+                name: full_name,
+                email: email.toLowerCase(),
+                register_number: register_number || `REG-${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
+                class_name: class_name,
+                section: section || 'A',
+                image_url: image_url,
+                phone: phone,
+                gender: gender,
+                address: address,
+                dob: date_of_birth,
+                academic_year: academic_year,
+                is_active: true,
+                parent_name: parent_name,
+                parent_email: parent_email,
+                parent_phone: parent_phone,
+                parent_contact: parent_phone || parent_contact,
+                parent_relation: parent_relation,
+                parent_id: sanitizeUUID(parent_id),
+                blood_group: blood_group,
+                city: city,
+                zip_code: zip_code
+            };
+            
+            console.log("Student payload for upsert:", JSON.stringify(studentData, null, 2));
+
             const { error: studentError } = await supabaseAdmin
                 .from('students')
-                .upsert({
-                    id: student_id || userId,
-                    profile_id: userId,
-                    institution_id: institution_id,
-                    name: full_name,
-                    email: email.toLowerCase(),
-                    register_number: register_number || `REG-${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
-                    class_name: class_name,
-                    section: section,
-                    image_url: image_url,
-                    phone: phone,
-                    gender: gender,
-                    address: address,
-                    dob: date_of_birth, // Map date_of_birth (frontend) to dob (db)
-                    academic_year: academic_year,
-                    is_active: true,
-                    parent_name: parent_name,
-                    parent_email: parent_email,
-                    parent_phone: parent_phone,
-                    parent_contact: parent_phone || parent_contact,
-                    parent_relation: parent_relation,
-                    blood_group: blood_group,
-                    city: city,
-                    zip_code: zip_code
-                });
+                .upsert(studentData);
+
             if (studentError) {
                 console.error("Student sync error:", studentError);
-                throw new Error(`Student sync failed: ${studentError.message}`);
+                throw new Error(`Student sync failed: ${studentError.message}${studentError.details ? ' (' + studentError.details + ')' : ''}${studentError.hint ? ' - Hint: ' + studentError.hint : ''} (Code: ${studentError.code})`);
             }
 
         } else if (finalRole === 'parent') {
@@ -277,7 +295,10 @@ Deno.serve(async (req: Request) => {
     } catch (error: any) {
         console.error("CRITICAL Edge Function Error:", error);
         return new Response(
-            JSON.stringify({ error: error.message || "Unknown error occurred" }),
+            JSON.stringify({ 
+                error: error.message || "Unknown error occurred",
+                details: error.stack || null 
+            }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
         );
     }

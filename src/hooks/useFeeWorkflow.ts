@@ -25,7 +25,9 @@ export function useFeeWorkflow() {
         class_name: className, 
         due_date: dueDate,
         description: JSON.stringify(components)
-      });
+      })
+      .select()
+      .single();
   };
 
   const processPayment = async (studentId: string, feeStructureId: string, amountPaid: number, method: string) => {

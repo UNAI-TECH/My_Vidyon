@@ -122,16 +122,22 @@ CREATE TABLE IF NOT EXISTS public.groups (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   institution_id TEXT REFERENCES public.institutions(institution_id) ON DELETE CASCADE,
   name TEXT NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW())
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()),
+  UNIQUE (institution_id, name)
 );
 
 -- Classes Table
 CREATE TABLE IF NOT EXISTS public.classes (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  institution_id TEXT REFERENCES public.institutions(institution_id) ON DELETE CASCADE,
   group_id UUID REFERENCES public.groups(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   sections TEXT[], -- Array of sections like ['A', 'B']
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW())
+  class_order INTEGER DEFAULT 0,
+  is_final_class BOOLEAN DEFAULT false,
+  academic_year TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()),
+  UNIQUE (institution_id, group_id, name, academic_year)
 );
 
 -- Subjects Table
@@ -143,7 +149,8 @@ CREATE TABLE IF NOT EXISTS public.subjects (
   department TEXT,
   class_name TEXT,
   group_name TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW())
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()),
+  UNIQUE (institution_id, name, class_name)
 );
 
 -- Students Table
@@ -170,11 +177,20 @@ ALTER TABLE public.classes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.subjects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;
 
--- Simple Policies (Allow read for Authenticated, Write for Admin-only would be better but keeping it open for now as requested)
+-- Simple Policies (Allow read for Authenticated)
+DROP POLICY IF EXISTS "Allow read for all auth users" ON public.institutions;
 CREATE POLICY "Allow read for all auth users" ON public.institutions FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "Allow read for all auth users" ON public.groups;
 CREATE POLICY "Allow read for all auth users" ON public.groups FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "Allow read for all auth users" ON public.classes;
 CREATE POLICY "Allow read for all auth users" ON public.classes FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "Allow read for all auth users" ON public.subjects;
 CREATE POLICY "Allow read for all auth users" ON public.subjects FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "Allow read for all auth users" ON public.students;
 CREATE POLICY "Allow read for all auth users" ON public.students FOR SELECT TO authenticated USING (true);
 
 -- Storage Setup (Execute this in Supabase SQL editor to create bucket)

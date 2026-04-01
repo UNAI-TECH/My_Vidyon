@@ -252,7 +252,7 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
             const { data, error } = await supabase
                 .from('subject_materials')
                 .select('*, subjects:subject_id(name), classes:class_id(name)')
-                .eq('uploaded_by', facultyId)
+                .eq('faculty_id', facultyId)
                 .order('created_at', { ascending: false });
 
             if (error) {

@@ -9,7 +9,7 @@ export function useClassStudents(institutionId: string | null, className: string
             
             const { data, error } = await supabase
                 .from('students')
-                .select('id, name, register_number, user_id, image_url')
+                .select('id, name, register_number, profile_id, image_url')
                 .eq('institution_id', institutionId)
                 .eq('class_name', className)
                 .order('name');

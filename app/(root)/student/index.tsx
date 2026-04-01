@@ -165,6 +165,13 @@ export default function StudentDashboard() {
           iconColor="#6366F1"
           change="Next 7 Days"
         />
+        <StatCard 
+          title="Exams" 
+          value={stats.upcomingExams} 
+          icon={ClipboardList} 
+          iconColor="#F87171"
+          change="Schedules"
+        />
       </View>
 
       <View style={styles.chartContainer}>

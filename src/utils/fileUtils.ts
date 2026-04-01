@@ -1,13 +1,14 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import * as Linking from 'expo-linking';
 import { Alert, Platform } from 'react-native';
 
 export const downloadAndShareFile = async (url: string, fileName: string) => {
   try {
+    console.log(`Starting download for: ${fileName}`, url);
     let finalFileName = fileName;
     
-    // If the fileName is generic or doesn't have an extension that matches the URL
-    // try to get the extension from the URL itself
+    // 1. Extension Logic
     const urlExt = url.split('.').pop()?.split('?')[0]?.toLowerCase();
     const hasExtension = fileName.includes('.');
     
@@ -15,7 +16,6 @@ export const downloadAndShareFile = async (url: string, fileName: string) => {
       const fileNameParts = fileName.split('.');
       const currentExt = fileNameParts.length > 1 ? fileNameParts.pop()?.toLowerCase() : null;
       
-      // If no extension or extension is 'pdf' but URL says it's something else
       if (!currentExt || (currentExt === 'pdf' && urlExt !== 'pdf')) {
         const baseName = fileNameParts.join('.');
         finalFileName = `${baseName || fileName.replace('.pdf', '')}.${urlExt}`;
@@ -24,23 +24,40 @@ export const downloadAndShareFile = async (url: string, fileName: string) => {
 
     const fileUri = `${FileSystem.documentDirectory}${finalFileName}`;
     
-    // Download the file
+    // 2. Download the file
     const downloadResult = await FileSystem.downloadAsync(url, fileUri);
     
     if (downloadResult.status !== 200) {
-      throw new Error('Failed to download file');
+      throw new Error(`Server returned status ${downloadResult.status}`);
     }
 
-    // Check if sharing is available
+    // 3. Sharing Logic
     if (!(await Sharing.isAvailableAsync())) {
-      Alert.alert('Error', 'Sharing is not available on this device');
+      Alert.alert('Download Complete', 'File saved but sharing is not available on this device');
       return;
     }
 
-    // Share/Open the file
     await Sharing.shareAsync(downloadResult.uri);
   } catch (error: any) {
-    console.error('Download error:', error);
-    Alert.alert('Error', 'Could not download or open the file');
+    console.error('Download error detail:', error);
+
+    // 4. DNS / Network Fallback: Try opening in browser
+    if (error.message.includes('Unable to resolve host') || error.message.includes('hostname')) {
+      Alert.alert(
+        'Network Error',
+        'Could not connect directly to the server. Would you like to open it in your browser instead?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Open in Browser', 
+            onPress: () => Linking.openURL(url).catch(() => {
+              Alert.alert('Error', 'Could not open the browser.');
+            })
+          }
+        ]
+      );
+    } else {
+      Alert.alert('Error', 'Could not download or open the file. Please check your internet connection.');
+    }
   }
 };

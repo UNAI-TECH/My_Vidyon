@@ -26,7 +26,8 @@
       "package": "com.myvidyon.app",
       "googleServicesFile": "./google-services.json",
       "notification": {
-        "icon": "./assets/notification-icon.png"
+        "icon": "./assets/notification-icon.png",
+        "color": "#000000"
       }
     },
     "web": {

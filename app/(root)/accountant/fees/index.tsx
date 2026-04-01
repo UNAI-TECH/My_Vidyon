@@ -93,11 +93,27 @@ export default function AccountantFeeStructure() {
     try {
       const components = feeComponents.map(c => ({ title: c.title, amount: parseFloat(c.amount) || 0 }));
       
-      // Use the first active fee structure as a parent if none exists, or create a common one
-      // For now, we'll use a placeholder structure ID or the one from the template
-      const structureId = (structures as any[])[0]?.id || 'individual-override';
+      // 1. Dynamic structure resolution
+      let structureId = '';
+      const existing = (structures as any[]).find(s => s.name === newFeeName);
+      
+      if (existing) {
+        structureId = existing.id;
+      } else {
+        // Create a new general structure for this class first
+        const { data: newStruct, error: createError } = await defineFeeStructure(
+          institutionId || '',
+          newFeeName,
+          totalAmount,
+          selectedClass,
+          dueDate,
+          components
+        );
+        if (createError) throw createError;
+        structureId = (newStruct as any).id;
+      }
 
-
+      // 2. Apply override to this specific student
       const { error } = await updateStudentFeeOverride(
         institutionId || '',
         selectedStudent.id,
@@ -190,7 +206,7 @@ export default function AccountantFeeStructure() {
                         style={styles.reminderBtn}
                         onPress={async () => {
                           try {
-                            await sendIndividualReminder(institutionUuid || '', student.id, student.user_id, student.name, 0);
+                            await sendIndividualReminder(institutionUuid || '', student.id, student.profile_id, student.name, 0);
                             showAlert('Sent', `Reminder sent to ${student.name}`, 'success');
                           } catch (e: any) {
                             showAlert('Error', 'Failed to send reminder', 'error');

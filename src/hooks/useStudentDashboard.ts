@@ -17,6 +17,7 @@ export interface StudentDashboardStats {
     attendancePercentage: string;
     averageGrade: string;
     upcomingEvents: number;
+    upcomingExams: number;
     pendingFees: number;
     attendanceTrend: {
         labels: string[];
@@ -185,6 +186,54 @@ export function useStudentDashboard(authUserId?: string, institutionId?: string)
         enabled: !!institutionId,
     });
 
+    // 9. Fetch Upcoming Exams
+    const { data: exams = [], isLoading: isExamsLoading, refetch: refetchExams } = useQuery({
+        queryKey: ['student-exams', studentProfile?.class_name, studentProfile?.section, institutionId],
+        queryFn: async () => {
+            if (!studentProfile?.class_name || !institutionId) return [];
+            
+            // 1. Get Class IDs that might be used (Name or UUID)
+            const { data: classesData } = await supabase
+                .from('classes')
+                .select('id')
+                .eq('institution_id', institutionId)
+                .eq('name', studentProfile.class_name);
+            
+            const classIds = classesData?.map(c => c.id) || [];
+            
+            // 2. Fetch schedules for my class (Match either the Name or the resolved UUID)
+            let query = supabase
+                .from('exam_schedules')
+                .select('*, exam_schedule_entries(*)')
+                .eq('institution_id', institutionId);
+
+            if (classIds.length > 0) {
+                // Match either the name "10th" or the UUID "f47a..."
+                query = query.or(`class_id.eq."${studentProfile.class_name}",class_id.in.(${classIds.map(id => `"${id}"`).join(',')})`);
+            } else {
+                query = query.eq('class_id', studentProfile.class_name);
+            }
+            
+            if (studentProfile.section) {
+                query = query.or(`section.eq."${studentProfile.section}",section.is.null`);
+            }
+
+            const { data: schedules, error } = await query
+                .order('created_at', { ascending: false });
+
+            if (error) {
+                console.error('Error fetching exams:', error);
+                return [];
+            }
+
+            return (schedules as any[] || []).map(s => ({
+                ...s,
+                entries: s.exam_schedule_entries || []
+            }));
+        },
+        enabled: !!studentProfile?.class_name && !!institutionId,
+    });
+
     const stats: StudentDashboardStats = {
         totalAssignments: assignments.length,
         pendingAssignments: (assignments as any[]).filter((a: any) => a.status === 'pending').length,
@@ -195,6 +244,7 @@ export function useStudentDashboard(authUserId?: string, institutionId?: string)
             ? `${Math.round((grades as Grade[]).reduce((acc: number, g: Grade) => acc + (((g.marks || 0) / (g.total_marks || 100)) * 100), 0) / (grades as Grade[]).length)}%` 
             : 'N/A',
         upcomingEvents: eventsCount,
+        upcomingExams: exams.length,
         pendingFees: (fees as Fee[]).reduce((acc: number, f: Fee) => acc + (f.amount_due || 0), 0),
         attendanceTrend: calculateAttendanceTrend(attendanceRecords as Attendance[]),
     };
@@ -319,6 +369,12 @@ export function useStudentDashboard(authUserId?: string, institutionId?: string)
                 table: 'student_fees', 
                 filter: `student_id=eq.${studentId}` 
             }, () => refetchFees())
+            .on('postgres_changes', { 
+                event: '*', 
+                schema: 'public', 
+                table: 'exam_schedules', 
+                filter: `class_id=eq.${studentProfile?.class_name}` 
+            }, () => refetchExams())
             .subscribe();
 
         return () => { channel.unsubscribe(); };
@@ -333,7 +389,8 @@ export function useStudentDashboard(authUserId?: string, institutionId?: string)
         studentProfile,
         certificates,
         materials,
-        isLoading: isProfileLoading || isCertificatesLoading || isMaterialsLoading,
+        exams,
+        isLoading: isProfileLoading || isCertificatesLoading || isMaterialsLoading || isExamsLoading,
     };
 }
 

@@ -54,7 +54,7 @@ function generateUniqueEmail(
 }
 
 export default function AddUserScreen() {
-  const { institutionId } = useAuth();
+  const { institutionId, institutionUuid } = useAuth();
   const router = useRouter();
   const params = useLocalSearchParams();
 
@@ -348,10 +348,31 @@ export default function AddUserScreen() {
       });
     } catch (error: any) {
       console.error('Create user error:', error);
+      
+      let errorMessage = 'Failed to create user';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+        // Try to extract more details from Supabase Functions error
+        if ((error as any).context) {
+          try {
+            const context = (error as any).context;
+            // The context is often a Response object in Supabase Functions
+            if (typeof context.json === 'function') {
+              const body = await context.json();
+              errorMessage = body.error || body.message || JSON.stringify(body);
+            } else if (typeof context.text === 'function') {
+              errorMessage = await context.text();
+            }
+          } catch (e) {
+            console.warn('Failed to parse error context:', e);
+          }
+        }
+      }
+
       setAlertConfig({
         visible: true,
         title: 'Error',
-        message: error.message || 'Failed to create user',
+        message: String(errorMessage),
         buttons: [{ text: 'OK', onPress: () => setAlertConfig(null) }]
       });
     } finally {
@@ -449,9 +470,17 @@ export default function AddUserScreen() {
             }
           });
           if (error) throw error;
+          if (data?.error) throw new Error(data.error);
           return { name, email, password, status: 'success' };
         } catch (err: any) {
-          return { name, email, password, status: 'error', message: err.message };
+          let msg = err.message;
+          if (err.context) {
+            try {
+              const body = await err.context.json();
+              if (body.error) msg = body.error;
+            } catch (e) {}
+          }
+          return { name, email, password, status: 'error', message: msg };
         }
       });
 

@@ -25,37 +25,15 @@ export default function StudentExams() {
   // 1. Get student's class details
   const { studentProfile } = useStudentDashboard(user?.id, institutionId || undefined);
   
-  // 2. Resolve classId from className
-  const { data: classId } = useQuery({
-    queryKey: ['resolve-class-id', studentProfile?.class_name, institutionId],
-    queryFn: async () => {
-      if (!studentProfile?.class_name) return null;
-      
-      // Fetch all classes to perform robust matching (handles JSON names and fuzzy matching)
-      const { data: potentialClasses } = await supabase.from('classes').select('id, name');
-      
-      if (!potentialClasses) return null;
-
-      const classMatch = (potentialClasses as any[]).find(c => {
-         const name = (c.name || '').toLowerCase();
-         const studentClass = studentProfile.class_name.toLowerCase();
-         
-         // Direct Match
-         if (name === studentClass) return true;
-         
-         // Handle JSON string names (common in this DB)
-         try {
-           const parsed = JSON.parse(c.name);
-           if (parsed.name && parsed.name.toLowerCase() === studentClass) return true;
-         } catch (e) {}
-
-         // Semi-fuzzy matches
-         return name.includes(studentClass) || studentClass.includes(name);
-      });
-
-      return (classMatch as any)?.id || null;
-    },
-    enabled: !!studentProfile?.class_name
+  // 2. Fetch schedules for this class using the student's class name and section
+  const { 
+    schedules, 
+    isLoadingSchedules, 
+    fetchEntries 
+  } = useExamTimetable({ 
+      institutionId: institutionId || undefined,
+      classId: studentProfile?.class_name, // DB uses class_id column to store name string
+      section: studentProfile?.section || undefined 
   });
 
   // 2.5 Resolve internal student_id from profiles.id
@@ -66,22 +44,11 @@ export default function StudentExams() {
       const { data } = await supabase
         .from('students')
         .select('id')
-        .eq('profile_id', user.id)
+        .eq('id', user.id) // Corrected: students.id IS the profile.id (auth.uid)
         .maybeSingle();
       return data as { id: string } | null;
     },
     enabled: !!user?.id
-  });
-
-  // 3. Fetch schedules for this class
-  const { 
-    schedules, 
-    isLoadingSchedules, 
-    fetchEntries 
-  } = useExamTimetable({ 
-      institutionId: institutionId || undefined,
-      classId: (classId as any), 
-      section: studentProfile?.section || undefined 
   });
 
   const [selectedExam, setSelectedExam] = useState<any>(null);

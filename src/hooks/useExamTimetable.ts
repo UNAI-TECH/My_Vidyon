@@ -19,23 +19,45 @@ export function useExamTimetable(options: {
     const { data: schedules = [] as ExamSchedule[], isLoading: isLoadingSchedules, refetch: refetchSchedules } = useQuery({
         queryKey: ['exam-schedules', { facultyId, studentId, classId, section, institutionId }],
         queryFn: async () => {
-            let query = supabase.from('exam_schedules').select('*');
+            if (!institutionId) return [];
 
-            if (institutionId) {
-                query = query.eq('institution_id', institutionId);
-            }
+            // 1. Get Class IDs that might be used (Name or UUID)
+            let classIds: string[] = [];
             if (classId) {
-                query = query.eq('class_id', classId);
+                const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(classId);
+                if (!isUUID) {
+                    const { data: classesData } = await supabase
+                        .from('classes')
+                        .select('id')
+                        .eq('institution_id', institutionId)
+                        .eq('name', classId);
+                    classIds = classesData?.map(c => c.id) || [];
+                }
             }
+            
+            // 2. Fetch schedules
+            let query = supabase.from('exam_schedules').select('*');
+            query = query.eq('institution_id', institutionId);
+
+            if (classId) {
+                if (classIds.length > 0) {
+                    // Match either the name "10th" or the UUID "f47a..."
+                    query = query.or(`class_id.eq."${classId}",class_id.in.(${classIds.map(id => `"${id}"`).join(',')})`);
+                } else {
+                    query = query.eq('class_id', classId);
+                }
+            }
+
             if (section) {
-                query = query.or(`section.eq.${section},section.is.null`);
+                // If section is provided, show exams for that specific section OR class-wide exams (null section)
+                query = query.or(`section.eq."${section}",section.is.null`);
             }
 
             const { data, error } = await query.order('created_at', { ascending: false });
             if (error) throw error;
             return data;
         },
-        enabled: !!(institutionId || classId || section),
+        enabled: !!(institutionId && (classId || facultyId || studentId)),
     });
 
     // 2. Fetch Entries for a specific schedule

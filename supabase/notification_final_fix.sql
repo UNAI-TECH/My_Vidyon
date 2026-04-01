@@ -11,26 +11,42 @@
 CREATE OR REPLACE FUNCTION public.on_timetable_change()
 RETURNS TRIGGER AS $$
 BEGIN
-    -- 1. Notify Faculty
+    -- 1. Notify Faculty (if assigned and not already notified in last 60s)
     IF NEW.faculty_id IS NOT NULL THEN
-        INSERT INTO public.notifications (user_id, title, message, type, action_url)
-        VALUES (
-            NEW.faculty_id,
-            'Timetable Update',
-            'Your timetable for ' || NEW.day_of_week || ' at ' || NEW.start_time || ' has been updated.',
-            'timetable',
-            '/(root)/faculty/timetable/index'
-        );
+        IF NOT EXISTS (
+            SELECT 1 FROM public.notifications 
+            WHERE user_id = NEW.faculty_id 
+            AND type = 'timetable'
+            AND title = 'Timetable Update'
+            AND created_at > (NOW() - INTERVAL '1 minute')
+        ) THEN
+            INSERT INTO public.notifications (user_id, title, message, type, action_url)
+            VALUES (
+                NEW.faculty_id,
+                'Timetable Update',
+                'Your timetable for ' || NEW.day_of_week || ' at ' || NEW.start_time || ' has been updated.',
+                'timetable',
+                '/(root)/faculty/timetable/index'
+            );
+        END IF;
     END IF;
     
-    -- 2. Notify All Students in the Class (Robust Join)
+    -- 2. Notify All Students in the Class (if not already notified in last 60s)
     INSERT INTO public.notifications (user_id, title, message, type, action_url)
     SELECT s.id, 'Timetable Updated', 
            'Your timetable for ' || NEW.day_of_week || ' has been updated. Check the new schedule.', 
            'timetable', 
            '/(root)/student/timetable/index'
     FROM public.students s
-    WHERE s.class_id = NEW.class_id;
+    JOIN public.classes c ON s.class_name = c.name AND (s.section = ANY(c.sections) OR s.section IS NULL)
+    WHERE c.id = NEW.class_id
+    AND NOT EXISTS (
+        SELECT 1 FROM public.notifications n
+        WHERE n.user_id = s.id 
+        AND n.type = 'timetable'
+        AND n.title = 'Timetable Updated'
+        AND n.created_at > (NOW() - INTERVAL '1 minute')
+    );
     
     RETURN NEW;
 END;

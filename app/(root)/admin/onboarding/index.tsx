@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, Image, Modal } from 'react-native';
 import { theme } from '../../../../src/theme';
+
+const isValidUUID = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 import { PageHeader } from '../../../../src/components/common/PageHeader';
 import { 
   Building2, 
@@ -17,7 +19,8 @@ import {
   School,
   X,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Pencil
 } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { supabase } from '../../../../src/lib/supabase';
@@ -83,6 +86,7 @@ export default function InstitutionOnboarding() {
   });
   const [credentialsVerified, setCredentialsVerified] = useState(false);
   const [showSecurityFields, setShowSecurityFields] = useState(false);
+  const [unlockedIds, setUnlockedIds] = useState<Set<string>>(new Set());
 
   const [structure, setStructure] = useState<any[]>([]);
 
@@ -713,10 +717,11 @@ export default function InstitutionOnboarding() {
             <View key={group.id} style={{ backgroundColor: 'white', borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', overflow: 'hidden' }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, backgroundColor: '#F8FAFC', borderBottomWidth: 1, borderBottomColor: '#E2E8F0' }}>
                 <TextInput
-                  style={{ flex: 1, backgroundColor: '#F1F5F9', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, fontWeight: '600' }}
+                  style={{ flex: 1, backgroundColor: '#F1F5F9', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, fontWeight: '600', color: theme.colors.text }}
                   value={group.name}
                   onChangeText={(v: string) => updateGroup(group.id, v)}
-                  placeholder="Group name (e.g., Primary)"
+                  placeholder="Enter Group Name (e.g. Primary)"
+                  placeholderTextColor="#94A3B8"
                 />
                 <TouchableOpacity style={{ backgroundColor: '#FDE68A', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 6 }} onPress={() => addClass(group.id)}>
                   <Plus size={16} color="#B45309" />
@@ -729,70 +734,112 @@ export default function InstitutionOnboarding() {
 
               <View style={{ padding: 16, gap: 16 }}>
                 {group.classes.map((classItem: any) => (
-                  <View key={classItem.id} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
-                    <View style={{ flex: 1, flexDirection: 'row', gap: 8 }}>
-                      <TextInput
-                        style={{ flex: 2, backgroundColor: '#F1F5F9', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, fontWeight: '500' }}
-                        value={classItem.name}
-                        onChangeText={(v: string) => updateClass(group.id, classItem.id, v)}
-                        placeholder="Class name"
-                      />
-                      <TextInput
-                        style={{ flex: 1, backgroundColor: '#F1F5F9', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, textAlign: 'center' }}
-                        value={classItem.class_order?.toString() || ''}
-                        onChangeText={(v: string) => updateClassOrder(group.id, classItem.id, v)}
-                        placeholder="Order (e.g. 1)"
-                        keyboardType="numeric"
-                      />
+                  <View key={classItem.id} style={{ backgroundColor: '#F8FAFC', padding: 12, borderRadius: 12, marginBottom: 12 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                      {(!isEditMode || !isValidUUID(classItem.id) || unlockedIds.has(classItem.id)) ? (
+                        <>
+                          <TextInput
+                            style={{ flex: 3, backgroundColor: 'white', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10, fontWeight: '500', color: theme.colors.text, borderWidth: 1, borderColor: '#E2E8F0' }}
+                            value={classItem.name}
+                            onChangeText={(v: string) => updateClass(group.id, classItem.id, v)}
+                            placeholder="Class Name (e.g. Class 1)"
+                            placeholderTextColor="#94A3B8"
+                          />
+                          <TextInput
+                            style={{ flex: 1, backgroundColor: 'white', paddingHorizontal: 10, paddingVertical: 10, borderRadius: 10, textAlign: 'center', borderWidth: 1, borderColor: '#E2E8F0' }}
+                            value={classItem.class_order?.toString() || ''}
+                            onChangeText={(v: string) => updateClassOrder(group.id, classItem.id, v)}
+                            placeholder="Order"
+                            keyboardType="numeric"
+                            placeholderTextColor="#94A3B8"
+                          />
+                        </>
+                      ) : (
+                        <View style={{ flex: 4, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F1F5F9', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                          <Text style={{ fontWeight: '600', color: theme.colors.text }}>{classItem.name}</Text>
+                          <TouchableOpacity 
+                            onPress={() => {
+                              const next = new Set(unlockedIds);
+                              next.add(classItem.id);
+                              setUnlockedIds(next);
+                            }}
+                          >
+                            <Pencil size={16} color={theme.colors.primary} />
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                      <TouchableOpacity style={{ padding: 8 }} onPress={() => removeClass(group.id, classItem.id)}>
+                        <Trash2 size={18} color="#EF4444" />
+                      </TouchableOpacity>
+                    </View>
+
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                       <TouchableOpacity 
-                        style={{ backgroundColor: classItem.is_final_class ? '#10B981' : '#F1F5F9', paddingHorizontal: 10, borderRadius: 8, justifyContent: 'center', alignItems: 'center' }}
+                        style={{ 
+                          backgroundColor: classItem.is_final_class ? '#10B981' : '#E2E8F0', 
+                          paddingHorizontal: 12, 
+                          paddingVertical: 8, 
+                          borderRadius: 8,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 6
+                        }}
                         onPress={() => toggleFinalClass(group.id, classItem.id)}
                       >
-                        <Text style={{ fontSize: 10, fontWeight: 'bold', color: classItem.is_final_class ? 'white' : theme.colors.textMuted }}>
+                        {classItem.is_final_class && <Check size={14} color="white" />}
+                        <Text style={{ fontSize: 11, fontWeight: 'bold', color: classItem.is_final_class ? 'white' : theme.colors.text }}>
                           {classItem.is_final_class ? 'FINAL CLASS' : 'Mark Final'}
                         </Text>
                       </TouchableOpacity>
+                      
+                      <Text style={{ fontSize: 11, color: theme.colors.textMuted, fontWeight: '600' }}>SECTIONS:</Text>
                     </View>
-                    <View style={{ flex: 1 }}>
-                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
-                        {classItem.sections.map((section: string) => (
-                          <View key={section} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FEF3C7', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 }}>
-                            <Text style={{ color: '#B45309', fontSize: 13, fontWeight: '500' }}>Section {section}</Text>
-                            <TouchableOpacity onPress={() => removeSection(group.id, classItem.id, section)}>
-                              <X size={12} color="#B45309" />
-                            </TouchableOpacity>
-                          </View>
-                        ))}
-                      </View>
-                      <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
-                        {['A', 'B', 'C', 'D', 'E'].map((section) => (
-                          <TouchableOpacity
-                            key={section}
-                            style={{ backgroundColor: classItem.sections.includes(section) ? '#E2E8F0' : '#F1F5F9', width: 32, height: 32, borderRadius: 6, justifyContent: 'center', alignItems: 'center', opacity: classItem.sections.includes(section) ? 0.5 : 1 }}
-                            onPress={() => !classItem.sections.includes(section) && addSection(group.id, classItem.id, section)}
-                            disabled={classItem.sections.includes(section)}
-                          >
-                            <Text style={{ fontWeight: '500', color: theme.colors.text }}>{section}</Text>
+
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                      {classItem.sections.map((section: string) => (
+                        <View key={section} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FEF3C7', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}>
+                          <Text style={{ color: '#B45309', fontSize: 12, fontWeight: '600' }}>{section}</Text>
+                          <TouchableOpacity onPress={() => removeSection(group.id, classItem.id, section)}>
+                            <X size={14} color="#B45309" />
                           </TouchableOpacity>
-                        ))}
-                        <TextInput
-                          style={{ backgroundColor: '#F1F5F9', paddingHorizontal: 10, paddingVertical: 0, height: 32, borderRadius: 6, fontSize: 13, flex: 1, minWidth: 80 }}
-                          placeholder="Extra sec"
-                          value={extraSectionInput[classItem.id] || ''}
-                          onChangeText={(v: string) => setExtraSectionInput({ ...extraSectionInput, [classItem.id]: v })}
-                          onSubmitEditing={(e) => {
-                            const val = e.nativeEvent.text.trim();
-                            if (val && !classItem.sections.includes(val)) {
-                              addSection(group.id, classItem.id, val);
-                              setExtraSectionInput({ ...extraSectionInput, [classItem.id]: '' });
-                            }
-                          }}
-                        />
-                      </View>
+                        </View>
+                      ))}
                     </View>
-                    <TouchableOpacity style={{ padding: 8 }} onPress={() => removeClass(group.id, classItem.id)}>
-                      <Trash2 size={16} color={theme.colors.textMuted} />
-                    </TouchableOpacity>
+
+                    <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
+                      {['A', 'B', 'C', 'D', 'E'].map((section) => (
+                        <TouchableOpacity
+                          key={section}
+                          style={{ 
+                            backgroundColor: classItem.sections.includes(section) ? '#CBD5E1' : 'white', 
+                            width: 36, 
+                            height: 36, 
+                            borderRadius: 8, 
+                            justifyContent: 'center', 
+                            alignItems: 'center', 
+                            borderWidth: 1, 
+                            borderColor: '#E2E8F0'
+                          }}
+                          onPress={() => !classItem.sections.includes(section) && addSection(group.id, classItem.id, section)}
+                          disabled={classItem.sections.includes(section)}
+                        >
+                          <Text style={{ fontWeight: '600', color: classItem.sections.includes(section) ? 'white' : theme.colors.text }}>{section}</Text>
+                        </TouchableOpacity>
+                      ))}
+                      <TextInput
+                        style={{ backgroundColor: 'white', paddingHorizontal: 12, height: 36, borderRadius: 8, fontSize: 12, flex: 1, minWidth: 100, borderWidth: 1, borderColor: '#E2E8F0' }}
+                        placeholder="Add custom..."
+                        value={extraSectionInput[classItem.id] || ''}
+                        onChangeText={(v: string) => setExtraSectionInput({ ...extraSectionInput, [classItem.id]: v })}
+                        onSubmitEditing={(e) => {
+                          const val = e.nativeEvent.text.trim();
+                          if (val && !classItem.sections.includes(val)) {
+                            addSection(group.id, classItem.id, val);
+                            setExtraSectionInput({ ...extraSectionInput, [classItem.id]: '' });
+                          }
+                        }}
+                      />
+                    </View>
                   </View>
                 ))}
               </View>
@@ -1040,7 +1087,29 @@ export default function InstitutionOnboarding() {
                 <View style={{ padding: 16, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                   {classSubjects.map(subject => (
                     <View key={subject.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#F1F5F9', paddingLeft: 12, paddingRight: 4, paddingVertical: 6, borderRadius: 100, borderWidth: 1, borderColor: '#E2E8F0' }}>
-                      <Text style={{ fontWeight: '500', fontSize: 13 }}>{subject.name}</Text>
+                      {(!isEditMode || !isValidUUID(subject.id) || unlockedIds.has(subject.id)) ? (
+                        <TextInput
+                          style={{ fontWeight: '500', fontSize: 13, minWidth: 60, padding: 0 }}
+                          value={subject.name}
+                          autoFocus={unlockedIds.has(subject.id)}
+                          onChangeText={(v) => {
+                            const next = subjects.map(s => s.id === subject.id ? { ...s, name: v } : s);
+                            setSubjects(next);
+                          }}
+                        />
+                      ) : (
+                        <TouchableOpacity 
+                          style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
+                          onPress={() => {
+                            const next = new Set(unlockedIds);
+                            next.add(subject.id);
+                            setUnlockedIds(next);
+                          }}
+                        >
+                          <Text style={{ fontWeight: '500', fontSize: 13 }}>{subject.name}</Text>
+                          <Pencil size={12} color={theme.colors.textMuted} />
+                        </TouchableOpacity>
+                      )}
                       <TouchableOpacity 
                         style={{ padding: 6 }}
                         onPress={() => removeSubject(subject.id)}
@@ -1205,28 +1274,32 @@ export default function InstitutionOnboarding() {
         if (structure.length === 0) return showAlert('Empty', 'Add some structure first.', 'warning');
         
         for (const group of structure) {
-          let gId = group.id;
-          if (!gId || String(gId).startsWith('temp')) {
-            const { data, error } = await (supabase.from('groups') as any)
-              .insert([{ name: group.name, institution_id: basicInfo.school_code }])
-              .select().single();
-            if (error) throw error;
-            gId = data.id;
-          }
+          const { data: gData, error: gError } = await (supabase.from('groups') as any)
+            .upsert([{ name: group.name, institution_id: basicInfo.school_code }], { onConflict: 'institution_id,name' })
+            .select().single();
+          if (gError) throw gError;
+          const gId = gData.id;
 
-          const classesToUpsert = group.classes.map((c: any) => ({
-            id: (c.id && !String(c.id).startsWith('temp')) ? c.id : undefined,
-            group_id: gId,
-            name: c.name,
-            sections: c.sections,
-            class_order: c.class_order,
-            is_final_class: c.is_final_class,
-            academic_year: basicInfo.academic_year,
-            institution_id: basicInfo.school_code
-          }));
+          const classesToUpsert = group.classes.map((c: any) => {
+            const classObj: any = {
+              group_id: gId,
+              name: c.name,
+              sections: c.sections,
+              class_order: c.class_order || 0,
+              is_final_class: c.is_final_class || false,
+              academic_year: basicInfo.academic_year,
+              institution_id: basicInfo.school_code
+            };
+            
+            if (c.id && isValidUUID(c.id)) {
+              classObj.id = c.id;
+            }
+            
+            return classObj;
+          });
 
           const { error: cError } = await (supabase.from('classes') as any).upsert(classesToUpsert, { 
-            onConflict: 'id' // Prefer ID for update, natural key as fallback if no ID
+            onConflict: 'institution_id,group_id,name,academic_year'
           });
           if (cError) throw cError;
         }
@@ -1237,17 +1310,24 @@ export default function InstitutionOnboarding() {
         // Partial Save: Subjects
         if (subjects.length === 0) return showAlert('Empty', 'Add some subjects first.', 'warning');
         
-        const subjectsToUpsert = subjects.map(sub => ({
-          id: (sub.id && !String(sub.id).startsWith('temp')) ? sub.id : undefined,
-          institution_id: basicInfo.school_code,
-          name: sub.name,
-          code: sub.code || '',
-          class_name: sub.className,
-          group_name: sub.group || 'Core'
-        }));
+        const subjectsToUpsert = subjects.map(sub => {
+          const subObj: any = {
+            institution_id: basicInfo.school_code,
+            name: sub.name,
+            code: sub.code || '',
+            class_name: sub.className,
+            group_name: sub.group || 'Core'
+          };
+          
+          if (sub.id && isValidUUID(String(sub.id))) {
+            subObj.id = sub.id;
+          }
+          
+          return subObj;
+        });
         
         const { error } = await (supabase.from('subjects') as any).upsert(subjectsToUpsert, {
-          onConflict: 'id'
+          onConflict: 'institution_id,name,class_name'
         });
         if (error) throw error;
         showAlert('Saved', 'Subjects updated successfully.', 'success');
@@ -1371,32 +1451,17 @@ export default function InstitutionOnboarding() {
       // 4. Setup Structure (Skip in security mode)
       if (!isSecurityMode && structure.length > 0) {
         for (const group of structure) {
-          // Check if group exists
-          let gId = '';
-          const { data: existingGroup } = await supabase
-            .from('groups')
-            .select('id')
-            .eq('institution_id', basicInfo.school_code)
-            .eq('name', group.name)
-            .maybeSingle() as { data: { id: string } | null };
-
-          if (existingGroup) {
-            gId = (existingGroup as any).id;
-          } else {
-            const { data: gData, error: gError } = await (supabase
-              .from('groups') as any)
-              .insert([{ name: group.name, institution_id: basicInfo.school_code }])
-              .select()
-              .single();
-            if (gError) throw gError;
-            gId = gData.id;
-          }
+          const { data: gData, error: gError } = await (supabase.from('groups') as any)
+            .upsert([{ name: group.name, institution_id: basicInfo.school_code }], { onConflict: 'institution_id,name' })
+            .select().single();
+          
+          if (gError) throw gError;
+          const gId = gData.id;
             
           if (gId) {
             const classesToUpsert = group.classes.map((c: { id?: string, name: string, sections?: string[], class_order?: number, is_final_class?: boolean }) => {
               const className = typeof c === 'string' ? c : c.name;
-              return {
-                id: (c.id && !String(c.id).startsWith('temp')) ? c.id : undefined,
+              const classObj: any = {
                 group_id: gId,
                 name: className,
                 sections: c.sections || ['A', 'B'],
@@ -1405,11 +1470,17 @@ export default function InstitutionOnboarding() {
                 academic_year: basicInfo.academic_year,
                 institution_id: basicInfo.school_code
               };
+              
+              if (c.id && isValidUUID(String(c.id))) {
+                classObj.id = c.id;
+              }
+              
+              return classObj;
             }).filter((c: { name: string }) => c.name);
 
             if (classesToUpsert.length > 0) {
               const { error: cError } = await (supabase.from('classes') as any).upsert(classesToUpsert, { 
-                onConflict: 'id' 
+                onConflict: 'institution_id,group_id,name,academic_year' 
               });
               if (cError) throw cError;
             }
@@ -1419,18 +1490,25 @@ export default function InstitutionOnboarding() {
       
       // 5. Setup Subjects (Skip in security mode)
       if (!isSecurityMode && subjects.length > 0) {
-        const subjectsToUpsert = subjects.map(sub => ({
-          id: (sub.id && !String(sub.id).startsWith('temp')) ? sub.id : undefined,
-          institution_id: basicInfo.school_code,
-          name: sub.name,
-          code: sub.code || '',
-          class_name: sub.className,
-          group_name: sub.group || 'Core'
-        }));
+        const subjectsToUpsert = subjects.map(sub => {
+          const subObj: any = {
+            institution_id: basicInfo.school_code,
+            name: sub.name,
+            code: sub.code || '',
+            class_name: sub.className,
+            group_name: sub.group || 'Core'
+          };
+          
+          if (sub.id && isValidUUID(String(sub.id))) {
+            subObj.id = sub.id;
+          }
+          
+          return subObj;
+        });
         
-        // Upsert by ID for updates, natural key is fallback
+        // Upsert by natural key to prevent duplicates
         await (supabase.from('subjects') as any).upsert(subjectsToUpsert, {
-          onConflict: 'id'
+          onConflict: 'institution_id,name,class_name'
         });
       }
       
