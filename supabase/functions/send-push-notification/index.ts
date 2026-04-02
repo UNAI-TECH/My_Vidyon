@@ -111,16 +111,24 @@ serve(async (req: Request) => {
         const serviceAccount = JSON.parse(serviceAccountJson)
         const payload = await req.json()
         
-        let userId, title, body, action_url, notification_id
+        let userId: string | undefined
+        let title: string | undefined
+        let body: string | undefined
+        let action_url: string | undefined
+        let notification_id: string | undefined
+        let source = 'unknown'
 
-        // Webhook Format vs Direct Post Format
+        // Webhook Format (from Supabase Dashboard Database Webhook)
         if (payload.type === 'INSERT' && payload.record) {
+            source = 'webhook'
             userId = payload.record.user_id
             title = payload.record.title
             body = payload.record.message
             action_url = payload.record.action_url
             notification_id = payload.record.id
         } else {
+            // Direct Post Format (from SQL trigger via pg_net)
+            source = 'trigger'
             userId = payload.userId
             title = payload.title
             body = payload.body
@@ -128,10 +136,12 @@ serve(async (req: Request) => {
             notification_id = payload.data?.notification_id
         }
 
+        console.log(`[Push] Invoked via: ${source}, notification_id: ${notification_id}, user: ${userId}`)
+
         const data = { action_url, notification_id }
 
         if (!userId || !title || !body) {
-            console.error('Missing fields in payload', payload)
+            console.error('[Push] Missing fields in payload', payload)
             return new Response(
                 JSON.stringify({ error: 'Missing required fields: userId, title, body' }),
                 { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -144,6 +154,31 @@ serve(async (req: Request) => {
             Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
         )
 
+        // ── IDEMPOTENCY CHECK ──
+        // If we have a notification_id, check if it was already pushed.
+        // This prevents double-sends if both a webhook AND a trigger fire.
+        if (notification_id) {
+            const { data: existing } = await supabase
+                .from('notifications')
+                .select('pushed_at')
+                .eq('id', notification_id)
+                .maybeSingle()
+
+            if (existing?.pushed_at) {
+                console.log(`[Push] SKIPPED — notification ${notification_id} already pushed at ${existing.pushed_at}`)
+                return new Response(
+                    JSON.stringify({ success: true, skipped: true, reason: 'already_pushed' }),
+                    { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                )
+            }
+
+            // Mark as pushed NOW to prevent any concurrent invocation
+            await supabase
+                .from('notifications')
+                .update({ pushed_at: new Date().toISOString() })
+                .eq('id', notification_id)
+        }
+
         // Get user's FCM tokens
         const { data: tokens, error: tokensError } = await supabase
             .from('user_push_tokens')
@@ -151,20 +186,27 @@ serve(async (req: Request) => {
             .eq('user_id', userId)
 
         if (tokensError || !tokens || tokens.length === 0) {
+            console.log(`[Push] No device tokens found for user ${userId}`)
             return new Response(
                 JSON.stringify({ success: false, message: 'No device tokens found' }),
                 { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
             )
         }
 
-        console.log(`Sending push to ${tokens.length} device(s)`)
+        // ── DEDUPLICATE TOKENS ──
+        // Even with DB constraints, guard against sending to the same FCM token twice
+        const uniqueTokens = tokens.filter(
+            (t: any, i: number, arr: any[]) => arr.findIndex((x: any) => x.fcm_token === t.fcm_token) === i
+        )
+
+        console.log(`[Push] Sending to ${uniqueTokens.length} unique device(s) (${tokens.length} raw tokens)`)
 
         // Get Firebase access token
         const accessToken = await getFirebaseAccessToken(serviceAccount)
 
         // Send to each device using FCM V1 API
         const results = await Promise.allSettled(
-            tokens.map(async (tokenRecord: { fcm_token: string, platform: string }) => {
+            uniqueTokens.map(async (tokenRecord: { fcm_token: string, platform: string }) => {
                 const fcmPayload = {
                     message: {
                         token: tokenRecord.fcm_token,
@@ -178,11 +220,11 @@ serve(async (req: Request) => {
                             originalBody: body,
                         },
                         android: {
-                            priority: 'high',
+                            priority: 'high' as const,
                             notification: {
                                 channel_id: 'default',
                                 sound: 'default',
-                                visibility: 'public',
+                                visibility: 'public' as const,
                                 sticky: false,
                                 local_only: false,
                                 default_vibrate_timings: true,
@@ -206,12 +248,11 @@ serve(async (req: Request) => {
 
                 const result = await response.json()
 
-                // Detailed logging for each attempt
-                console.log(`FCM Result for token ${tokenRecord.fcm_token.substring(0, 10)}...:`, JSON.stringify(result))
+                console.log(`[Push] FCM result for ${tokenRecord.fcm_token.substring(0, 10)}...: ${response.status}`)
 
                 // Remove invalid tokens
                 if (response.status === 404 || result.error?.status === 'NOT_FOUND' || result.error?.details?.[0]?.errorCode === 'UNREGISTERED') {
-                    console.log('Removing invalid/unregistered token:', tokenRecord.fcm_token)
+                    console.log('[Push] Removing invalid/unregistered token:', tokenRecord.fcm_token)
                     await supabase
                         .from('user_push_tokens')
                         .delete()
@@ -230,6 +271,8 @@ serve(async (req: Request) => {
             r.status === 'fulfilled' && r.value.success
         ).length
 
+        console.log(`[Push] Done. Sent: ${successCount}/${results.length}`)
+
         return new Response(
             JSON.stringify({
                 success: true,
@@ -241,7 +284,7 @@ serve(async (req: Request) => {
         )
 
     } catch (error: any) {
-        console.error('Push notification error:', error)
+        console.error('[Push] Error:', error)
         return new Response(
             JSON.stringify({ error: error.message }),
             { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

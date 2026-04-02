@@ -119,8 +119,6 @@ export default function StudentTimetable() {
                     </View>
                   </View>
                 </View>
-                
-                <ChevronRight size={18} color={theme.colors.textMuted} {...({} as any)} />
               </View>
             ))
           )}

@@ -52,11 +52,8 @@ Deno.serve(async (req: Request) => {
         };
         const finalRole = normalizeRole(role);
 
-        // Validate password length (Supabase requires 6 chars)
+        // Use provided password or fallback to institution code
         let finalPassword = password || institution_id;
-        if (finalPassword.length < 6) {
-            finalPassword = finalPassword.padEnd(6, '0');
-        }
         const forcePasswordChange = !password;
 
         console.log(`Processing user: ${email.toLowerCase()}, role: ${finalRole}`);
@@ -74,7 +71,7 @@ Deno.serve(async (req: Request) => {
         let authUserDetails: any = null;
 
         if (!userId) {
-            console.log("User not found in profiles, creating new auth user...");
+            console.log("User not found in mapping profiles, creating new auth user...");
             const { data: newAuthUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
                 email: email.toLowerCase(),
                 password: finalPassword,
@@ -88,13 +85,38 @@ Deno.serve(async (req: Request) => {
             })
 
             if (authError) {
-                console.error("Auth creation failed:", authError);
-                throw authError;
+                // Crucial Recovery logic: If user exists in Auth but not in Profiles
+                if (authError.message.includes('already registered')) {
+                    console.log("User exists in Auth but not Profile. Attempting recovery...");
+                    // Try to update the user to ensure metadata is correct
+                    const { data: updateData, error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
+                        // We need the ID. Since we don't have it, we have to list or search.
+                        // For efficiency, we will try to get the ID from a special admin query if possible.
+                        // Fallback: list users and find by email (Admin only)
+                        (await supabaseAdmin.auth.admin.listUsers()).data.users.find(u => u.email === email.toLowerCase())?.id as string,
+                        {
+                            user_metadata: {
+                                role: finalRole,
+                                institution_id
+                            }
+                        }
+                    );
+                    
+                    if (updateError || !updateData.user) {
+                         console.error("Auth recovery failed:", updateError);
+                         throw new Error(`User exists in Auth system but could not be recovered/updated: ${updateError?.message || 'ID not found'}`);
+                    }
+                    userId = updateData.user.id;
+                    authUserDetails = updateData.user;
+                } else {
+                    console.error("Auth creation failed:", authError);
+                    throw authError;
+                }
+            } else {
+                userId = newAuthUser.user.id;
+                authUserDetails = newAuthUser.user;
+                console.log("Auth user created successfully:", userId);
             }
-
-            userId = newAuthUser.user.id;
-            authUserDetails = newAuthUser.user;
-            console.log("Auth user created successfully:", userId);
         } else {
             console.log("Existing user found with ID:", userId);
             // Construct a user object that mimics the auth response enough for the frontend

@@ -1,8 +1,9 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, FlatList } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, FlatList, ActivityIndicator } from 'react-native';
 import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
 import { useAuth } from '../../../../src/hooks/useAuth';
+import { useAccountantTransactions } from '../../../../src/hooks/useAccountantTransactions';
 import { 
   CreditCard, 
   ArrowUpRight, 
@@ -12,11 +13,8 @@ import {
 } from 'lucide-react-native';
 
 export default function AccountantTransactions() {
-  const transactions = [
-    { id: '1', type: 'credit', name: 'Rahul N.', amount: '₹12,400', method: 'Online', status: 'verified', date: 'Mar 10' },
-    { id: '2', type: 'credit', name: 'Priya K.', amount: '₹1,200', method: 'Cash', status: 'pending', date: 'Mar 09' },
-    { id: '3', type: 'debit', name: 'Electricity Bill', amount: '₹8,500', method: 'RTGS', status: 'verified', date: 'Mar 08' },
-  ];
+  const { institutionId } = useAuth();
+  const { transactions, isLoading } = useAccountantTransactions(institutionId || undefined);
 
   return (
     <View style={styles.container}>
@@ -33,33 +31,42 @@ export default function AccountantTransactions() {
         </TouchableOpacity>
       </View>
 
-      <FlatList
-        data={transactions}
-        keyExtractor={item => item.id}
-        contentContainerStyle={styles.list}
-        renderItem={({ item }) => (
-          <View style={styles.card}>
-            <View style={[styles.iconBox, { backgroundColor: item.type === 'credit' ? '#ECFDF5' : '#FEF2F2' }]}>
-              {item.type === 'credit' ? (
+      {isLoading ? (
+        <ActivityIndicator color={theme.colors.primary} style={{ marginTop: 40 }} />
+      ) : transactions.length > 0 ? (
+        <FlatList
+          data={transactions}
+          keyExtractor={item => item.id}
+          contentContainerStyle={styles.list}
+          renderItem={({ item }) => (
+            <View style={styles.card}>
+              <View style={[styles.iconBox, { backgroundColor: '#ECFDF5' }]}>
+                {/* Assuming mostly credits for fees */}
                 <ArrowDownLeft size={20} color="#10B981" {...({} as any)} />
-              ) : (
-                <ArrowUpRight size={20} color="#EF4444" {...({} as any)} />
-              )}
-            </View>
-            <View style={styles.content}>
-              <Text style={styles.name}>{item.name}</Text>
-              <Text style={styles.meta}>{item.date} • {item.method}</Text>
-            </View>
-            <View style={styles.amountBox}>
-              <Text style={[styles.amount, { color: item.type === 'credit' ? '#10B981' : '#EF4444' }]}>{item.amount}</Text>
-              <View style={styles.statusRow}>
-                <Clock size={10} color={item.status === 'verified' ? '#10B981' : '#F59E0B'} {...({} as any)} />
-                <Text style={[styles.statusText, { color: item.status === 'verified' ? '#10B981' : '#F59E0B' }]}>{item.status.toUpperCase()}</Text>
+              </View>
+              <View style={styles.content}>
+                <Text style={styles.name}>{item.students?.name || 'Student'}</Text>
+                <Text style={styles.meta}>
+                  {new Date(item.payment_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} • Online
+                </Text>
+              </View>
+              <View style={styles.amountBox}>
+                <Text style={[styles.amount, { color: '#10B981' }]}>₹{item.amount_paid?.toLocaleString()}</Text>
+                <View style={styles.statusRow}>
+                  <Clock size={10} color={item.status === 'verified' || item.status === 'paid' ? '#10B981' : '#F59E0B'} {...({} as any)} />
+                  <Text style={[styles.statusText, { color: item.status === 'verified' || item.status === 'paid' ? '#10B981' : '#F59E0B' }]}>
+                    {(item.status || 'verified').toUpperCase()}
+                  </Text>
+                </View>
               </View>
             </View>
-          </View>
-        )}
-      />
+          )}
+        />
+      ) : (
+        <View style={{ alignItems: 'center', marginTop: 40 }}>
+          <Text style={{ color: theme.colors.textMuted }}>No transactions found.</Text>
+        </View>
+      )}
     </View>
   );
 }

@@ -145,10 +145,35 @@ export default function AccountantDashboard() {
 
       <AdBanner type="ACCOUNTANT" />
 
-      <TouchableOpacity style={styles.actionButton}>
-        <Download size={20} color="white" {...({} as any)} />
-        <Text style={styles.actionButtonText}>Generate Daily Collection Report</Text>
-      </TouchableOpacity>
+      <View style={styles.actionRow}>
+        <TouchableOpacity 
+          style={[styles.actionButton, { flex: 1, backgroundColor: '#F97316' }]}
+          onPress={() => {
+            import('../../../src/utils/reportGenerator').then(({ generateDailyCollectionReport }) => {
+              if (institutionId) {
+                  generateDailyCollectionReport(institutionId, institution?.name, institution?.logo_url);
+              }
+            });
+          }}
+        >
+          <Download size={18} color="white" {...({} as any)} />
+          <Text style={styles.actionButtonText}>Daily Report</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={[styles.actionButton, { flex: 1, backgroundColor: theme.colors.primary }]}
+          onPress={() => {
+            import('../../../src/utils/reportGenerator').then(({ generateFinancialReport }) => {
+              if (stats) {
+                  generateFinancialReport(stats, institution?.name, institution?.logo_url);
+              }
+            });
+          }}
+        >
+          <FileText size={18} color="white" {...({} as any)} />
+          <Text style={styles.actionButtonText}>Financial Summary</Text>
+        </TouchableOpacity>
+      </View>
     </ScrollView>
   );
 }
@@ -166,8 +191,9 @@ const styles = StyleSheet.create({
   transTitle: { fontSize: 14, fontWeight: 'bold', color: theme.colors.text },
   transDate: { fontSize: 11, color: theme.colors.textMuted, marginTop: 2 },
   transAmount: { fontSize: 15, fontWeight: 'bold', color: '#10B981' },
-  actionButton: { backgroundColor: theme.colors.primary, borderRadius: 16, padding: 18, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10, marginTop: 16 },
-  actionButtonText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
+  actionRow: { flexDirection: 'row', gap: 12, marginTop: 16 },
+  actionButton: { borderRadius: 16, padding: 18, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10 },
+  actionButtonText: { color: 'white', fontWeight: 'bold', fontSize: 13 },
   chartCard: { backgroundColor: 'white', borderRadius: 24, padding: 20, marginBottom: 24, borderWidth: 1, borderColor: '#F1F5F9' },
   chartTitle: { fontSize: 14, fontWeight: 'bold', color: theme.colors.text },
   liveBadge: { backgroundColor: '#10B98115', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, flexDirection: 'row', alignItems: 'center', gap: 4 },

@@ -329,9 +329,7 @@ export default function LoginScreen() {
             )}
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.forgotBtn}>
-            <Text style={styles.forgotText}>Forgot Password?</Text>
-          </TouchableOpacity>
+
         </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -514,14 +512,7 @@ const styles = StyleSheet.create({
     fontSize: 18, 
     fontWeight: 'bold' 
   },
-  forgotBtn: {
-    marginTop: 24,
-  },
-  forgotText: {
-    color: theme.colors.textMuted,
-    fontSize: 14,
-    fontWeight: '500',
-  },
+
   errorText: { 
     color: '#ef4444', 
     marginBottom: 20, 

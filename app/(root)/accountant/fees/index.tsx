@@ -18,6 +18,7 @@ import { useInstitutionClasses } from '../../../../src/hooks/useInstitutionClass
 import { useClassStudents } from '../../../../src/hooks/useClassStudents';
 import { useFeeStructures } from '../../../../src/hooks/useFeeStructures';
 import { useFeeWorkflow } from '../../../../src/hooks/useFeeWorkflow';
+import { useClassFeeStatus } from '../../../../src/hooks/useClassFeeStatus';
 import { 
   Settings2, 
   Plus,
@@ -39,6 +40,7 @@ export default function AccountantFeeStructure() {
   const { data: students = [], isLoading: isStudentsLoading } = useClassStudents(institutionId, selectedClass);
   const { structures } = useFeeStructures(institutionId, selectedClass || undefined);
   const { defineFeeStructure, sendIndividualReminder, updateStudentFeeOverride } = useFeeWorkflow();
+  const { feeStatuses, isLoading: isFeeStatusLoading } = useClassFeeStatus(institutionId || undefined);
 
   const [selectedStudent, setSelectedStudent] = useState<any | null>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
@@ -142,6 +144,33 @@ export default function AccountantFeeStructure() {
     s.register_number.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const getStudentFeeStatusInfo = (studentId: string) => {
+    const studentFees = (feeStatuses as any[]).filter(f => f.student_id === studentId);
+    if (studentFees.length === 0) return { status: 'none', dueDate: null, totalDue: 0, totalPaid: 0 };
+    
+    let totalDue = 0;
+    let totalPaid = 0;
+    let earliestDueDate: Date | null = null;
+    let isOverdue = false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    studentFees.forEach(fee => {
+      totalDue += (fee.amount_due || 0);
+      totalPaid += (fee.amount_paid || 0);
+      
+      if (fee.due_date) {
+        const dDate = new Date(fee.due_date);
+        if (!earliestDueDate || dDate < earliestDueDate) earliestDueDate = dDate;
+        if (fee.amount_due > 0 && dDate < today) isOverdue = true;
+      }
+    });
+
+    if (totalDue === 0 && totalPaid > 0) return { status: 'paid', dueDate: earliestDueDate, totalDue: 0, totalPaid };
+    if (isOverdue) return { status: 'overdue', dueDate: earliestDueDate, totalDue, totalPaid };
+    if (totalDue > 0) return { status: 'pending', dueDate: earliestDueDate, totalDue, totalPaid };
+    return { status: 'none', dueDate: null, totalDue: 0, totalPaid: 0 };
+  };
 
   return (
     <View style={styles.container}>
@@ -186,8 +215,28 @@ export default function AccountantFeeStructure() {
             ) : filteredStudents.length > 0 ? (
               <View style={styles.studentList}>
                 <Text style={styles.sectionTitle}>Students in {selectedClass} ({filteredStudents.length})</Text>
-                {filteredStudents.map((student: any) => (
-                  <View key={student.id} style={styles.studentCard}>
+                {filteredStudents.map((student: any) => {
+                  const feeInfo = getStudentFeeStatusInfo(student.id);
+                  let statusColor = '#94A3B8';
+                  let statusBg = '#F8FAFC';
+                  let statusText = 'NO FES';
+                  
+                  if (feeInfo.status === 'paid') { 
+                    statusColor = '#10B981'; 
+                    statusBg = '#ECFDF5';
+                    statusText = 'PAID';
+                  } else if (feeInfo.status === 'overdue') { 
+                    statusColor = '#EF4444'; 
+                    statusBg = '#FEF2F2';
+                    statusText = 'OVERDUE';
+                  } else if (feeInfo.status === 'pending') { 
+                    statusColor = '#F59E0B'; 
+                    statusBg = '#FFFBEB';
+                    statusText = 'DUE';
+                  }
+
+                  return (
+                  <View key={student.id} style={[styles.studentCard, { borderLeftColor: statusColor, borderLeftWidth: 4 }]}>
                     <View style={styles.avatarBox}>
                       {student.image_url ? (
                         <Image source={{ uri: student.image_url }} style={styles.avatar} />
@@ -199,21 +248,30 @@ export default function AccountantFeeStructure() {
                     </View>
                     <View style={styles.studentInfo}>
                       <Text style={styles.studentName}>{student.name}</Text>
-                      <Text style={styles.studentMeta}>Reg: {student.register_number}</Text>
+                      <Text style={styles.studentMeta}>REG: {student.register_number}</Text>
+                      
+                      <View style={[styles.statusBadge, { backgroundColor: statusBg }]}>
+                        <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+                        <Text style={[styles.statusLabel, { color: statusColor }]}>{statusText}</Text>
+                        {feeInfo.status !== 'none' && (
+                          <Text style={styles.amountLabel}> • ₹{feeInfo.status === 'paid' ? feeInfo.totalPaid.toLocaleString() : feeInfo.totalDue.toLocaleString()}</Text>
+                        )}
+                      </View>
                     </View>
+
                     <View style={styles.studentActions}>
                       <TouchableOpacity 
                         style={styles.reminderBtn}
                         onPress={async () => {
                           try {
-                            await sendIndividualReminder(institutionUuid || '', student.id, student.profile_id, student.name, 0);
-                            showAlert('Sent', `Reminder sent to ${student.name}`, 'success');
+                            await sendIndividualReminder(institutionUuid || '', student.id, student.profile_id, student.name, feeInfo.totalDue);
+                            showAlert('Success', `Fee reminder sent to ${student.name} and parent`, 'success');
                           } catch (e: any) {
-                            showAlert('Error', 'Failed to send reminder', 'error');
+                            showAlert('Error', 'Failed to send notification', 'error');
                           }
                         }}
                       >
-                        <Bell size={14} color="white" {...({} as any)} />
+                        <Bell size={16} color="white" {...({} as any)} />
                       </TouchableOpacity>
                       <TouchableOpacity 
                         style={styles.manageBtn}
@@ -222,12 +280,11 @@ export default function AccountantFeeStructure() {
                           setIsModalVisible(true);
                         }}
                       >
-                        <Settings2 size={14} color="white" {...({} as any)} />
-                        <Text style={styles.manageBtnText}>Manage</Text>
+                        <Settings2 size={16} color="white" {...({} as any)} />
                       </TouchableOpacity>
                     </View>
                   </View>
-                ))}
+                )})}
               </View>
             ) : (
               <View style={styles.emptyBox}>
@@ -355,17 +412,20 @@ const styles = StyleSheet.create({
 
   sectionTitle: { fontSize: 18, fontWeight: 'bold', color: theme.colors.text, marginBottom: 16 },
   studentList: { gap: 12 },
-  studentCard: { backgroundColor: 'white', borderRadius: 20, padding: 16, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#F1F5F9' },
+  studentCard: { backgroundColor: 'white', borderRadius: 20, padding: 16, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#F1F5F9', marginBottom: 12 },
   avatarBox: { marginRight: 16 },
   avatar: { width: 44, height: 44, borderRadius: 22 },
   avatarPlaceholder: { width: 44, height: 44, borderRadius: 22, backgroundColor: theme.colors.primary + '10', justifyContent: 'center', alignItems: 'center' },
   studentInfo: { flex: 1 },
   studentName: { fontSize: 15, fontWeight: 'bold', color: theme.colors.text },
-  studentMeta: { fontSize: 12, color: theme.colors.textMuted, marginTop: 2 },
+  studentMeta: { fontSize: 11, color: theme.colors.textMuted, marginTop: 2, textTransform: 'uppercase', letterSpacing: 0.5 },
+  statusBadge: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, marginTop: 6 },
+  statusDot: { width: 6, height: 6, borderRadius: 3, marginRight: 6 },
+  statusLabel: { fontSize: 10, fontWeight: 'bold', textTransform: 'uppercase' },
+  amountLabel: { fontSize: 10, color: theme.colors.textMuted, fontWeight: '600' },
   studentActions: { flexDirection: 'row', gap: 8 },
   reminderBtn: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#EA580C', justifyContent: 'center', alignItems: 'center' },
-  manageBtn: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: theme.colors.primary, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  manageBtnText: { color: 'white', fontSize: 12, fontWeight: '600' },
+  manageBtn: { width: 36, height: 36, borderRadius: 12, backgroundColor: theme.colors.primary, justifyContent: 'center', alignItems: 'center' },
   welcomeBox: { flex: 1, alignItems: 'center', justifyContent: 'center', marginTop: 60 },
   welcomeTitle: { fontSize: 20, fontWeight: 'bold', color: theme.colors.text, marginTop: 16 },
   welcomeSubtitle: { fontSize: 14, color: theme.colors.textMuted, textAlign: 'center', marginTop: 8, maxWidth: 260 },

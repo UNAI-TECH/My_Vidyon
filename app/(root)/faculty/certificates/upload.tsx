@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Platform } from 'react-native';
 import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
 import { useAuth } from '../../../../src/hooks/useAuth';
@@ -18,11 +18,12 @@ import * as DocumentPicker from 'expo-document-picker';
 import { useFacultyDashboard } from '../../../../src/hooks/useFacultyDashboard';
 import { useQuery } from '@tanstack/react-query';
 import { Modal } from 'react-native';
+import { useThemedAlert } from '../../../../src/components/common/ThemedAlert';
 
 export default function FacultyCertificateUpload() {
-  const { user, institutionId, institutionUuid } = useAuth();
+  const { user, institutionId } = useAuth();
   const router = useRouter();
-  const { facultyProfile, assignedSubjects } = useFacultyDashboard(user?.id, (institutionUuid || institutionId) || undefined);
+  const { facultyProfile, assignedSubjects } = useFacultyDashboard(user?.id, institutionId || undefined);
 
   const [selectedStudent, setSelectedStudent] = React.useState<any>(null);
   const [showStudentPicker, setShowStudentPicker] = React.useState(false);
@@ -30,18 +31,20 @@ export default function FacultyCertificateUpload() {
   const [description, setDescription] = React.useState('');
   const [pickedFile, setPickedFile] = React.useState<any>(null);
   const [isUploading, setIsUploading] = React.useState(false);
+  const { showAlert } = useThemedAlert();
 
   // Fetch students for classes where faculty is the class teacher
   const { data: students = [], isLoading: isLoadingStudents } = useQuery<any[]>({
     queryKey: ['class-teacher-students', user?.id],
     queryFn: async () => {
-      if (!user?.id || !(institutionUuid || institutionId)) return [];
+      if (!user?.id || !institutionId) return [];
       
       // 1. Get classes where faculty is class teacher
       const { data: classRows } = await supabase
         .from('classes')
         .select('name')
-        .eq('class_teacher_id', user.id);
+        .eq('class_teacher_id', user.id)
+        .eq('institution_id', institutionId);
         
       if (!classRows || classRows.length === 0) return [];
       
@@ -51,7 +54,7 @@ export default function FacultyCertificateUpload() {
         .from('students')
         .select('*')
         .in('class_name', classNames)
-        .eq('institution_id', (institutionUuid || institutionId) as string)
+        .eq('institution_id', institutionId as string)
         .order('name');
         
       if (error) throw error;
@@ -77,7 +80,7 @@ export default function FacultyCertificateUpload() {
 
   const handleUpload = async () => {
     if (!selectedStudent || !category || !pickedFile) {
-      Alert.alert('Error', 'Please fill all required fields and pick a file');
+      showAlert({ title: 'Missing Fields', message: 'Please fill all required fields and pick a file', type: 'warning' });
       return;
     }
 
@@ -112,7 +115,7 @@ export default function FacultyCertificateUpload() {
         student_name: selectedStudent.name,
         faculty_id: user?.id,
         faculty_name: facultyProfile?.full_name,
-        institution_id: institutionUuid || institutionId,
+        institution_id: institutionId,
         category: category,
         course_description: description,
         file_url: publicUrl,
@@ -126,11 +129,11 @@ export default function FacultyCertificateUpload() {
 
       if (dbError) throw dbError;
 
-      Alert.alert('Success', 'Certificate uploaded successfully');
+      showAlert({ title: 'Success', message: 'Certificate uploaded successfully', type: 'success' });
       router.back();
     } catch (error: any) {
       console.error('Upload error:', error);
-      Alert.alert('Upload Failed', error.message);
+      showAlert({ title: 'Upload Failed', message: error.message, type: 'error' });
     } finally {
       setIsUploading(false);
     }

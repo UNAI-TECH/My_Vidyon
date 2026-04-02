@@ -1171,6 +1171,13 @@ export default function InstitutionOnboarding() {
         if (!basicInfo.name || !basicInfo.school_code) return showAlert('Missing Info', 'Please fill name and code.', 'warning');
       }
       
+      if (currentStep === 2 && !isEditMode) {
+        if (!adminInfo.email) return showAlert('Missing Info', 'Please provide an admin email address.', 'warning');
+        if (!adminInfo.password || adminInfo.password.length < 6) {
+          return showAlert('Weak Password', 'The admin password must be at least 6 characters long.', 'warning');
+        }
+      }
+      
       if (currentStep === 2 && isEditMode) {
         const emailChanged = adminInfo.email !== existingCreds.email;
         const passwordChanged = adminInfo.password !== '';
@@ -1421,7 +1428,16 @@ export default function InstitutionOnboarding() {
             staff_id: `ADM-${basicInfo.school_code}`
           }
         });
-        if (adminError) console.warn('Admin provisioning failed:', adminError);
+        if (adminError) {
+          console.warn('Admin provisioning failed:', adminError);
+          setSubmitting(false);
+          // If the error indicates the user already exists, we could suggest trying to recover the account
+          const errorMsg = adminError.message || 'Unknown error';
+          if (errorMsg.includes('already registered')) {
+             return showAlert('Account Exists', 'This admin email is already registered in the system. If you want to link this institution to that account, please ensure the School Code matches.', 'info');
+          }
+          return showAlert('Provisioning Failed', `Admin account could not be created: ${errorMsg}. Please try a different email or check if it already exists.`, 'error');
+        }
       } else if (isEditMode && credentialsVerified && (emailChanged || passwordChanged)) {
         // Update existing Admin
         const { error: adminError } = await supabase.functions.invoke('create-user', {
@@ -1434,7 +1450,11 @@ export default function InstitutionOnboarding() {
             staff_id: `ADM-${basicInfo.school_code}`
           }
         });
-        if (adminError) console.warn('Admin update failed:', adminError);
+        if (adminError) {
+          console.warn('Admin update failed:', adminError);
+          setSubmitting(false);
+          return showAlert('Update Failed', `Admin account details could not be updated: ${adminError.message || 'Unknown error'}.`, 'error');
+        }
 
         // Also update the institution record's admin fields specifically
         const updates: any = {};

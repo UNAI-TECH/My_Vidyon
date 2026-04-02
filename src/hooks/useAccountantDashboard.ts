@@ -19,31 +19,39 @@ export interface AccountantDashboardStats {
 export function useAccountantDashboard(institutionId?: string) {
     const queryClient = useQueryClient();
 
-    // 1. Total Revenue (YTD) - Sum from fee_payments
+    // 1. Total Revenue (YTD) - Sum amount_paid from fee_payments (Source of truth for cash flow)
     const { data: totalRevenue = 0, refetch: refetchRevenue } = useQuery({
         queryKey: ['accountant-revenue', institutionId],
         queryFn: async () => {
             if (!institutionId) return 0;
-            const { data } = await supabase
+            const { data, error } = await supabase
                 .from('fee_payments')
                 .select('amount_paid')
                 .eq('institution_id', institutionId);
             
+            if (error) {
+                console.error('Error fetching total revenue:', error);
+                return 0;
+            }
             return (data as any[] || []).reduce((acc, curr) => acc + (curr.amount_paid || 0), 0);
         },
         enabled: !!institutionId,
     });
 
-    // 2. Outstanding Amount - Sum amount_due from student_fees
+    // 2. Outstanding Amount - Sum amount_due from student_fees (Source of truth for expected dues)
     const { data: outstandingAmount = 0, refetch: refetchOutstanding } = useQuery({
         queryKey: ['accountant-outstanding', institutionId],
         queryFn: async () => {
             if (!institutionId) return 0;
-            const { data } = await supabase
+            const { data, error } = await supabase
                 .from('student_fees')
                 .select('amount_due')
                 .eq('institution_id', institutionId);
             
+            if (error) {
+                console.error('Error fetching outstanding:', error);
+                return 0;
+            }
             return (data as any[] || []).reduce((acc, curr) => acc + (curr.amount_due || 0), 0);
         },
         enabled: !!institutionId,
@@ -83,15 +91,20 @@ export function useAccountantDashboard(institutionId?: string) {
         ].filter(i => i.value > 0);
     }, [feeDistributionRaw]);
 
-    // 4. Transaction Count
+    // 4. Transaction Count (Based on fee_payments)
     const { data: transactionCount = 0, refetch: refetchTransCount } = useQuery({
         queryKey: ['accountant-transactions-count', institutionId],
         queryFn: async () => {
             if (!institutionId) return 0;
-            const { count } = await supabase
+            const { count, error } = await supabase
                 .from('fee_payments')
                 .select('id', { count: 'exact', head: true })
                 .eq('institution_id', institutionId);
+            
+            if (error) {
+                console.error('Error fetching transaction count:', error);
+                return 0;
+            }
             return count || 0;
         },
         enabled: !!institutionId,
@@ -104,7 +117,7 @@ export function useAccountantDashboard(institutionId?: string) {
             if (!institutionId) return [];
             const { data, error } = await supabase
                 .from('fee_payments')
-                .select('*, students(name)')
+                .select('*, students(name, register_number, class_name)')
                 .eq('institution_id', institutionId)
                 .order('payment_date', { ascending: false })
                 .limit(5);
@@ -139,8 +152,10 @@ export function useAccountantDashboard(institutionId?: string) {
                 table: 'student_fees', 
                 filter: `institution_id=eq.${institutionId}` 
             }, () => {
+                refetchRevenue();
                 refetchOutstanding();
                 refetchDistribution();
+                refetchTransCount();
             })
             .subscribe();
 

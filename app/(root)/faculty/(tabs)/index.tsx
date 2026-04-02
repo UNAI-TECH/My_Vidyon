@@ -24,7 +24,8 @@ import {
   FileText,
   UserCheck,
   Contact,
-  ChevronRight
+  ChevronRight,
+  TrendingUp
 } from 'lucide-react-native';
 
 import { BarChart } from 'react-native-chart-kit';
@@ -63,6 +64,7 @@ export default function FacultyDashboard() {
     { label: 'Events', icon: Calendar, href: '/events', color: '#8B5CF6' },
     { label: 'Assignments', icon: ClipboardList, href: '/faculty/assignments', color: '#16A34A' },
     { label: 'Classes', icon: BookOpen, href: '/faculty/courses', color: '#64748B' },
+    { label: 'Certificates', icon: FileUp, href: '/faculty/certificates/upload', color: '#EC4899' },
   ];
 
   return (
@@ -234,29 +236,37 @@ export default function FacultyDashboard() {
       </View>
 
       <View style={styles.chartContainer}>
-        <Text style={styles.sectionTitle}>Attendance Overview</Text>
-        <BarChart
-          data={{
-            labels: ['10-A', '10-B', '11-A', '11-B'],
-            datasets: [{ data: [92, 85, 88, 95] }]
-          }}
-          width={screenWidth - 48}
-          height={220}
-          yAxisLabel=""
-          yAxisSuffix="%"
-          chartConfig={{
-            ...chartConfig,
-            decimalPlaces: 0,
-            color: (opacity = 1) => theme.colors.primary,
-            labelColor: (opacity = 1) => theme.colors.textMuted,
-            style: { borderRadius: 16 },
-            propsForBackgroundLines: { strokeDasharray: "" },
-          }}
-          verticalLabelRotation={0}
-          style={styles.chart}
-          fromZero
-          showBarTops={false}
-        />
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <Text style={styles.sectionTitle}>Attendance Overview</Text>
+            <View style={styles.liveBadge}><Text style={styles.liveBadgeText}>LIVE</Text></View>
+        </View>
+        
+        {stats.attendanceOverview?.labels?.length > 0 ? (
+          <BarChart
+            data={{
+              labels: stats.attendanceOverview.labels,
+              datasets: [{ data: stats.attendanceOverview.data }]
+            }}
+            width={screenWidth - 48}
+            height={220}
+            yAxisLabel=""
+            yAxisSuffix="%"
+            chartConfig={{
+                ...chartConfig,
+                decimalPlaces: 0,
+            }}
+            verticalLabelRotation={0}
+            fromZero={true}
+            style={styles.chart}
+            showValuesOnTopOfBars={true}
+          />
+        ) : (
+          <View style={styles.emptyChartState}>
+              <TrendingUp size={32} color={theme.colors.textMuted + '60'} {...({} as any)} />
+              <Text style={styles.emptyChartText}>No live attendance data</Text>
+              <Text style={styles.emptyChartSub}>Showing realtime stats for classes where you are the designated class teacher.</Text>
+          </View>
+        )}
       </View>
 
       <AdBanner type="FACULTY" />
@@ -309,7 +319,11 @@ const styles = StyleSheet.create({
 
   chartContainer: { backgroundColor: 'white', borderRadius: 28, padding: 24, marginBottom: 40, elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.05, shadowRadius: 10, borderWidth: 1, borderColor: '#F1F5F9' },
   chart: { marginVertical: 8, borderRadius: 16, marginLeft: -12 },
-  
+  emptyChartState: { height: 180, justifyContent: 'center', alignItems: 'center', padding: 20, backgroundColor: '#F8FAFC', borderRadius: 16, borderStyle: 'dashed', borderWidth: 1, borderColor: '#E2E8F0' },
+  emptyChartText: { fontSize: 13, fontWeight: 'bold', color: theme.colors.text, marginTop: 12 },
+  emptyChartSub: { fontSize: 11, color: theme.colors.textMuted, textAlign: 'center', marginTop: 4 },
+  liveBadge: { backgroundColor: 'rgba(16, 185, 129, 0.1)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: 'rgba(16, 185, 129, 0.2)' },
+  liveBadgeText: { fontSize: 9, fontWeight: 'bold', color: '#10B981' },
   // Manage Grid Styles
   manageGrid: { gap: 12 },
   manageCard: { 

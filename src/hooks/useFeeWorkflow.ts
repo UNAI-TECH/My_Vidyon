@@ -249,6 +249,63 @@ export function useFeeWorkflow() {
     return true;
   };
 
-  return { defineFeeStructure, processPayment, sendFeeReminder, sendIndividualReminder, updateStudentFeeOverride, completeStudentPayment };
-}
+  const processQuickBill = async (
+    institutionId: string,
+    studentId: string,
+    amount: number,
+    category: string
+  ) => {
+    // 1. Find or create generic Quick Bill structure
+    const structName = `Quick Bill: ${category}`;
+    const { data: structure } = await supabase
+      .from('fee_structures')
+      .select('id')
+      .eq('institution_id', institutionId)
+      .eq('name', structName)
+      .maybeSingle();
 
+    let structureId = (structure as any)?.id;
+
+    if (!structureId) {
+      const { data: newStruct, error: createError } = await defineFeeStructure(
+        institutionId,
+        structName,
+        0,
+        'Ad-hoc',
+        new Date().toISOString().split('T')[0],
+        [{ title: category, amount: 0 }]
+      );
+      if (createError) throw createError;
+      structureId = (newStruct as any).id;
+    }
+
+    if (!structureId) throw new Error("Failed to resolve fee structure logic");
+
+    // 2. Assign fee to student
+    const { error: overrideError } = await updateStudentFeeOverride(
+      institutionId,
+      studentId,
+      structureId,
+      amount,
+      [{ title: category, amount }],
+      new Date().toISOString().split('T')[0]
+    );
+
+    if (overrideError) throw overrideError;
+
+    const transactionId = `QB-${Date.now()}`;
+
+    // 3. Pay it immediately
+    await completeStudentPayment(
+      institutionId,
+      studentId,
+      structureId,
+      amount,
+      transactionId
+    );
+
+    return transactionId;
+  };
+
+  return { defineFeeStructure, processPayment, sendFeeReminder, sendIndividualReminder, updateStudentFeeOverride, completeStudentPayment, processQuickBill };
+}

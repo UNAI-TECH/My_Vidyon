@@ -9,6 +9,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { WebSocketProvider } from '../src/hooks/useWebSocket';
 import { SearchProvider } from '../src/hooks/useSearch';
 import { useERPRealtime } from '../src/hooks/useERPRealtime';
+import { ThemedAlertProvider } from '../src/components/common/ThemedAlert';
 
 const queryClient = new QueryClient();
 
@@ -60,17 +61,19 @@ export default function AppLayout() {
         <AuthProvider>
           <RealtimeObserver>
             <WebSocketProvider>
-              <SearchProvider>
-                <Stack
-                screenOptions={{
-                  headerShown: false,
-                  contentStyle: { backgroundColor: theme.colors.background },
-                }}
-              >
-                <Stack.Screen name="(auth)" options={{ animation: 'fade' }} />
-                <Stack.Screen name="(root)" options={{ animation: 'slide_from_right' }} />
-              </Stack>
-              </SearchProvider>
+              <ThemedAlertProvider>
+                <SearchProvider>
+                  <Stack
+                  screenOptions={{
+                    headerShown: false,
+                    contentStyle: { backgroundColor: theme.colors.background },
+                  }}
+                >
+                  <Stack.Screen name="(auth)" options={{ animation: 'fade' }} />
+                  <Stack.Screen name="(root)" options={{ animation: 'slide_from_right' }} />
+                </Stack>
+                </SearchProvider>
+              </ThemedAlertProvider>
             </WebSocketProvider>
           </RealtimeObserver>
         </AuthProvider>

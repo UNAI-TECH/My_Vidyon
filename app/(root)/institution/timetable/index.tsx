@@ -104,13 +104,6 @@ export default function TimetableIndexScreen() {
             <Text style={styles.listTitle}>{activeDay}'s Schedule</Text>
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <TouchableOpacity 
-                style={[styles.editBtn, { backgroundColor: theme.colors.secondary }]} 
-                onPress={() => router.push('/(root)/institution/timetable/special')}
-              >
-                <Calendar size={16} color="white" {...({} as any)} />
-                <Text style={styles.editBtnText}>Special</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
                 style={styles.editBtn} 
                 onPress={() => router.push({
                   pathname: '/(root)/institution/timetable/edit',

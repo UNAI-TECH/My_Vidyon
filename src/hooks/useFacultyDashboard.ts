@@ -30,6 +30,10 @@ export interface FacultyDashboardStats {
     pendingLeaves: number;
     pendingGrading: number;
     avgAttendance: string;
+    attendanceOverview: {
+        labels: string[];
+        data: number[];
+    };
 }
 
 export interface FacultyProfile {
@@ -263,6 +267,59 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
         },
         enabled: !!facultyId,
     });
+    // 11. My Classes (where class teacher)
+    const { data: myClasses = [] as any[], refetch: refetchMyClasses } = useQuery({
+        queryKey: ['faculty-class-teacher-classes', facultyId],
+        queryFn: async () => {
+            if (!facultyId) return [];
+            const { data } = await supabase
+                .from('classes')
+                .select('id, name')
+                .eq('class_teacher_id', facultyId);
+            return data || [];
+        },
+        enabled: !!facultyId,
+    });
+
+    // 12. Attendance Stats for My Classes
+    const { data: attendanceOverview = { labels: [], data: [] }, refetch: refetchAttendance } = useQuery({
+        queryKey: ['faculty-attendance-overview', myClasses.map(c => c.id).join(',')],
+        queryFn: async () => {
+            if (myClasses.length === 0) return { labels: [], data: [] };
+            
+            const labels: string[] = [];
+            const data: number[] = [];
+
+            for (const cls of myClasses) {
+                // Get students for this class name in this institution
+                const { data: classStudents } = await supabase
+                    .from('students')
+                    .select('id')
+                    .eq('class_name', cls.name)
+                    .eq('institution_id', institutionId!)
+                    .eq('is_active', true);
+
+                if (!classStudents || classStudents.length === 0) continue;
+                const studentIds = (classStudents as any[]).map(s => s.id);
+
+                // Get present count for today
+                const today = new Date().toISOString().split('T')[0];
+                const { count: presentCount } = await supabase
+                    .from('student_attendance')
+                    .select('id', { count: 'exact', head: true })
+                    .in('student_id', studentIds)
+                    .eq('attendance_date', today)
+                    .eq('status', 'present');
+
+                const percentage = Math.round(((presentCount || 0) / classStudents.length) * 100);
+                labels.push(cls.name);
+                data.push(percentage);
+            }
+
+            return { labels, data };
+        },
+        enabled: myClasses.length > 0 && !!institutionId,
+    });
 
     const stats: FacultyDashboardStats = {
         totalStudents,
@@ -272,7 +329,10 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
         pendingReviews,
         pendingLeaves,
         pendingGrading,
-        avgAttendance: '92%', 
+        avgAttendance: attendanceOverview.data.length > 0 
+            ? `${Math.round(attendanceOverview.data.reduce((a, b) => a + b, 0) / attendanceOverview.data.length)}%`
+            : '0%',
+        attendanceOverview,
     };
 
     // 12. Real-time Subscriptions
@@ -290,6 +350,11 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
             .on('postgres_changes', { event: '*', schema: 'public', table: 'assignments', filter: `teacher_id=eq.${facultyId}` }, () => refetchAssignments())
             .on('postgres_changes', { event: '*', schema: 'public', table: 'leave_requests', filter: `assigned_class_teacher_id=eq.${facultyId}` }, () => refetchLeaves())
             .on('postgres_changes', { event: '*', schema: 'public', table: 'exam_results', filter: `staff_id=eq.${facultyId}` }, () => refetchGrading())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'classes', filter: `class_teacher_id=eq.${facultyId}` }, () => {
+                refetchMyClasses();
+                refetchAttendance();
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'student_attendance' }, () => refetchAttendance())
             .subscribe();
 
         return () => { channel.unsubscribe(); };

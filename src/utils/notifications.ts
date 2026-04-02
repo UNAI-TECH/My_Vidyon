@@ -1,7 +1,9 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
+import * as Application from 'expo-application';
 import { Platform } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { LargeSecureStore } from '../lib/storage';
 import Constants from 'expo-constants';
 
 // Configure how notifications are handled when the app is in the foreground
@@ -14,6 +16,31 @@ Notifications.setNotificationHandler({
     shouldShowList: true,
   }),
 });
+
+/**
+ * Gets or creates a stable device identifier.
+ * On Android, uses Application.getAndroidId().
+ * Falls back to a UUID persisted in SecureStore.
+ */
+async function getStableDeviceId(): Promise<string> {
+  const STORAGE_KEY = 'my_vidyon_device_id';
+
+  // Try Android-native ID first
+  if (Platform.OS === 'android') {
+    try {
+      const androidId = Application.getAndroidId();
+      if (androidId) return androidId;
+    } catch {}
+  }
+
+  // Fallback: read from storage or generate
+  let deviceId = await LargeSecureStore.getItem(STORAGE_KEY);
+  if (!deviceId) {
+    deviceId = `device_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+    await LargeSecureStore.setItem(STORAGE_KEY, deviceId);
+  }
+  return deviceId;
+}
 
 /**
  * Registers the device for push notifications.
@@ -70,12 +97,25 @@ export async function registerForPushNotificationsAsync(userId: string) {
   }
 
   if (token) {
-    // Save/Upsert to user_push_tokens table
+    // Get a stable device identifier for deduplication
+    const deviceId = await getStableDeviceId();
+    console.log(`[Push] Registering token for device: ${deviceId}`);
+
+    // First, delete any OLD tokens for this user+device combo
+    // This ensures that when a token rotates, the old one is removed
+    await (supabase
+      .from('user_push_tokens') as any)
+      .delete()
+      .eq('user_id', userId)
+      .eq('device_id', deviceId);
+
+    // Then insert the fresh token
     const { error } = await (supabase
       .from('user_push_tokens') as any)
       .upsert({
         user_id: userId,
         fcm_token: token,
+        device_id: deviceId,
         platform: Platform.OS,
         last_used_at: new Date().toISOString(),
       }, {
@@ -84,6 +124,8 @@ export async function registerForPushNotificationsAsync(userId: string) {
 
     if (error) {
       console.error('Error saving push token to Supabase:', error);
+    } else {
+      console.log(`[Push] Token registered successfully for device ${deviceId}`);
     }
   }
 
