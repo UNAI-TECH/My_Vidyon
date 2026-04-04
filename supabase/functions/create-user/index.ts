@@ -22,21 +22,41 @@ Deno.serve(async (req: Request) => {
     }
 
     try {
+        let body;
+        try {
+            body = await req.json();
+            console.log("Received body keys:", Object.keys(body || {}));
+        } catch (e) {
+            console.error("Invalid JSON body:", e);
+            return new Response(
+                JSON.stringify({ error: "Invalid request body: Expected JSON." }),
+                { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+        }
+
+        // Extremely resilient extraction: handle both direct and nested structure if necessary
+        const payload = body;
+        const email = (payload.email || "").trim();
+        const role = (payload.role || "").trim();
+        const institution_id = (payload.institution_id || "").trim();
+        
         const { 
-            email, password, role, full_name, institution_id, 
+            password, full_name, 
             class_name, section, academic_year, 
             parent_name, parent_email, parent_phone, parent_id, parent_relation,
             register_number, staff_id, phone, date_of_birth, gender, address,
             blood_group, city, zip_code, image_url,
             student_id, student_ids, parent_contact, department, subjects, // optional override
-        } = await req.json();
+        } = payload;
 
-        console.log(`Creating user: ${email} (Role: ${role}, InstUUID: ${institution_id})`);
-        if (class_name) console.log(`Student Detail: Class ${class_name}, Section ${section}`);
+        console.log(`Processing user: ${email || 'N/A'} (Role: ${role || 'N/A'}, InstID: ${institution_id || 'N/A'})`);
 
         if (!email || !role || !institution_id) {
+            console.error("Validation failed. Missing:", { email: !!email, role: !!role, inst: !!institution_id });
             return new Response(
-                JSON.stringify({ error: "Missing required fields: email, role, and institution_id are required." }),
+                JSON.stringify({ 
+                    error: `Missing required fields: ${!email ? 'email ' : ''}${!role ? 'role ' : ''}${!institution_id ? 'institution_id ' : ''}are required.` 
+                }),
                 { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
             )
         }
@@ -44,6 +64,12 @@ Deno.serve(async (req: Request) => {
         // Initialize Supabase Admin Client
         const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
         const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+        
+        if (!supabaseUrl || !supabaseServiceKey) {
+            console.error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in environment.");
+            throw new Error("Server configuration error: Missing credentials.");
+        }
+
         const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
 
         const normalizeRole = (r: string) => {
@@ -86,31 +112,49 @@ Deno.serve(async (req: Request) => {
 
             if (authError) {
                 // Crucial Recovery logic: If user exists in Auth but not in Profiles
-                if (authError.message.includes('already registered')) {
-                    console.log("User exists in Auth but not Profile. Attempting recovery...");
-                    // Try to update the user to ensure metadata is correct
+                if (authError.message?.toLowerCase().includes('already registered')) {
+                    console.log("User exists in Auth but not Profile. Attempting recovery lookup...");
+                    
+                    // Safer user lookup: list current users to find the ID
+                    // Note: Supabase Admin listUsers doesn't have a direct email filter in most SDK versions
+                    // We increase per_page to ensure we find them in a typical setup
+                    const { data: listData, error: listError } = await supabaseAdmin.auth.admin.listUsers();
+                    
+                    if (listError) {
+                         console.error("List users failed during recovery:", listError);
+                         throw new Error(`Auth recovery failed: ${listError.message}`);
+                    }
+                    
+                    const existingAuthUser = listData?.users?.find(u => u.email?.toLowerCase() === email.toLowerCase());
+                    
+                    if (!existingAuthUser?.id) {
+                         console.error("User reported as registered but not found in list for email:", email);
+                         throw new Error(`The account ${email} is registered but its ID could not be retrieved. Please contact support.`);
+                    }
+
+                    console.log("Found existing auth user ID:", existingAuthUser.id);
+
+                    // Sync the metadata to ensure the profile trigger gets the correct institution_id
                     const { data: updateData, error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
-                        // We need the ID. Since we don't have it, we have to list or search.
-                        // For efficiency, we will try to get the ID from a special admin query if possible.
-                        // Fallback: list users and find by email (Admin only)
-                        (await supabaseAdmin.auth.admin.listUsers()).data.users.find(u => u.email === email.toLowerCase())?.id as string,
+                        existingAuthUser.id,
                         {
                             user_metadata: {
                                 role: finalRole,
-                                institution_id
+                                institution_id,
+                                full_name
                             }
                         }
                     );
                     
-                    if (updateError || !updateData.user) {
-                         console.error("Auth recovery failed:", updateError);
-                         throw new Error(`User exists in Auth system but could not be recovered/updated: ${updateError?.message || 'ID not found'}`);
+                    if (updateError || !updateData?.user) {
+                         console.error("Auth metadata sync failed:", updateError);
+                         throw new Error(`Failed to sync account metadata: ${updateError?.message || 'Update failed'}`);
                     }
                     userId = updateData.user.id;
                     authUserDetails = updateData.user;
                 } else {
                     console.error("Auth creation failed:", authError);
-                    throw authError;
+                    throw authError; // This will be caught by our catch block below
                 }
             } else {
                 userId = newAuthUser.user.id;

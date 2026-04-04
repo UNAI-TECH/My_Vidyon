@@ -35,8 +35,15 @@ export interface NotificationItem {
 export function useNotifications() {
   const { user, role, institutionUuid, lastReadEventsAt } = useAuth();
   const queryClient = useQueryClient();
-  const [localLastReadAt, setLocalLastReadAt] = useState<string | null>(null);
-  const [readEventIds, setReadEventIds] = useState<Set<string>>(new Set());
+  // Globalize local read state via React Query so all instances of useNotifications sync perfectly
+  const { data: readState } = useQuery({
+    queryKey: ['notifications-local-read-state', user?.id],
+    initialData: { lastReadAt: null as string | null, readIds: new Set<string>() },
+    staleTime: Infinity,
+  });
+
+  const localLastReadAt = readState.lastReadAt;
+  const readEventIds = readState.readIds;
 
   // Effective timestamp: use local (optimistic) or database value
   const effectiveReadAt = localLastReadAt || lastReadEventsAt;
@@ -45,10 +52,16 @@ export function useNotifications() {
   useEffect(() => {
     const loadState = async () => {
       const ids = await LargeSecureStore.getItem(`read_event_ids_${user?.id}`);
-      if (ids) setReadEventIds(new Set(JSON.parse(ids)));
+      if (ids) {
+        const parsedIds = new Set<string>(JSON.parse(ids));
+        queryClient.setQueryData(['notifications-local-read-state', user?.id], (old: any) => ({
+          ...old,
+          readIds: parsedIds
+        }));
+      }
     };
     if (user?.id) loadState();
-  }, [user?.id]);
+  }, [user?.id, queryClient]);
 
   const { data: notifications = [], isLoading: loading } = useQuery({
     queryKey: ['aggregated-notifications', user?.id, effectiveReadAt, Array.from(readEventIds).length],
@@ -116,7 +129,10 @@ export function useNotifications() {
     if (notificationId.startsWith('event-')) {
       const eventId = notificationId.replace('event-', '');
       const newReadIds = new Set(readEventIds).add(eventId);
-      setReadEventIds(newReadIds);
+      queryClient.setQueryData(['notifications-local-read-state', user?.id], (old: any) => ({
+        ...(old || {}),
+        readIds: newReadIds
+      }));
       await LargeSecureStore.setItem(`read_event_ids_${user?.id}`, JSON.stringify(Array.from(newReadIds)));
       return;
     }
@@ -158,7 +174,10 @@ export function useNotifications() {
       if (profileError) console.error('Error updating profile read status:', profileError);
 
       // Update local timestamp for instant UI feedback
-      setLocalLastReadAt(now);
+      queryClient.setQueryData(['notifications-local-read-state', user?.id], (old: any) => ({
+        ...(old || {}),
+        lastReadAt: now
+      }));
 
       queryClient.invalidateQueries({ queryKey: ['aggregated-notifications'] });
     } catch (err) {

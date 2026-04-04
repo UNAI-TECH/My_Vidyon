@@ -298,34 +298,64 @@ export function useStudentDashboard(authUserId?: string, institutionId?: string)
                 if (instData) {
                     targetInstId = (instData as any).id;
                 } else {
+                    console.warn('[StudentMaterials] Could not resolve institution UUID for:', institutionId);
                     return [];
                 }
             }
 
-            // 2. Resolve Class UUID from Name
+            // 2. Resolve Class UUID from Name - scoped to this institution
             const { data: potentialClasses } = await supabase
                 .from('classes')
-                .select('id, name');
+                .select('id, name')
+                .eq('institution_id', targetInstId);
             
-            const classMatch = (potentialClasses as any[] || []).find((c: any) => 
-                c.name.toLowerCase() === studentProfile.class_name.toLowerCase() ||
-                c.name.toLowerCase() === `class ${studentProfile.class_name.toLowerCase()}`
-            );
+            const className = studentProfile.class_name.toLowerCase().trim();
             
-            if (!classMatch) return [];
+            // Try multiple matching strategies
+            const classMatch = (potentialClasses as any[] || []).find((c: any) => {
+                const cName = c.name.toLowerCase().trim();
+                return cName === className ||                          // exact match: "10th" === "10th"
+                    cName === `class ${className}` ||                  // "class 10th" === class + "10th"
+                    `class ${cName}` === className ||                  // "10th" === class + "10th" (reverse)
+                    cName.replace(/class\s*/i, '') === className.replace(/class\s*/i, '') || // strip "class" from both
+                    cName.replace(/[^a-z0-9]/g, '') === className.replace(/[^a-z0-9]/g, ''); // alphanumeric match
+            });
+            
+            if (!classMatch) {
+                console.warn('[StudentMaterials] No class match for:', studentProfile.class_name, 'in classes:', potentialClasses?.map((c: any) => c.name));
+
+                // Fallback: try fetching materials directly by institution_id (some may not need class matching)
+                const { data: fallbackData } = await supabase
+                    .from('subject_materials')
+                    .select('*, profiles:faculty_id(full_name), subjects:subject_id(name)')
+                    .eq('institution_id', targetInstId)
+                    .order('created_at', { ascending: false });
+
+                return (fallbackData || []).map((m: any) => ({
+                    ...m,
+                    subject: m.subjects?.name || 'Unknown'
+                }));
+            }
+            
             const classData = classMatch;
 
-            // 3. Fetch materials
-            const query = supabase
+            // 3. Fetch materials scoped to institution + class + section
+            let query = supabase
                 .from('subject_materials')
                 .select('*, profiles:faculty_id(full_name), subjects:subject_id(name)')
-                .eq('class_id', (classData as any).id);
+                .eq('institution_id', targetInstId)
+                .eq('class_id', (classData as any).id)
+                .order('created_at', { ascending: false });
             
             if (studentProfile.section) {
-                query.eq('section', studentProfile.section);
+                query = query.eq('section', studentProfile.section);
             }
 
-            const { data } = await query;
+            const { data, error } = await query;
+            if (error) {
+                console.error('[StudentMaterials] Fetch error:', error);
+                return [];
+            }
             return (data || []).map((m: any) => ({
                 ...m,
                 subject: m.subjects?.name || 'Unknown'

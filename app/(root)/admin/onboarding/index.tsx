@@ -1431,9 +1431,20 @@ export default function InstitutionOnboarding() {
         if (adminError) {
           console.warn('Admin provisioning failed:', adminError);
           setSubmitting(false);
-          // If the error indicates the user already exists, we could suggest trying to recover the account
-          const errorMsg = adminError.message || 'Unknown error';
-          if (errorMsg.includes('already registered')) {
+
+          // Try to extract detailed error from response body if possible
+          let errorMsg = adminError.message || 'Unknown error';
+          try {
+            // In newer Supabase JS versions, the error context contains response detail
+            if ((adminError as any).context && typeof (adminError as any).context.json === 'function') {
+               const detail = await (adminError as any).context.json();
+               if (detail && detail.error) errorMsg = detail.error;
+            }
+          } catch (e) {
+            console.error('Failed to parse error detail:', e);
+          }
+
+          if (errorMsg.toLowerCase().includes('already registered')) {
              return showAlert('Account Exists', 'This admin email is already registered in the system. If you want to link this institution to that account, please ensure the School Code matches.', 'info');
           }
           return showAlert('Provisioning Failed', `Admin account could not be created: ${errorMsg}. Please try a different email or check if it already exists.`, 'error');

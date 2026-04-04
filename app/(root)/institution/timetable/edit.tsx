@@ -11,7 +11,7 @@ import {
   ArrowLeft, 
   Clock, 
   Save, 
-  Trash2,
+
   ChevronDown,
   Plus,
   MapPin,
@@ -193,9 +193,7 @@ export default function InstitutionTimetableEditScreen() {
     setLocalSlots(prev => prev.map(s => s.id === tempId ? { ...s, [field]: value } : s));
   };
 
-  const removeSlot = (tempId: string) => {
-    setLocalSlots(prev => prev.filter(s => s.id !== tempId));
-  };
+
 
   if (isTimetableLoading || isDataLoading) {
     return (
@@ -238,9 +236,6 @@ export default function InstitutionTimetableEditScreen() {
               <View style={styles.periodBadge}>
                 <Text style={styles.periodBadgeText}>Slot {slot.start_time}</Text>
               </View>
-              <TouchableOpacity onPress={() => removeSlot(slot.id)} style={styles.deleteBtn}>
-                <Trash2 size={18} color="#EF4444" {...({} as any)} />
-              </TouchableOpacity>
             </View>
 
             <View style={styles.formGrid}>
@@ -407,7 +402,7 @@ const styles = StyleSheet.create({
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   periodBadge: { backgroundColor: theme.colors.primary, paddingHorizontal: 16, paddingVertical: 6, borderRadius: 12 },
   periodBadgeText: { color: 'white', fontWeight: 'bold', fontSize: 14 },
-  deleteBtn: { padding: 8, backgroundColor: '#FEF2F2', borderRadius: 10 },
+
   formGrid: { gap: 20 },
   inputGroup: { gap: 8 },
   label: { fontSize: 13, fontWeight: '700', color: theme.colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },

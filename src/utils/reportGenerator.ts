@@ -76,7 +76,9 @@ export const generateFinancialReport = async (stats: any, institutionName?: stri
             </p>
             <div class="footer-bottom">
                <div class="vidyon-logo">
-                  <img src="https://raw.githubusercontent.com/VidyOn-App/assets/main/logo.png" style="height: 20px; opacity: 0.6" alt="MyVidyon Logo" />
+                                    <svg width="120" height="24" viewBox="0 0 120 24" xmlns="http://www.w3.org/2000/svg">
+                      <text x="0" y="18" font-family="Helvetica Neue, Arial, sans-serif" font-size="14" font-weight="bold" fill="#94A3B8">MY VIDYON</text>
+                    </svg>
                </div>
                <div class="signatory">Authorized Signatory</div>
             </div>
@@ -207,7 +209,9 @@ export const generateDailyCollectionReport = async (institutionId: string, insti
                 </p>
                 <div class="footer-bottom">
                    <div class="vidyon-logo">
-                      <img src="https://raw.githubusercontent.com/VidyOn-App/assets/main/logo.png" style="height: 20px; opacity: 0.6" alt="MyVidyon Logo" />
+                                        <svg width="120" height="24" viewBox="0 0 120 24" xmlns="http://www.w3.org/2000/svg">
+                      <text x="0" y="18" font-family="Helvetica Neue, Arial, sans-serif" font-size="14" font-weight="bold" fill="#94A3B8">MY VIDYON</text>
+                    </svg>
                    </div>
                    <div class="signatory">Authorized Signatory</div>
                 </div>
