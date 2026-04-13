@@ -27,7 +27,8 @@
       "googleServicesFile": "./google-services.json",
       "notification": {
         "icon": "./assets/notification-icon.png",
-        "color": "#000000"
+        "color": "#FAB75A",
+        "androidMode": "default"
       }
     },
     "web": {
@@ -37,7 +38,15 @@
       "expo-router",
       "expo-asset",
       "expo-secure-store",
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#FAB75A",
+          "defaultChannel": "default",
+          "sounds": []
+        }
+      ],
       "@react-native-community/datetimepicker",
       [
         "react-native-google-mobile-ads",

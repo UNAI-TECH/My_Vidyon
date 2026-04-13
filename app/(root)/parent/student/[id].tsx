@@ -1,6 +1,7 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Image } from 'react-native';
 import React, { useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useWindowDimensions } from 'react-native';
 import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
 import { useQuery } from '@tanstack/react-query';
@@ -24,6 +25,10 @@ import { InvoiceModal } from '../../../../src/components/fees/InvoiceModal';
 export default function StudentDetail() {
   const { id, name } = useLocalSearchParams();
   const router = useRouter();
+  const { width } = useWindowDimensions();
+  const isSmall = width < 400;
+  const isTablet = width >= 768;
+  const contentPadding = Math.max(14, width * 0.055);
 
   // Fetch specific student details
   const { data: student, isLoading: isStudentLoading } = useQuery({
@@ -146,7 +151,7 @@ export default function StudentDetail() {
   const displayName = (student as any)?.name || (name as string) || "Student Profile";
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={[styles.content, { padding: contentPadding }]}>
       <PageHeader 
         title={displayName} 
         subtitle={`Academic Overview for ${(student as any)?.register_number || ''}`}
@@ -173,11 +178,13 @@ export default function StudentDetail() {
         </View>
       </View>
 
+      {/* Stats grid: attendance card + pending fee card */}
       <View style={[
         styles.statsGrid,
-        theme.metrics.width < 380 && { flexDirection: 'column' }
+        isSmall && { flexDirection: 'column' }
       ]}>
-        <View style={[styles.premiumCard, { flex: 1 }]}>
+        {/* Attendance Card */}
+        <View style={[styles.premiumCard, isSmall ? { width: '100%' } : { flex: 1 }]}>
           <LinearGradient
             colors={['white', '#F8FAFC']}
             style={styles.cardGradient}
@@ -192,7 +199,7 @@ export default function StudentDetail() {
 
             <View style={[
               styles.attendanceVisualInner,
-              theme.metrics.width < 400 && { flexDirection: 'column', alignItems: 'center', gap: 20 }
+              isSmall && { flexDirection: 'column', alignItems: 'center', gap: 20 }
             ]}>
               {/* Left: Circular Gauge */}
               <View style={styles.gaugeContainer}>
@@ -232,7 +239,7 @@ export default function StudentDetail() {
               </View>
 
               {/* Right: Detailed Breakdown */}
-              <View style={[styles.attendanceStatsGrid, theme.metrics.width < 400 && { width: '100%' }]}>
+              <View style={[styles.attendanceStatsGrid, isSmall && { width: '100%' }]}>
                 <View style={styles.statItem}>
                   <View style={[styles.statDot, { backgroundColor: '#10B981' }]} />
                   <View>
@@ -259,11 +266,12 @@ export default function StudentDetail() {
           </LinearGradient>
         </View>
 
-        <View style={theme.metrics.width < 380 ? { width: '100%', marginBottom: 12 } : { flex: 0.4 }}>
-          <StatCard 
-            title="Pending Fees" 
-            value={`₹${stats?.pendingFees}`} 
-            icon={CreditCard} 
+        {/* Pending Fee Card */}
+        <View style={isSmall ? { width: '100%', marginBottom: 12 } : { flex: 0.45, minWidth: 140 }}>
+          <StatCard
+            title="Pending Fees"
+            value={`₹${stats?.pendingFees?.toLocaleString()}`}
+            icon={CreditCard}
             iconColor="#EF4444"
           />
         </View>

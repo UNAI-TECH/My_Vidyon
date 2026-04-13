@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, TextInput, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, TextInput, Image, KeyboardAvoidingView, Platform } from 'react-native';
 import { theme } from '../../../src/theme';
 import { PageHeader } from '../../../src/components/common/PageHeader';
 import { AlertModal } from '../../../src/components/common/AlertModal';
@@ -174,8 +174,12 @@ export default function LeaveManagement() {
   }
 
   return (
-    <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+    >
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <PageHeader title="Leave Management" subtitle={activeTab === 'review' ? "Review and approve student leaves" : "Apply for and track your own leaves"} />
 
         <View style={styles.tabContainer}>
@@ -420,7 +424,7 @@ export default function LeaveManagement() {
         userImage={historyModal.userImage}
         userType={historyModal.userType}
       />
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Linking, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NotificationBell } from '../../../../src/components/common/NotificationBell';
 import { theme } from '../../../../src/theme';
@@ -26,6 +26,8 @@ import { useParentDashboard } from '../../../../src/hooks/useParentDashboard';
 export default function ParentDashboard() {
   const insets = useSafeAreaInsets();
   const { user, role, imageUrl } = useAuth();
+  const { width } = useWindowDimensions();
+  const isSmall = width < 420;
   const router = useRouter();
   const { children, pendingFees, institution, parentProfile, isLoading } = useParentDashboard(user?.id);
 
@@ -72,9 +74,13 @@ export default function ParentDashboard() {
         <Text style={styles.sectionTitle}>Your Children</Text>
         {children.length > 0 ? (
           children.map((child, index) => (
-            <TouchableOpacity 
-              key={index} 
-              style={[styles.childCard, { marginBottom: 12 }]}
+              <TouchableOpacity
+              key={index}
+              style={[
+                styles.childCard,
+                { marginBottom: 12 },
+                isSmall && { flexDirection: 'column', alignItems: 'flex-start', gap: 12 }
+              ]}
               onPress={() => router.push({
                 pathname: "/(root)/parent/student/[id]",
                 params: { id: child.id, name: child.name }
@@ -95,12 +101,15 @@ export default function ParentDashboard() {
                   </Text>
                 </View>
               </View>
-              <View style={styles.childStats}>
-                <View style={styles.miniStat}>
+              <View style={[
+                styles.childStats,
+                isSmall && { width: '100%', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#F1F5F9', paddingTop: 12 }
+              ]}>
+                <View style={[styles.miniStat, isSmall && { alignItems: 'flex-start' }]}>
                   <Text style={styles.miniStatLabel}>ATTENDANCE</Text>
                   <Text style={[styles.miniStatValue, { color: '#10B981' }]}>{child.attendance}</Text>
                 </View>
-                <View style={styles.miniStat}>
+                <View style={[styles.miniStat, isSmall && { alignItems: 'flex-start' }]}>
                   <Text style={styles.miniStatLabel}>GRADES</Text>
                   <Text style={[styles.miniStatValue, { color: '#FAB75A' }]}>{child.grade || 'N/A'}</Text>
                 </View>
@@ -177,12 +186,12 @@ const styles = StyleSheet.create({
   content: { padding: theme.spacing.m },
   section: { marginBottom: theme.spacing.l },
   sectionTitle: { fontSize: 18, fontWeight: 'bold', color: theme.colors.text, marginBottom: 16 },
-  childCard: { 
-    backgroundColor: 'white', 
-    borderRadius: 24, 
-    padding: theme.metrics.isSmallDevice ? 16 : 20, 
-    flexDirection: theme.metrics.width < 400 ? 'column' : 'row', 
-    alignItems: theme.metrics.width < 400 ? 'flex-start' : 'center',
+  childCard: {
+    backgroundColor: 'white',
+    borderRadius: 24,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: '#F1F5F9',
     shadowColor: '#000',
@@ -190,7 +199,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 10,
     elevation: 2,
-    gap: theme.metrics.width < 400 ? 12 : 0,
   },
   childInfo: { flex: 1, flexDirection: 'row', alignItems: 'center' },
   avatar: { width: 44, height: 44, borderRadius: 14, backgroundColor: theme.colors.primary + '20', justifyContent: 'center', alignItems: 'center', marginRight: 12, overflow: 'hidden' },
@@ -198,17 +206,12 @@ const styles = StyleSheet.create({
   avatarText: { fontWeight: 'bold', color: theme.colors.primary },
   childName: { fontSize: 16, fontWeight: 'bold', color: theme.colors.text },
   childMeta: { fontSize: 12, color: theme.colors.textMuted },
-  childStats: { 
-    flexDirection: 'row', 
-    gap: 16, 
+  childStats: {
+    flexDirection: 'row',
+    gap: 16,
     marginRight: 12,
-    width: theme.metrics.width < 400 ? '100%' : 'auto',
-    justifyContent: theme.metrics.width < 400 ? 'space-between' : 'flex-end',
-    borderTopWidth: theme.metrics.width < 400 ? 1 : 0,
-    borderTopColor: '#F1F5F9',
-    paddingTop: theme.metrics.width < 400 ? 12 : 0,
   },
-  miniStat: { alignItems: theme.metrics.width < 400 ? 'flex-start' : 'flex-end' },
+  miniStat: { alignItems: 'flex-end' },
   miniStatLabel: { fontSize: 8, fontWeight: 'bold', color: theme.colors.textMuted },
   miniStatValue: { fontSize: 14, fontWeight: 'bold' },
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 12, gap: 12 },

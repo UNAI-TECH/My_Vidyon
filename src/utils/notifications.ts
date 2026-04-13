@@ -18,6 +18,34 @@ Notifications.setNotificationHandler({
 });
 
 /**
+ * Sets up the default Android notification channel.
+ * Must be called at app boot — BEFORE any user auth — so the channel exists
+ * even when the OS delivers a background/killed-state notification.
+ * Safe to call multiple times (no-op on iOS / if channel already exists).
+ */
+export async function setupAndroidNotificationChannel(): Promise<void> {
+  if (Platform.OS !== 'android') return;
+  try {
+    await Notifications.setNotificationChannelAsync('default', {
+      name: 'My Vidyon Notifications',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#FAB75A',
+      sound: 'default',
+      enableLights: true,
+      enableVibrate: true,
+      showBadge: true,
+    });
+  } catch (e) {
+    console.warn('[Push] Could not register notification channel:', e);
+  }
+}
+
+// Register the channel immediately on module import so it's always available
+setupAndroidNotificationChannel();
+
+
+/**
  * Gets or creates a stable device identifier.
  * On Android, uses Application.getAndroidId().
  * Falls back to a UUID persisted in SecureStore.
@@ -70,15 +98,6 @@ export async function registerForPushNotificationsAsync(userId: string) {
     if (finalStatus !== 'granted') {
       console.log('Failed to get push token: Permission not granted');
       return null;
-    }
-
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('default', {
-        name: 'default',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#FF231F7C',
-      });
     }
 
     // Get the FCM token specifically, as your current edge function is coded for FCM

@@ -15,7 +15,7 @@ const queryClient = new QueryClient();
 
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { registerForPushNotificationsAsync, setupNotificationListeners } from '../src/utils/notifications';
+import { registerForPushNotificationsAsync, setupNotificationListeners, setupAndroidNotificationChannel } from '../src/utils/notifications';
 import { useEffect } from 'react';
 
 function RealtimeObserver({ children }: { children: React.ReactNode }) {
@@ -54,6 +54,13 @@ import { StatusBar } from 'expo-status-bar';
 
 export default function AppLayout() {
   console.log("ROOT LAYOUT BOOTING WITH STACK");
+
+  // Ensure the Android notification channel exists at every app boot,
+  // independent of auth state — required for background push delivery.
+  useEffect(() => {
+    setupAndroidNotificationChannel();
+  }, []);
+
   return (
     <SafeAreaProvider>
       <StatusBar style="dark" />

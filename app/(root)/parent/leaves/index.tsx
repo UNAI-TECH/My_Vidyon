@@ -10,6 +10,7 @@ import {
   Modal,
   TextInput,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { theme } from '../../../../src/theme';
@@ -354,107 +355,123 @@ export default function ParentLeaves() {
 
       {/* ── Submit Modal ── */}
       <Modal visible={modalVisible} animationType="slide" transparent onRequestClose={() => setModalVisible(false)}>
-        <View style={modal.overlay}>
-          <View style={modal.sheet}>
-            <Text style={modal.title}>New Leave Request</Text>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
+        >
+          <View style={modal.overlay}>
+            <View style={modal.sheet}>
+              <Text style={modal.title}>New Leave Request</Text>
 
-            {/* Child Selection - Styled more like a dropdown */}
-            <View style={form.field}>
-              <Text style={form.label}>For Student</Text>
-              <View style={form.dropdownContainer}>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-                  {children.map(c => (
-                    <TouchableOpacity
-                      key={c.id}
-                      style={[form.dropdownItem, selectedChild?.id === c.id && form.dropdownItemActive]}
-                      onPress={() => setSelectedChild(c)}
-                    >
-                      <Text style={[form.dropdownText, selectedChild?.id === c.id && form.dropdownTextActive]}>
-                        {c.name}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-                <View style={form.dropdownIcon}>
-                  <ChevronDown size={16} color={theme.colors.textMuted} {...({} as any)} />
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingBottom: 8 }}
+              >
+                {/* Child Selection */}
+                <View style={form.field}>
+                  <Text style={form.label}>For Student</Text>
+                  <View style={form.dropdownContainer}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }} keyboardShouldPersistTaps="handled">
+                      {children.map(c => (
+                        <TouchableOpacity
+                          key={c.id}
+                          style={[form.dropdownItem, selectedChild?.id === c.id && form.dropdownItemActive]}
+                          onPress={() => setSelectedChild(c)}
+                        >
+                          <Text style={[form.dropdownText, selectedChild?.id === c.id && form.dropdownTextActive]}>
+                            {c.name}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                    <View style={form.dropdownIcon}>
+                      <ChevronDown size={16} color={theme.colors.textMuted} {...({} as any)} />
+                    </View>
+                  </View>
                 </View>
-              </View>
-            </View>
 
-            {/* Target Recipient Display */}
-            {selectedChild && (
-              <View style={styles.teacherBadge}>
-                <User size={14} color={theme.colors.primary} {...({} as any)} />
-                <Text style={styles.teacherText}>
-                  Request will be sent to: <Text style={{ fontWeight: 'bold' }}>{classTeacher || 'Loading...'}</Text>
-                </Text>
-              </View>
-            )}
+                {/* Target Recipient Display */}
+                {selectedChild && (
+                  <View style={styles.teacherBadge}>
+                    <User size={14} color={theme.colors.primary} {...({} as any)} />
+                    <Text style={styles.teacherText}>
+                      Request will be sent to: <Text style={{ fontWeight: 'bold' }}>{classTeacher || 'Loading...'}</Text>
+                    </Text>
+                  </View>
+                )}
 
-            {/* Leave Type */}
-            <View style={form.field}>
-              <Text style={form.label}>Leave Type</Text>
-              <View style={form.typeRow}>
-                {['General', 'Sick', 'Emergency', 'Personal'].map(t => (
+                {/* Leave Type */}
+                <View style={form.field}>
+                  <Text style={form.label}>Leave Type</Text>
+                  <View style={form.typeRow}>
+                    {['General', 'Sick', 'Emergency', 'Personal'].map(t => (
+                      <TouchableOpacity
+                        key={t}
+                        style={[form.typeChip, leaveType === t && form.typeChipActive]}
+                        onPress={() => setLeaveType(t)}
+                      >
+                        <Text style={[form.typeChipText, leaveType === t && form.typeChipTextActive]}>{t}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+
+                <View style={form.field}>
+                  <Text style={form.label}>From Date (YYYY-MM-DD)</Text>
                   <TouchableOpacity
-                    key={t}
-                    style={[form.typeChip, leaveType === t && form.typeChipActive]}
-                    onPress={() => setLeaveType(t)}
+                    style={[form.input, { justifyContent: 'center' }]}
+                    onPress={() => setShowFromPicker(true)}
                   >
-                    <Text style={[form.typeChipText, leaveType === t && form.typeChipTextActive]}>{t}</Text>
+                    <Text style={{ color: fromDate ? theme.colors.text : '#94A3B8' }}>
+                      {fromDate || 'Select Date'}
+                    </Text>
                   </TouchableOpacity>
-                ))}
-              </View>
-            </View>
+                </View>
 
-            <View style={form.field}>
-              <Text style={form.label}>From Date (YYYY-MM-DD)</Text>
-              <TouchableOpacity
-                style={[form.input, { justifyContent: 'center' }]}
-                onPress={() => setShowFromPicker(true)}
-              >
-                <Text style={{ color: fromDate ? theme.colors.text : '#94A3B8' }}>
-                  {fromDate || 'Select Date'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-            <View style={form.field}>
-              <Text style={form.label}>To Date (YYYY-MM-DD)</Text>
-              <TouchableOpacity
-                style={[form.input, { justifyContent: 'center' }]}
-                onPress={() => setShowToPicker(true)}
-              >
-                <Text style={{ color: toDate ? theme.colors.text : '#94A3B8' }}>
-                  {toDate || 'Select Date'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-            <View style={form.field}>
-              <Text style={form.label}>Reason</Text>
-              <TextInput
-                style={[form.input, form.textarea]}
-                value={reason}
-                onChangeText={setReason}
-                placeholder="Briefly describe the reason..."
-                placeholderTextColor="#94A3B8"
-                multiline
-                numberOfLines={3}
-              />
-            </View>
+                <View style={form.field}>
+                  <Text style={form.label}>To Date (YYYY-MM-DD)</Text>
+                  <TouchableOpacity
+                    style={[form.input, { justifyContent: 'center' }]}
+                    onPress={() => setShowToPicker(true)}
+                  >
+                    <Text style={{ color: toDate ? theme.colors.text : '#94A3B8' }}>
+                      {toDate || 'Select Date'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
 
-            <View style={modal.actions}>
-              <TouchableOpacity style={modal.cancelBtn} onPress={() => { setModalVisible(false); resetForm(); }}>
-                <Text style={modal.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={modal.submitBtn} onPress={handleSubmit} disabled={isSubmitting}>
-                {isSubmitting
-                  ? <ActivityIndicator color="white" />
-                  : <Text style={modal.submitText}>Submit</Text>
-                }
-              </TouchableOpacity>
+                <View style={form.field}>
+                  <Text style={form.label}>Reason</Text>
+                  <TextInput
+                    style={[form.input, form.textarea]}
+                    value={reason}
+                    onChangeText={setReason}
+                    placeholder="Briefly describe the reason..."
+                    placeholderTextColor="#94A3B8"
+                    multiline
+                    numberOfLines={3}
+                    textAlignVertical="top"
+                    scrollEnabled={false}
+                  />
+                </View>
+
+                <View style={modal.actions}>
+                  <TouchableOpacity style={modal.cancelBtn} onPress={() => { setModalVisible(false); resetForm(); }}>
+                    <Text style={modal.cancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={modal.submitBtn} onPress={handleSubmit} disabled={isSubmitting}>
+                    {isSubmitting
+                      ? <ActivityIndicator color="white" />
+                      : <Text style={modal.submitText}>Submit</Text>
+                    }
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <CalendarModal

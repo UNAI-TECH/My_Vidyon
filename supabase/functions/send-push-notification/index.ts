@@ -215,9 +215,10 @@ serve(async (req: Request) => {
                             body: body || 'You have a new update. Open the app to view.',
                         },
                         data: {
-                            ...(data || {}),
-                            originalTitle: title,
-                            originalBody: body,
+                            action_url: String(data?.action_url ?? ''),
+                            notification_id: String(data?.notification_id ?? ''),
+                            originalTitle: String(title ?? ''),
+                            originalBody: String(body ?? ''),
                         },
                         android: {
                             priority: 'high' as const,
