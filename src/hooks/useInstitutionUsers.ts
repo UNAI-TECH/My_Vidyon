@@ -11,12 +11,15 @@ export function useInstitutionUsers(institutionId: string | null) {
       if (!institutionId) return [];
       const { data, error } = await supabase
         .from('students')
-        .select('*, parents:parent_id(full_name, email, phone)')
+        .select('*, profiles!students_profile_id_fkey (full_name, image_url, profile_image_url, avatar_url), parents:parent_id(full_name, email, phone)')
         .eq('institution_id', institutionId)
         .eq('is_active', true)
         .order('name');
       if (error) throw error;
-      return data || [];
+      return (data || []).map((s: any) => ({
+        ...s,
+        image_url: s.image_url || s.profiles?.image_url || s.profiles?.profile_image_url || s.profiles?.avatar_url || null
+      }));
     },
     enabled: !!institutionId,
   });
@@ -33,7 +36,12 @@ export function useInstitutionUsers(institutionId: string | null) {
         .order('full_name');
       if (error) throw error;
       const targetRoles = ['faculty', 'admin', 'teacher', 'accountant', 'canteen_manager', 'driver'];
-      return (data || []).filter((p: any) => targetRoles.includes(p.role));
+      return (data || [])
+        .filter((p: any) => targetRoles.includes(p.role))
+        .map((p: any) => ({
+          ...p,
+          image_url: p.image_url || p.profile_image_url || p.avatar_url || null
+        }));
     },
     enabled: !!institutionId,
   });

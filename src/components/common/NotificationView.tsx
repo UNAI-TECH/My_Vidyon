@@ -97,10 +97,10 @@ export const NotificationView = ({ role }: NotificationViewProps) => {
             <NotificationCard item={item} onPress={handleNotificationPress} />
           )}
           ListEmptyComponent={renderEmpty}
-          contentContainerStyle={[
+          contentContainerStyle={StyleSheet.flatten([
             styles.listContent,
             notifications.length === 0 && { flex: 1, justifyContent: 'center' }
-          ]}
+          ])}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
           }

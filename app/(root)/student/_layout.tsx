@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { TouchableOpacity } from 'react-native';
+import { TouchableOpacity, Platform, useWindowDimensions } from 'react-native';
 import { theme } from '../../../src/theme';
 import { Home, Award, Settings, LogOut } from 'lucide-react-native';
 import { useAuth } from '../../../src/hooks/useAuth';
@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 export default function StudentTabs() {
   const { signOut } = useAuth();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
 
   return (
     <Tabs
@@ -30,6 +31,7 @@ export default function StudentTabs() {
           </TouchableOpacity>
         ),
         tabBarStyle: {
+          display: Platform.OS === 'web' && width >= 1024 ? 'none' : 'flex',
           backgroundColor: theme.colors.background,
           borderTopColor: theme.colors.glassBorder,
           elevation: 0, shadowOpacity: 0,

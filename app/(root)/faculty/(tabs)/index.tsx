@@ -81,7 +81,6 @@ export default function FacultyDashboard() {
         institutionName={institution?.name}
         institutionLogo={institution?.logo_url}
         userRole={role || 'faculty'}
-        userAvatar={imageUrl || undefined}
         userSubtitle={facultyProfile?.department || undefined}
         actions={<NotificationBell />}
       />

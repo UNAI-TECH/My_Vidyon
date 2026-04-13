@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Users, GraduationCap, Briefcase, Calculator, Coffee, UserCircle } from 'lucide-react-native';
 import { theme } from '../../theme';
@@ -63,21 +63,23 @@ export const PageHeader = ({ title, subtitle, actions, leftAction, institutionNa
   const showInstitutionCard = !!userRole || !!institutionName || !!institutionLogo;
   
   return (
-    <View style={[styles.outerContainer, { paddingTop: Math.max(insets.top, theme.spacing.s) }]}>
+    <View style={StyleSheet.flatten([styles.outerContainer, { paddingTop: Math.max(insets.top, theme.spacing.s) }])}>
       {showInstitutionCard && (
         <View style={styles.institutionCard}>
           <TouchableOpacity 
-            style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 14 }}
+            style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}
             activeOpacity={0.7}
             onPress={handleProfilePress}
           >
-            {institutionLogo ? (
-              <Image source={{ uri: institutionLogo }} style={styles.institutionLogoBig} />
-            ) : (
-              <View style={[styles.institutionLogoBig, { backgroundColor: theme.colors.primary + '20', justifyContent: 'center', alignItems: 'center' }]}>
-                <Text style={{ fontWeight: 'bold', color: theme.colors.primary, fontSize: 20 }}>{institutionName?.substring(0, 1) || 'M'}</Text>
-              </View>
-            )}
+            <View style={{ marginRight: 14 }}>
+              {institutionLogo ? (
+                <Image source={{ uri: institutionLogo }} style={styles.institutionLogoBig} />
+              ) : (
+                <View style={[styles.institutionLogoBig, { backgroundColor: theme.colors.primary + '20', justifyContent: 'center', alignItems: 'center' }]}>
+                  <Text style={{ fontWeight: 'bold', color: theme.colors.primary, fontSize: 20 }}>{institutionName?.substring(0, 1) || 'M'}</Text>
+                </View>
+              )}
+            </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.institutionNameBig} numberOfLines={1}>{institutionName || 'My Vidyon ERP'}</Text>
               <Text style={styles.institutionSubtitle}>{displayRole ? `${getRoleLabel(displayRole)} Portal` : 'Powered by My Vidyon'}</Text>
@@ -97,7 +99,7 @@ export const PageHeader = ({ title, subtitle, actions, leftAction, institutionNa
                   resizeMode="cover"
                 />
               ) : (
-                <View style={{ transform: [{ scale: 0.8 }] }}>
+                <View>
                   {getRoleIcon(displayRole)}
                 </View>
               )}
@@ -108,8 +110,8 @@ export const PageHeader = ({ title, subtitle, actions, leftAction, institutionNa
         </View>
       )}
       <View style={styles.container}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 12 }}>
-          {leftAction}
+        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+          {leftAction && <View style={{ marginRight: 12 }}>{leftAction}</View>}
           <View style={styles.textContainer}>
             <Text style={styles.title}>{title}</Text>
             {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
@@ -137,11 +139,16 @@ const styles = StyleSheet.create({
     width: '100%',
     borderWidth: 1,
     borderColor: '#F1F5F9',
-    shadowColor: theme.colors.text,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 12,
-    elevation: 2,
+    ...Platform.select({
+      web: {},
+      default: {
+        shadowColor: theme.colors.text,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.04,
+        shadowRadius: 12,
+        elevation: 2,
+      }
+    })
   },
   institutionLogoBig: {
     width: 52,

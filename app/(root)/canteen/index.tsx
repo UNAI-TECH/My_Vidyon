@@ -182,7 +182,6 @@ export default function CanteenDashboard() {
               institutionName={institution?.name}
               institutionLogo={institution?.logo_url}
               userRole={role || 'canteen'}
-              userAvatar={imageUrl || undefined}
                actions={null}
             />
 

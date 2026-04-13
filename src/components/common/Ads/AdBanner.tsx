@@ -11,6 +11,7 @@ interface AdBannerProps {
  * based on the provided user type (e.g. STUDENT, FACULTY).
  */
 export const AdBanner: React.FC<AdBannerProps> = ({ type }) => {
+  if (Platform.OS === 'web') return null;
   // Safety check for Expo Go or environments without the native module
   try {
     const adsModule = require('react-native-google-mobile-ads');

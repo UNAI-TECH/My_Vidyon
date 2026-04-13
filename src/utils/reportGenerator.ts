@@ -1,11 +1,13 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import { Platform } from 'react-native';
 
 export const generateFinancialReport = async (stats: any, institutionName?: string, logoUrl?: string) => {
     const htmlContent = `
       <html>
         <head>
           <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
+          <title>My Vidyon - Financial Report</title>
           <style>
             body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 0; margin: 0; color: #1e293b; background: white; }
             .header { background: #FAB75A; padding: 40px; color: #1E293B; display: flex; justify-content: space-between; align-items: center; }
@@ -88,6 +90,12 @@ export const generateFinancialReport = async (stats: any, institutionName?: stri
     `;
 
     try {
+        if (Platform.OS === 'web') {
+            const { printHtmlOnWeb } = require('./printWeb');
+            printHtmlOnWeb(htmlContent);
+            return;
+        }
+
         const { uri } = await Print.printToFileAsync({ html: htmlContent });
         if (!(await Sharing.isAvailableAsync())) {
             alert('Sharing is not available on your device');
@@ -127,6 +135,7 @@ export const generateDailyCollectionReport = async (institutionId: string, insti
           <html>
             <head>
               <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
+              <title>My Vidyon - Daily Collection Report</title>
               <style>
                 body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 0; margin: 0; color: #1e293b; background: white; }
                 .header { background: #FAB75A; padding: 40px; color: #1E293B; display: flex; justify-content: space-between; align-items: center; }
@@ -219,6 +228,12 @@ export const generateDailyCollectionReport = async (institutionId: string, insti
             </body>
           </html>
         `;
+
+        if (Platform.OS === 'web') {
+            const { printHtmlOnWeb } = require('./printWeb');
+            printHtmlOnWeb(htmlContent);
+            return;
+        }
 
         const { uri } = await Print.printToFileAsync({ html: htmlContent });
         if (!(await Sharing.isAvailableAsync())) {

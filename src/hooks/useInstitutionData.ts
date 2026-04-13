@@ -164,7 +164,7 @@ export function useInstitutionData(institutionId: string | null, academicYear: s
             const [studentAtt, staffAtt] = await Promise.all([
                 supabase
                     .from('student_attendance')
-                    .select('id, created_at, status, students(full_name, class_name)')
+                    .select('id, created_at, status, students(name, class_name)')
                     .eq('institution_id', institutionId)
                     .eq('attendance_date', today)
                     .order('created_at', { ascending: false })
@@ -182,7 +182,7 @@ export function useInstitutionData(institutionId: string | null, academicYear: s
                 ...(studentAtt.data?.map((a: any) => ({
                     id: a.id,
                     created_at: a.created_at,
-                    name: a.students?.full_name || 'Student',
+                    name: a.students?.name || 'Student',
                     subtitle: a.students?.class_name || 'Unknown Class',
                     type: 'Student' as const
                 })) || []),
@@ -245,7 +245,7 @@ export function useInstitutionData(institutionId: string | null, academicYear: s
             const { data } = await supabase
                 .from('institutions')
                 .select('*')
-                .eq('id', institutionId)
+                .or(`id.eq.${institutionId},institution_id.eq.${institutionId}`)
                 .maybeSingle();
             return data as any;
         },
@@ -267,7 +267,7 @@ export function useInstitutionData(institutionId: string | null, academicYear: s
             })
             .on('postgres_changes', { event: '*', schema: 'public', table: 'students', filter: `institution_id=eq.${institutionId}` }, () => {
                 queryClient.invalidateQueries({ queryKey: ['inst-stats'] });
-                queryClient.invalidateQueries({ queryKey: ['inst-charts'] });
+                queryClient.invalidateQueries({ queryKey: ['inst-charts-v3'] });
             })
             .on('postgres_changes', { event: '*', schema: 'public', table: 'staff_leaves', filter: `institution_id=eq.${institutionId}` }, () => {
                 queryClient.invalidateQueries({ queryKey: ['inst-pending-leaves'] });

@@ -1,15 +1,15 @@
 import { Tabs } from 'expo-router';
+import { TouchableOpacity, Platform, useWindowDimensions } from 'react-native';
 import { theme } from '../../../../src/theme';
-import { LayoutDashboard, Settings } from 'lucide-react-native';
+import { LayoutDashboard, Settings, LogOut } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HeaderLogo } from '../../../../src/components/common/HeaderLogo';
-import { TouchableOpacity } from 'react-native';
-import { LogOut } from 'lucide-react-native';
 import { useAuth } from '../../../../src/hooks/useAuth';
 
 export default function FacultyTabsLayout() {
   const { signOut } = useAuth();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
 
   return (
     <Tabs
@@ -25,11 +25,13 @@ export default function FacultyTabsLayout() {
           <TouchableOpacity 
             onPress={signOut} 
             style={{ marginRight: 10, padding: 8 }}
+            hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
           >
             <LogOut size={20} color={theme.colors.text} {...({} as any)} />
           </TouchableOpacity>
         ),
         tabBarStyle: {
+          display: Platform.OS === 'web' && width >= 1024 ? 'none' : 'flex',
           backgroundColor: theme.colors.background,
           borderTopColor: theme.colors.glassBorder,
           elevation: 0, shadowOpacity: 0,

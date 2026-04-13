@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Image, ActivityIndicator, Alert, Platform, Modal } from 'react-native';
 import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
@@ -17,6 +17,8 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { CalendarModal } from '../../../../src/components/common/CalendarPicker';
+import { WebCameraModal } from '../../../../src/components/common/WebCameraModal';
+
 
 type UserRole = 'student' | 'faculty' | 'accountant' | 'canteen_manager' | 'driver' | 'parent';
 
@@ -54,7 +56,7 @@ function generateUniqueEmail(
 }
 
 export default function AddUserScreen() {
-  const { institutionId, institutionUuid } = useAuth();
+  const { institutionId, institutionUuid, academicYear: authYear } = useAuth();
   const router = useRouter();
   const params = useLocalSearchParams();
 
@@ -110,13 +112,14 @@ export default function AddUserScreen() {
   } | null>(null);
 
   const [showDOBPicker, setShowDOBPicker] = useState(false);
+  const [showWebCamera, setShowWebCamera] = useState(false);
 
 
   const [form, setForm] = useState({
     firstName: '', lastName: '', dob: '', gender: 'male', bloodGroup: '',
     phone: '', address: '', city: '', zipCode: '',
     // Student specific
-    admissionNumber: '', className: '', section: '', rollNumber: '', academicYear: '2026-27',
+    admissionNumber: '', className: '', section: '', rollNumber: '', academicYear: authYear || '2026-27',
     parentName: '', parentRelation: 'Father', parentPhone: '', parentEmail: '',
     // Staff specific
     staffId: '', department: '',
@@ -126,17 +129,25 @@ export default function AddUserScreen() {
     setForm(prev => ({ ...prev, [field]: value }));
   };
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setForm({
       firstName: '', lastName: '', dob: '', gender: 'male', bloodGroup: '',
       phone: '', address: '', city: '', zipCode: '',
-      admissionNumber: '', className: '', section: '', rollNumber: '', academicYear: '2026-27',
+      admissionNumber: '', className: '', section: '', rollNumber: '', academicYear: authYear || '2026-27',
       parentName: '', parentRelation: 'Father', parentPhone: '', parentEmail: '',
       staffId: '', department: '',
     });
     setImage(null);
     setGeneratedEmail('');
-  };
+    setSelectedParent(null);
+    setParentSearchQuery('');
+    setBulkResults(null);
+  }, [authYear]);
+
+  // Reset form on mount to ensure a clean state
+  useEffect(() => {
+    resetForm();
+  }, []);
 
   // Fetch available classes from groups
   const { data: availableClasses = [] } = useQuery({
@@ -341,6 +352,7 @@ export default function AddUserScreen() {
             text: 'Done', 
             onPress: () => {
               setAlertConfig(null);
+              resetForm();
               router.back();
             } 
           }
@@ -613,7 +625,7 @@ export default function AddUserScreen() {
               visible: true,
               title: 'Upload Photo',
               options: [
-                { label: 'Camera', icon: Camera, onPress: takePhoto, color: '#3B82F6', bgColor: '#EFF6FF' },
+                { label: 'Camera', icon: Camera, onPress: Platform.OS === 'web' ? () => setShowWebCamera(true) : takePhoto, color: '#3B82F6', bgColor: '#EFF6FF' },
                 { label: 'Gallery', icon: Upload, onPress: pickImage, color: '#8B5CF6', bgColor: '#F5F3FF' },
                 ...(image ? [{ label: 'Remove', icon: Trash2, onPress: () => setImage(null), color: '#EF4444', bgColor: '#FEF2F2' }] : []),
               ]
@@ -962,6 +974,12 @@ export default function AddUserScreen() {
         initialDate={form.dob}
         onSelect={(date) => updateField('dob', date)}
         onClose={() => setShowDOBPicker(false)}
+      />
+
+      <WebCameraModal
+        visible={showWebCamera}
+        onCapture={(uri) => setImage(uri)}
+        onClose={() => setShowWebCamera(false)}
       />
     </View>
   );

@@ -1,7 +1,11 @@
 import React from 'react';
-import { Image, StyleSheet, View } from 'react-native';
+import { Image, StyleSheet, View, useWindowDimensions } from 'react-native';
 
 export const HeaderLogo = () => {
+  const { width } = useWindowDimensions();
+  
+  if (width >= 1024) return null;
+
   return (
     <View style={styles.container}>
       <Image 

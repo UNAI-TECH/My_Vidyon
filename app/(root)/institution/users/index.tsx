@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, ActivityIndicator, Alert, Modal, ScrollView, Image, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, ActivityIndicator, Alert, Modal, ScrollView, Image, RefreshControl, Platform } from 'react-native';
 import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
 import { useAuth } from '../../../../src/hooks/useAuth';
@@ -14,6 +14,7 @@ import { Badge } from '../../../../src/components/common/Badge';
 import { AlertModal } from '../../../../src/components/common/AlertModal';
 import { CalendarModal } from '../../../../src/components/common/CalendarPicker';
 import { SelectionModal } from '../../../../src/components/common/SelectionModal';
+import { WebCameraModal } from '../../../../src/components/common/WebCameraModal';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../../../src/lib/supabase';
 import { useQuery } from '@tanstack/react-query';
@@ -92,6 +93,7 @@ export default function UserManagementScreen() {
   const [showClassModal, setShowClassModal] = useState(false);
   const [showSectionModal, setShowSectionModal] = useState(false);
   const [showDeptModal, setShowDeptModal] = useState(false);
+  const [showWebCamera, setShowWebCamera] = useState(false);
 
   const showAlert = (title: string, message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info', buttons?: any[]) => {
     setAlertConfig({ visible: true, title, message, type, buttons });
@@ -312,20 +314,44 @@ export default function UserManagementScreen() {
     setIsModalVisible(true);
   };
 
-  const handlePhotoUpdate = async () => {
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        allowsEditing: false,
-        quality: 0.7,
-      });
-      if (result.canceled || !result.assets[0]) return;
-      setPendingPhoto(result.assets[0].uri);
-      setShowPhotoPreview(true);
-    } catch (error: any) {
-      console.error('Photo pick error:', error);
-      showAlert("Error", "Failed to pick photo", "error");
-    }
+  const handlePhotoUpdate = () => {
+    showAlert(
+      "Upload Photo",
+      "Choose a method to upload photo",
+      "info",
+      [
+        { text: "Cancel", style: "secondary", onPress: () => {} },
+        { text: "Camera", style: "primary", onPress: async () => {
+            setAlertConfig(prev => ({ ...prev, visible: false }));
+            if (Platform.OS === 'web') {
+              setShowWebCamera(true);
+            } else {
+              const { status } = await ImagePicker.requestCameraPermissionsAsync();
+              if (status !== 'granted') return showAlert("Permission Denied", "Camera permission is required", "error");
+              const result = await ImagePicker.launchCameraAsync({ allowsEditing: false, quality: 0.7 });
+              if (!result.canceled && result.assets[0]) {
+                setPendingPhoto(result.assets[0].uri);
+                setShowPhotoPreview(true);
+              }
+            }
+          }
+        },
+        { text: "Gallery", style: "primary", onPress: async () => {
+             setAlertConfig(prev => ({ ...prev, visible: false }));
+             try {
+                const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: false, quality: 0.7 });
+                if (!result.canceled && result.assets[0]) {
+                  setPendingPhoto(result.assets[0].uri);
+                  setShowPhotoPreview(true);
+                }
+             } catch (error: any) {
+                console.error('Photo pick error:', error);
+                showAlert("Error", "Failed to pick photo", "error");
+             }
+          }
+        }
+      ]
+    );
   };
 
   const confirmPhotoUpload = async () => {
@@ -696,6 +722,15 @@ export default function UserManagementScreen() {
         onSelect={(opt) => setFilterDept(opt.label)}
         onClear={() => setFilterDept(null)}
         onClose={() => setShowDeptModal(false)}
+      />
+
+      <WebCameraModal
+        visible={showWebCamera}
+        onCapture={(uri) => {
+          setPendingPhoto(uri);
+          setShowPhotoPreview(true);
+        }}
+        onClose={() => setShowWebCamera(false)}
       />
     </View>
   );

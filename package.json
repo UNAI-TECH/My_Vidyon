@@ -6,7 +6,10 @@
     "start": "expo start --go",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "build:web": "expo export -p web",
+    "dev:desktop": "electron electron-main.js",
+    "build:exe": "npm run build:web && electron-builder build --win"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
@@ -56,6 +59,34 @@
   "private": true,
   "devDependencies": {
     "@types/react": "~19.1.10",
+    "electron": "^41.1.1",
+    "electron-builder": "^26.8.1",
+    "serve": "^14.2.6",
+    "sharp": "^0.34.5",
     "typescript": "^5.3.3"
+  },
+  "build": {
+    "appId": "com.myvidyon.desktop",
+    "productName": "My Vidyon",
+    "directories": {
+      "output": "release-v2"
+    },
+    "icon": "assets/icon.png",
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.png",
+      "cscLink": null,
+      "forceCodeSigning": false
+    },
+    "extraMetadata": {
+      "main": "electron-main.js"
+    },
+    "files": [
+      "dist/**/*",
+      "assets/**/*",
+      "electron-main.js",
+      "package.json",
+      "!node_modules"
+    ]
   }
 }

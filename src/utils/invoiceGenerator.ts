@@ -1,5 +1,6 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import { Platform } from 'react-native';
 
 export const generateInvoice = async (
     studentName: string,
@@ -127,6 +128,12 @@ export const generateInvoice = async (
     `;
 
     try {
+        if (Platform.OS === 'web') {
+            const { printHtmlOnWeb } = require('./printWeb');
+            printHtmlOnWeb(htmlContent);
+            return;
+        }
+
         const { uri } = await Print.printToFileAsync({ html: htmlContent });
         if (!(await Sharing.isAvailableAsync())) {
             alert('Sharing is not available on your device');

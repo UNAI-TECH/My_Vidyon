@@ -15,6 +15,7 @@ interface NativeAdItemProps {
 }
 
 export const NativeAdItem: React.FC<NativeAdItemProps> = ({ adUnitID }) => {
+  if (Platform.OS === 'web') return null;
   if (!Ads || !Ads.NativeAdView) {
     return (
       <View style={styles.loadingContainer}>

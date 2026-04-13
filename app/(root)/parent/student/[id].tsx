@@ -23,22 +23,23 @@ import { InvoiceModal } from '../../../../src/components/fees/InvoiceModal';
 
 export default function StudentDetail() {
   const { id, name } = useLocalSearchParams();
+  const studentId = Array.isArray(id) ? (id[0] as string) : (id as string);
   const router = useRouter();
 
   // Fetch specific student details
   const { data: student, isLoading: isStudentLoading } = useQuery({
-    queryKey: ['parent-student-detail', id],
+    queryKey: ['parent-student-detail', studentId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('students')
-        .select('*, profiles!students_profile_id_fkey (full_name, image_url)')
-        .eq('id', id)
+        .select('*, profiles!students_profile_id_fkey (full_name, image_url, profile_image_url, avatar_url)')
+        .eq('id', studentId)
         .single();
       if (error) throw error;
       return {
         ...(data as any),
         name: (data as any).profiles?.full_name || (data as any).name,
-        image_url: (data as any).image_url || (data as any).profiles?.image_url
+        image_url: (data as any).image_url || (data as any).profiles?.image_url || (data as any).profiles?.profile_image_url || (data as any).profiles?.avatar_url
       };
     },
     enabled: !!id,
@@ -72,7 +73,7 @@ export default function StudentDetail() {
       const { data: att } = await supabase
         .from('student_attendance')
         .select('status, attendance_date')
-        .eq('student_id', id)
+        .eq('student_id', studentId)
         .order('attendance_date', { ascending: false });
       
       const attData = (att || []) as { status: string; attendance_date: string }[];
@@ -85,7 +86,7 @@ export default function StudentDetail() {
       const { data: grades } = await supabase
         .from('exam_results')
         .select('*, subjects(name)')
-        .eq('student_id', id)
+        .eq('student_id', studentId)
         .order('created_at', { ascending: false })
         .limit(5);
 
@@ -93,7 +94,7 @@ export default function StudentDetail() {
       const { data: currentFee } = await supabase
         .from('student_fees')
         .select('*, fee_structures(*)')
-        .eq('student_id', id)
+        .eq('student_id', studentId)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -105,7 +106,7 @@ export default function StudentDetail() {
       const { data: payments } = await supabase
         .from('fee_payments')
         .select('*, fee_structures(name)')
-        .eq('student_id', id)
+        .eq('student_id', studentId)
         .order('payment_date', { ascending: false });
       
       // Combine current paid fee + history

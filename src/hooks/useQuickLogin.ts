@@ -76,9 +76,16 @@ export function useQuickLogin() {
     }
   };
 
-  const switchToAccount = async (account: SavedAccount): Promise<boolean> => {
+  const switchToAccount = async (account: SavedAccount, isRetry = false): Promise<boolean> => {
     setSwitchingAccount(true);
     try {
+      // Step 1: CLEAR ANY LOGGED IN SESSION LOCALLY FIRST (Prevents "Sticky Session" errors on first tap)
+      // We use scope: 'local' to avoid hitting the Supabase Auth server, but cleaning the local GoTrue state.
+      await supabase.auth.signOut({ scope: 'local' });
+      
+      // Step 2: Give the client 200ms to settle its internal state
+      await new Promise(r => setTimeout(r, 200));
+
       // Always fetch the absolutely latest token from persistent storage right before 
       // authenticating, because the background sync in useAuth might have updated it!
       const stored = await LargeSecureStore.getItem(STORAGE_KEY);
@@ -95,8 +102,7 @@ export function useQuickLogin() {
       }
 
       setIsLoading(true);
-
-      console.log('[QuickLogin] Attempting setSession for:', account.email);
+      console.log(`[QuickLogin] Attempting setSession (Retry: ${isRetry}) for: ${account.email}`);
       
       // Use a timeout to prevent permanent hangs if Supabase is slow or stuck
       const timeoutPromise = new Promise((_, reject) => 
@@ -108,11 +114,30 @@ export function useQuickLogin() {
         refresh_token: activeRefreshToken,
       });
 
-      const { data, error }: any = await Promise.race([authPromise, timeoutPromise]);
-
+      let { data, error }: any = await Promise.race([authPromise, timeoutPromise]);
+ 
       if (error) {
-        console.error('[QuickLogin] Session restore error:', error.message);
-        await removeAccount(account.id);
+        console.warn(`[QuickLogin] Attempt failed: ${error.message}`);
+        
+        // AUTO-RETRY ONCE: If this wasn't already a retry, try a fresh start
+        if (!isRetry) {
+          console.log('[QuickLogin] Triggering one-time silent retry...');
+          return switchToAccount(account, true);
+        }
+
+        // Final Fallback: Attempt manual session refresh if tokens exist
+        try {
+          const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+          if (!refreshError && refreshData.session) {
+            console.log('[QuickLogin] Manual refresh fallback success!');
+            setSwitchingAccount(false);
+            return true;
+          }
+        } catch(e) {
+          console.error('[QuickLogin] Refresh catch error:', e);
+        }
+
+        console.error('[QuickLogin] Session restore definitively failed.');
         return false;
       }
 

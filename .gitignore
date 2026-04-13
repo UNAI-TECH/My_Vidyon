@@ -39,3 +39,8 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# releases
+/release-v2
+/dist
+*.exe

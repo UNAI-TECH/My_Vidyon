@@ -48,7 +48,6 @@ export default function ParentDashboard() {
         institutionName={institution?.name}
         institutionLogo={institution?.logo_url}
         userRole={role || 'parent'}
-        userAvatar={imageUrl || undefined}
         userSubtitle={children.length > 0 ? `${children.length} Children Enrolled` : undefined}
         actions={<NotificationBell />}
       />

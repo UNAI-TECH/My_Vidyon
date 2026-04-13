@@ -5,11 +5,11 @@ import {
   StyleSheet, 
   FlatList, 
   TouchableOpacity, 
-  Dimensions, 
   ActivityIndicator,
   Linking,
   ImageBackground,
-  Alert
+  Alert,
+  useWindowDimensions
 } from 'react-native';
 import { theme } from '../../theme';
 import { supabase } from '../../lib/supabase';
@@ -18,9 +18,6 @@ import { useQuery } from '@tanstack/react-query';
 import { ExternalLink, Calendar, ChevronRight } from 'lucide-react-native';
 import { NativeAdItem } from './Ads/NativeAdView';
 import { EventDetailModal } from './EventDetailModal';
-
-const { width } = Dimensions.get('window');
-const CAROUSEL_WIDTH = width - 48; // Padding 24 on each side
 
 interface EventAdCarouselProps {
   nativeAdUnitID: string;
@@ -38,6 +35,8 @@ export const EventAdCarousel: React.FC<EventAdCarouselProps> = ({
   nativeAdUnitID, 
   adInterval = 2 
 }) => {
+  const { width } = useWindowDimensions();
+  const CAROUSEL_WIDTH = Math.min(width - 48, 1200); // Respect max-width on desktop
   const { user, institutionUuid } = useAuth();
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
   const [modalVisible, setModalVisible] = useState(false);
@@ -131,7 +130,7 @@ export const EventAdCarousel: React.FC<EventAdCarouselProps> = ({
   const renderItem = ({ item }: { item: any }) => {
     if (item.type === 'ad') {
       return (
-        <View style={styles.carouselItem}>
+        <View style={{ width: CAROUSEL_WIDTH }}>
           <NativeAdItem adUnitID={nativeAdUnitID} />
         </View>
       );
@@ -141,7 +140,7 @@ export const EventAdCarousel: React.FC<EventAdCarouselProps> = ({
 
     return (
       <TouchableOpacity 
-        style={styles.carouselItem} 
+        style={{ width: CAROUSEL_WIDTH }} 
         onPress={async () => {
           if (item.hyperlink && isSponsored) {
             const cleanUrl = extractUrl(item.hyperlink);
@@ -173,7 +172,7 @@ export const EventAdCarousel: React.FC<EventAdCarouselProps> = ({
           imageStyle={styles.cardImage}
           resizeMode="cover"
         >
-          <View style={[styles.overlay, !item.banner_url && { backgroundColor: theme.colors.primary }]}>
+          <View style={StyleSheet.flatten([styles.overlay, !item.banner_url && { backgroundColor: theme.colors.primary }])}>
             <View style={styles.cardBadge}>
               <Text style={styles.cardBadgeText}>{isSponsored ? 'Sponsored' : 'Event'}</Text>
             </View>
@@ -184,7 +183,9 @@ export const EventAdCarousel: React.FC<EventAdCarouselProps> = ({
                 <Text style={styles.cardDesc} numberOfLines={2}>{item.description}</Text>
                 
                 <View style={styles.cardFooter}>
-                  <Calendar size={12} color="white" {...({} as any)} />
+                  <View style={{ marginRight: 6 }}>
+                    <Calendar size={12} color="white" {...({} as any)} />
+                  </View>
                   <Text style={styles.cardDate}>
                     {new Date(item.start_date).toLocaleDateString()}
                   </Text>
@@ -240,10 +241,10 @@ export const EventAdCarousel: React.FC<EventAdCarouselProps> = ({
         {mixedData.map((_, i) => (
           <View 
             key={i} 
-            style={[
+            style={StyleSheet.flatten([
               styles.dot, 
               activeIndex === i ? styles.activeDot : null
-            ]} 
+            ])} 
           />
         ))}
       </View>
@@ -267,7 +268,6 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     marginBottom: 24,
   },
-  carouselItem: { width: CAROUSEL_WIDTH, marginRight: 0 },
   card: {
     backgroundColor: '#F8FAFC',
     borderRadius: 24,
@@ -304,7 +304,7 @@ const styles = StyleSheet.create({
   cardTextContainer: { flex: 1, paddingRight: 12 },
   cardTitle: { fontSize: 16, fontWeight: 'bold', color: 'white', marginBottom: 4 },
   cardDesc: { fontSize: 13, color: 'rgba(255,255,255,0.9)', lineHeight: 18, marginBottom: 8 },
-  cardFooter: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  cardFooter: { flexDirection: 'row', alignItems: 'center' },
   cardDate: { fontSize: 11, color: 'rgba(255,255,255,0.8)', fontWeight: 'bold' },
   actionIcon: {
     width: 44,
@@ -314,7 +314,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  pagination: { flexDirection: 'row', justifyContent: 'center', marginTop: 12, gap: 6 },
-  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#E2E8F0' },
+  pagination: { flexDirection: 'row', justifyContent: 'center', marginTop: 12 },
+  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#E2E8F0', marginHorizontal: 3 },
   activeDot: { backgroundColor: theme.colors.primary, width: 14 }
 });

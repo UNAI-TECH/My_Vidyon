@@ -1,5 +1,5 @@
 import { Tabs, Redirect } from 'expo-router';
-import { TouchableOpacity, View, ActivityIndicator } from 'react-native';
+import { TouchableOpacity, View, ActivityIndicator, Platform, useWindowDimensions } from 'react-native';
 import { theme } from '../../../src/theme';
 import { LayoutDashboard, MessageSquare, Settings, LogOut, Building, BarChart3 } from 'lucide-react-native';
 import { useAuth } from '../../../src/hooks/useAuth';
@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 export default function AdminTabs() {
   const { signOut, role, loading } = useAuth();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
 
   if (loading) {
     return (
@@ -43,6 +44,7 @@ export default function AdminTabs() {
           </TouchableOpacity>
         ),
         tabBarStyle: {
+          display: Platform.OS === 'web' && width >= 1024 ? 'none' : 'flex',
           backgroundColor: theme.colors.background,
           borderTopColor: theme.colors.glassBorder,
           elevation: 0, shadowOpacity: 0,

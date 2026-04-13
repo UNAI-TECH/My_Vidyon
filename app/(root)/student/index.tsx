@@ -82,12 +82,11 @@ export default function StudentDashboard() {
       ]}
     >
       <PageHeader 
-        title={`Welcome, ${studentProfile?.name || 'Student'}!`} 
+        title={studentProfile?.name ? `Welcome, ${studentProfile.name}!` : "Welcome!"} 
         subtitle="Unified Education Platform Overview"
         institutionName={institution?.name}
         institutionLogo={institution?.logo_url}
-        userRole={role || 'student'}
-        userAvatar={imageUrl || (studentProfile as any)?.image_url || undefined}
+        userRole={role || undefined}
         userSubtitle={studentProfile ? `Class ${studentProfile.class_name} - ${studentProfile.section}` : undefined}
         actions={<NotificationBell />}
       />

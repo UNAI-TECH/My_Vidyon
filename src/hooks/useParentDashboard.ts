@@ -23,7 +23,7 @@ export function useParentDashboard(parentId?: string): ParentDashboardData & { i
             
             const { data: linkedStudents, error: studentError } = await supabase
                 .from('students')
-                .select('*, profiles!students_profile_id_fkey (full_name, image_url)')
+                .select('*, profiles!students_profile_id_fkey (full_name, image_url, profile_image_url, avatar_url)')
                 .eq('parent_id', parentId);
             
             console.log('Linked Students found:', linkedStudents?.length || 0);
@@ -55,7 +55,7 @@ export function useParentDashboard(parentId?: string): ParentDashboardData & { i
                 return {
                     ...s,
                     name: s.profiles?.full_name || s.name,
-                    image_url: s.image_url || s.profiles?.image_url || null,
+                    image_url: s.image_url || s.profiles?.image_url || s.profiles?.profile_image_url || s.profiles?.avatar_url || null,
                     attendance,
                     grade: studentRes ? `${studentRes.total_marks}` : 'N/A',
                     roll_no: s.register_number,
@@ -138,7 +138,7 @@ export function useParentDashboard(parentId?: string): ParentDashboardData & { i
             if (!parentId) return null;
             const { data, error } = await supabase
                 .from('profiles')
-                .select('full_name, image_url')
+                .select('full_name, image_url, profile_image_url, avatar_url')
                 .eq('id', parentId)
                 .maybeSingle();
             
@@ -146,7 +146,12 @@ export function useParentDashboard(parentId?: string): ParentDashboardData & { i
                 console.error('Error fetching parent profile:', error);
                 return null;
             }
-            return data as unknown as { full_name: string; image_url: string | null };
+            if (!data) return null;
+
+            return {
+                ...data,
+                image_url: (data as any).image_url || (data as any).profile_image_url || (data as any).avatar_url || null
+            } as unknown as { full_name: string; image_url: string | null };
         },
         enabled: !!parentId,
     });

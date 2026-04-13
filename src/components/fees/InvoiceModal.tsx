@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity, Image, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Modal, TouchableOpacity, Image, ScrollView, Platform } from 'react-native';
 import { theme } from '../../theme';
 import { 
   CheckCircle2, 
@@ -180,6 +180,12 @@ export function InvoiceModal({ visible, onClose, institution, student, payment, 
           </body>
         </html>
       `;
+
+      if (Platform.OS === 'web') {
+        const { printHtmlOnWeb } = require('../../utils/printWeb');
+        printHtmlOnWeb(html);
+        return;
+      }
 
       const { uri } = await Print.printToFileAsync({ html });
       if (Sharing && Sharing.shareAsync) {

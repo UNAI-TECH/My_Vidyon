@@ -38,7 +38,6 @@ export default function AccountantDashboard() {
         institutionName={institution?.name}
         institutionLogo={institution?.logo_url}
         userRole={role || undefined}
-        userAvatar={imageUrl || stats.accountantProfile?.image_url || undefined}
         userSubtitle="Financial Head"
         actions={
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>

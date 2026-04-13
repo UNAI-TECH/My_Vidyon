@@ -18,7 +18,8 @@ export default function LoginScreen() {
   const [blockedContact, setBlockedContact] = useState<{name: string, phone: string} | null>(null);
   const { savedAccounts, saveAccount, switchToAccount, removeAccount, switchingAccount } = useQuickLogin();
   
-  const { session } = useAuth();
+  const { session, role, loading: authLoading } = useAuth();
+  const [instLogoUrl, setInstLogoUrl] = useState<string | null>(null);
   
   // Animation state
   const [animatingAccount, setAnimatingAccount] = useState<any>(null);
@@ -27,13 +28,31 @@ export default function LoginScreen() {
 
   // Auto-recovery: If we are show-stopped on the animation overlay but the background
   // auth state is now truthy, force a navigation to home.
+  // Final redirection handler: Wait for role to be ready before removing overlay and navigating
   React.useEffect(() => {
-    if (session && animatingAccount && !switchingAccount) {
-      console.log('[Login] Session detected during animation, forcing navigation');
-      setAnimatingAccount(null);
-      router.replace('/');
+    if (session && role && !authLoading && animatingAccount && !switchingAccount) {
+      console.log('[Login] Session and Role ready, final transition...');
+      
+      // Stop the 'Logging in...' spinner from showing above the zoom-out if we're done
+      Animated.parallel([
+        Animated.timing(scaleValue, {
+          toValue: 20, // Zoom to fill screen
+          duration: 600,
+          easing: Easing.in(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacityValue, {
+          toValue: 0,
+          duration: 500,
+          delay: 100,
+          useNativeDriver: true,
+        })
+      ]).start(() => {
+        setAnimatingAccount(null);
+        router.replace('/');
+      });
     }
-  }, [session, switchingAccount]);
+  }, [session, role, authLoading, animatingAccount, switchingAccount]);
   
   // Sync missing images for saved accounts
   React.useEffect(() => {
@@ -165,7 +184,17 @@ export default function LoginScreen() {
 
   const handleAccountPress = (account: any) => {
     setAnimatingAccount(account);
+    setInstLogoUrl(null); // Reset
     setError(null);
+
+    // Fetch the institution logo specifically for this account's institution
+    if (account.institution_id) {
+       supabase.from('institutions').select('logo_url').eq('institution_id', account.institution_id).maybeSingle()
+         .then(({data}) => {
+            if ((data as any)?.logo_url) setInstLogoUrl((data as any).logo_url);
+         }).catch(console.warn);
+    }
+
     
     // Reset values just in case
     scaleValue.setValue(0.5);
@@ -187,25 +216,7 @@ export default function LoginScreen() {
       })
     ]).start(async () => {
       const success = await switchToAccount(account);
-      if (success) {
-        // Transition animation out into the app
-        Animated.parallel([
-          Animated.timing(scaleValue, {
-            toValue: 15, // Zoom to fill screen
-            duration: 500,
-            easing: Easing.in(Easing.ease),
-            useNativeDriver: true,
-          }),
-          Animated.timing(opacityValue, {
-            toValue: 0,
-            duration: 400,
-            delay: 100,
-            useNativeDriver: true,
-          })
-        ]).start(() => {
-          router.replace('/');
-        });
-      } else {
+      if (!success) {
         // Fail - zoom back down
         Animated.parallel([
           Animated.spring(scaleValue, {
@@ -223,7 +234,7 @@ export default function LoginScreen() {
           // Check if this saved account was recently blocked
           const isBlocked = await checkBlockedStatus(account.id);
           if (!isBlocked) {
-            setError('Session expired. Please log in with your password.');
+            setError('Authentication failed. Tap again to retry or use your password.');
             setEmail(account.email);
           }
         });
@@ -348,9 +359,26 @@ export default function LoginScreen() {
         ]} pointerEvents="auto">
           <Animated.View style={{
             alignItems: 'center',
-            transform: [{ scale: scaleValue }]
+            transform: [{ scale: scaleValue }],
+            width: '100%',
           }}>
-            <View style={[styles.avatarContainer, { width: 120, height: 120, marginBottom: 24 }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 60, gap: 20 }}>
+                <Image 
+                    source={require('../../assets/logo.png')} 
+                    style={{ width: 120, height: 60, resizeMode: 'contain' }} 
+                />
+                {instLogoUrl && (
+                    <>
+                        <View style={{ width: 1, height: 30, backgroundColor: '#E2E8F0' }} />
+                        <Image 
+                            source={{ uri: instLogoUrl }} 
+                            style={{ width: 60, height: 60, resizeMode: 'contain', borderRadius: 12 }} 
+                        />
+                    </>
+                )}
+            </View>
+            
+            <View style={[styles.avatarContainer, { width: 120, height: 120, marginBottom: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.1, shadowRadius: 20, elevation: 10 }]}>
               {animatingAccount.image_url ? (
                 <Image source={{ uri: animatingAccount.image_url }} style={[styles.avatar, { width: 120, height: 120, borderRadius: 60 }]} />
               ) : (
@@ -360,13 +388,13 @@ export default function LoginScreen() {
               )}
             </View>
             <Text style={[styles.accountName, { fontSize: 24 }]}>{animatingAccount.full_name}</Text>
-            <Text style={[styles.accountRole, { fontSize: 16, marginBottom: 24 }]}>
+            <Text style={[styles.accountRole, { fontSize: 16, marginBottom: 32 }]}>
               {animatingAccount.role.charAt(0).toUpperCase() + animatingAccount.role.slice(1)}
             </Text>
             
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <View style={{ backgroundColor: 'white', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 100, flexDirection: 'row', alignItems: 'center', gap: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 }}>
               <ActivityIndicator color={theme.colors.primary} size="small" />
-              <Text style={{ color: theme.colors.textMuted, fontSize: 16, fontWeight: '500' }}>Logging in...</Text>
+              <Text style={{ color: theme.colors.text, fontSize: 16, fontWeight: 'bold' }}>Logging in...</Text>
             </View>
           </Animated.View>
         </Animated.View>
