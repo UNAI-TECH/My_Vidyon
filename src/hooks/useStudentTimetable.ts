@@ -55,25 +55,61 @@ export function useStudentTimetable(authUserId: string | undefined) {
       }
 
       const s = studentData as Database['public']['Tables']['students']['Row'];
-      console.log('Student data found:', s.name, 'Class:', s.class_name);
+      if (!s) {
+        console.log('No student profile found for user_id:', authUserId);
+        return null;
+      }
+      console.log('Student data found:', s.name, 'Class Name:', s.class_name, 'Inst ID:', s.institution_id);
 
       // Resolve class UUID from class_name and institution_id
-      // Since classes are linked via groups, we might need a join, but try direct lookup first
-      const { data: classData, error: classError } = await supabase
-        .from('classes')
-        .select('id, name')
-        .eq('name', s.class_name)
-        .limit(1)
-        .maybeSingle();
-
-      if (classError) console.error('Error fetching class UUID:', classError);
+      let potentialClasses = null;
+      if (s.institution_id) {
+        console.log('Fetching classes for institution:', s.institution_id);
+        const { data, error } = await supabase
+          .from('classes')
+          .select('id, name')
+          .eq('institution_id', s.institution_id);
+        
+        if (error) console.error('Error fetching classes for UUID resolution:', error);
+        console.log('Found potential classes count:', data?.length || 0);
+        potentialClasses = data;
+      } else {
+        console.warn('Student has no institution_id! UUID resolution will fail.');
+      }
       
-      const c = classData as { id: string; name: string } | null;
-      if (!c) console.warn('Could not resolve class UUID for:', s.class_name);
+      let resolvedClass = null;
+      if (potentialClasses && s.class_name) {
+        const className = s.class_name.toLowerCase().trim();
+        resolvedClass = (potentialClasses as any[] || []).find((c: any) => {
+            const cName = c.name.toLowerCase().trim();
+            const match = cName === className ||                          // exact match
+                cName === `class ${className}` ||                  // "class 10th"
+                `class ${cName}` === className ||                  // reverse
+                cName.replace(/class\s*/i, '') === className.replace(/class\s*/i, '') || 
+                cName.replace(/[^a-z0-9]/g, '') === className.replace(/[^a-z0-9]/g, '');
+            return match;
+        });
+        console.log('Class resolution attempt for:', className, 'Result:', resolvedClass ? `${resolvedClass.name} (${resolvedClass.id})` : 'FAILED');
+      }
+      
+      if (!resolvedClass) return { ...s, class: null };
+
+      // 3. Finally fetch slots for the resolved class UUID
+      console.log('Fetching timetable slots for class_id:', resolvedClass.id);
+      const { data: slotsData, error: slotsError } = await supabase
+        .from('timetable')
+        .select('*, profiles(full_name), subjects(name)')
+        .eq('class_id', resolvedClass.id);
+
+      if (slotsError) console.error('Timetable slots fetch error:', slotsError);
+      console.log('Timetable slots found:', slotsData?.length || 0);
+      if (slotsData && slotsData.length > 0) {
+        console.log('Sample slot day_of_week:', slotsData[0].day_of_week);
+      }
       
       return {
         ...s,
-        class: c
+        class: resolvedClass || null
       } as StudentProfile;
     },
     enabled: !!authUserId,

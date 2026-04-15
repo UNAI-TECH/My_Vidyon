@@ -20,7 +20,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { AlertModal } from '../../../../src/components/common/AlertModal';
 import { format } from 'date-fns';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import { CalendarModal } from '../../../../src/components/common/CalendarPicker';
 
 type EventType = 'holiday' | 'exam' | 'sports' | 'cultural' | 'other';
 
@@ -147,16 +147,25 @@ export default function InstitutionEvents() {
       const fileName = `${institutionUuid}/${Date.now()}.${fileExt}`;
       const filePath = `events/${fileName}`;
 
-      const formData = new FormData();
-      formData.append('file', {
-        uri: uri,
-        name: fileName,
-        type: `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`,
-      } as any);
+      let fileToUpload: any;
+
+      if (Platform.OS === 'web') {
+        const res = await fetch(uri);
+        fileToUpload = await res.blob();
+      } else {
+        const formData = new FormData();
+        formData.append('file', {
+          uri: uri,
+          name: fileName,
+          type: `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`,
+        } as any);
+        fileToUpload = formData;
+      }
 
       const { data, error } = await supabase.storage
         .from('event-banners')
-        .upload(filePath, formData, {
+        .upload(filePath, fileToUpload, {
+           contentType: Platform.OS === 'web' ? `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}` : undefined,
            upsert: true
         });
 
@@ -302,13 +311,16 @@ export default function InstitutionEvents() {
                 <Text style={styles.dateSelectorText}>{format(form.event_date, 'MMMM do, yyyy')}</Text>
               </TouchableOpacity>
 
-              {showDatePicker && (
-                <DateTimePicker
-                  value={form.event_date}
-                  mode="date"
-                  onChange={onDateChange}
-                />
-              )}
+              <CalendarModal 
+                visible={showDatePicker}
+                onClose={() => setShowDatePicker(false)}
+                title="Select Event Date"
+                initialDate={format(form.event_date, 'yyyy-MM-dd')}
+                onSelect={(dateStr) => {
+                  const [y, m, d] = dateStr.split('-');
+                  setForm({ ...form, event_date: new Date(Number(y), Number(m) - 1, Number(d)) });
+                }}
+              />
 
               <Text style={styles.label}>EVENT BANNER (OPTIONAL)</Text>
               <TouchableOpacity 

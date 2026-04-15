@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Modal, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Modal, Image, Platform } from 'react-native';
 import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
 import { useAuth } from '../../../../src/hooks/useAuth';
@@ -21,7 +21,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { AlertModal } from '../../../../src/components/common/AlertModal';
 import { format } from 'date-fns';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import { CalendarModal } from '../../../../src/components/common/CalendarPicker';
 
 export default function AdminAdManagement() {
   const { user } = useAuth();
@@ -156,16 +156,25 @@ export default function AdminAdManagement() {
       const fileName = `admin/${Date.now()}.${fileExt}`;
       const filePath = `events/${fileName}`;
 
-      const formData = new FormData();
-      formData.append('file', {
-        uri: uri,
-        name: fileName,
-        type: `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`,
-      } as any);
+      let fileToUpload: any;
+
+      if (Platform.OS === 'web') {
+        const res = await fetch(uri);
+        fileToUpload = await res.blob();
+      } else {
+        const formData = new FormData();
+        formData.append('file', {
+          uri: uri,
+          name: fileName,
+          type: `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`,
+        } as any);
+        fileToUpload = formData;
+      }
 
       const { data, error } = await (supabase.storage
         .from('event-banners') as any)
-        .upload(filePath, formData, {
+        .upload(filePath, fileToUpload, {
+           contentType: Platform.OS === 'web' ? `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}` : undefined,
            upsert: true
         });
 
@@ -303,6 +312,17 @@ export default function AdminAdManagement() {
                 <Text style={styles.dateSelectorText}>{format(form.event_date, 'MMMM do, yyyy')}</Text>
               </TouchableOpacity>
 
+              <CalendarModal 
+                visible={showDatePicker}
+                onClose={() => setShowDatePicker(false)}
+                title="Select Campaign Start Date"
+                initialDate={format(form.event_date, 'yyyy-MM-dd')}
+                onSelect={(dateStr) => {
+                  const [y, m, d] = dateStr.split('-');
+                  setForm({ ...form, event_date: new Date(Number(y), Number(m) - 1, Number(d)) });
+                }}
+              />
+
               <Text style={styles.label}>TARGET INSTITUTION (OPTIONAL)</Text>
               <View style={styles.institutionPickerContainer}>
                 <TouchableOpacity 
@@ -324,14 +344,6 @@ export default function AdminAdManagement() {
                   </TouchableOpacity>
                 ))}
               </View>
-
-              {showDatePicker && (
-                <DateTimePicker
-                  value={form.event_date}
-                  mode="date"
-                  onChange={onDateChange}
-                />
-              )}
 
               <Text style={styles.label}>CAMPAIGN BANNER (OPTIONAL)</Text>
               <TouchableOpacity 

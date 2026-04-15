@@ -24,7 +24,19 @@ export default function StudentTimetable() {
 
   // Filter and merge
   const dailySchedule = React.useMemo(() => {
-    const regular = slots.filter((s: any) => s.day_of_week === selectedDay);
+    console.log(`Filtering timetable for day: ${selectedDay}`);
+    console.log(`Raw slots count: ${slots?.length || 0}`);
+    if (slots && slots.length > 0) {
+      console.log('Days in raw slots:', [...new Set(slots.map((s: any) => s.day_of_week))]);
+    }
+
+    const regular = slots.filter((s: any) => {
+      const match = s.day_of_week === selectedDay;
+      return match;
+    });
+    
+    console.log(`Filtered regular slots for ${selectedDay}: ${regular.length}`);
+
     const specials = specialSlots.filter((s: any) => {
       try {
         const date = parseISO(s.event_date);
@@ -34,9 +46,11 @@ export default function StudentTimetable() {
       }
     });
 
-    // Merge and sort by time
-    return [...regular, ...specials.map(s => ({ ...(s as any), isSpecial: true }))]
+    const merged = [...regular, ...specials.map(s => ({ ...(s as any), isSpecial: true }))]
       .sort((a, b) => a.start_time.localeCompare(b.start_time));
+    
+    console.log(`Total items for ${selectedDay} (Regular + Special): ${merged.length}`);
+    return merged;
   }, [slots, specialSlots, selectedDay]);
 
   if (isLoading) {
