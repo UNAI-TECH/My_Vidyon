@@ -207,63 +207,113 @@ serve(async (req: Request) => {
         // Send to each device using FCM V1 API
         const results = await Promise.allSettled(
             uniqueTokens.map(async (tokenRecord: { fcm_token: string, platform: string }) => {
-                const fcmPayload = {
-                    message: {
-                        token: tokenRecord.fcm_token,
-                        notification: {
-                            title: title || 'My Vidyon Notification',
-                            body: body || 'You have a new update. Open the app to view.',
-                        },
+                const tokenValue = tokenRecord.fcm_token;
+                const isExpoToken = tokenValue.startsWith('ExponentPushToken[') || tokenValue.startsWith('ExpoPushToken[');
+
+                if (isExpoToken) {
+                    // ── EXPO PUSH API ──
+                    // Expo tokens must be sent via Expo's push service,
+                    // which handles background/killed-state delivery properly.
+                    const expoPushPayload = {
+                        to: tokenValue,
+                        title: title || 'My Vidyon Notification',
+                        body: body || 'You have a new update. Open the app to view.',
+                        sound: 'default',
+                        priority: 'high',
+                        channelId: 'default',
                         data: {
                             action_url: String(data?.action_url ?? ''),
                             notification_id: String(data?.notification_id ?? ''),
-                            originalTitle: String(title ?? ''),
-                            originalBody: String(body ?? ''),
                         },
-                        android: {
-                            priority: 'high' as const,
-                            notification: {
-                                channel_id: 'default',
-                                sound: 'default',
-                                visibility: 'public' as const,
-                                sticky: false,
-                                local_only: false,
-                                default_vibrate_timings: true,
-                                default_sound: true,
-                            },
-                        },
-                    },
-                }
+                    };
 
-                const response = await fetch(
-                    `https://fcm.googleapis.com/v1/projects/${serviceAccount.project_id}/messages:send`,
-                    {
+                    const response = await fetch('https://exp.host/--/api/v2/push/send', {
                         method: 'POST',
                         headers: {
+                            'Accept': 'application/json',
+                            'Accept-Encoding': 'gzip, deflate',
                             'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${accessToken}`,
                         },
-                        body: JSON.stringify(fcmPayload),
+                        body: JSON.stringify(expoPushPayload),
+                    });
+
+                    const result = await response.json();
+                    console.log(`[Push] Expo result for ${tokenValue.substring(0, 25)}...: ${response.status}`, JSON.stringify(result));
+
+                    // Handle Expo-specific errors
+                    const pushData = result?.data;
+                    if (pushData?.status === 'error') {
+                        if (pushData?.details?.error === 'DeviceNotRegistered') {
+                            console.log('[Push] Removing unregistered Expo token:', tokenValue);
+                            await supabase
+                                .from('user_push_tokens')
+                                .delete()
+                                .eq('fcm_token', tokenValue);
+                        }
+                        return { token: tokenValue, success: false, error: result };
                     }
-                )
 
-                const result = await response.json()
+                    return { token: tokenValue, success: response.ok, error: response.ok ? null : result };
+                } else {
+                    // ── FCM V1 API (direct) ──
+                    // For raw FCM device tokens (fallback path)
+                    const fcmPayload = {
+                        message: {
+                            token: tokenValue,
+                            notification: {
+                                title: title || 'My Vidyon Notification',
+                                body: body || 'You have a new update. Open the app to view.',
+                            },
+                            data: {
+                                action_url: String(data?.action_url ?? ''),
+                                notification_id: String(data?.notification_id ?? ''),
+                                originalTitle: String(title ?? ''),
+                                originalBody: String(body ?? ''),
+                            },
+                            android: {
+                                priority: 'high' as const,
+                                notification: {
+                                    channel_id: 'default',
+                                    sound: 'default',
+                                    visibility: 'public' as const,
+                                    sticky: false,
+                                    local_only: false,
+                                    default_vibrate_timings: true,
+                                    default_sound: true,
+                                },
+                            },
+                        },
+                    };
 
-                console.log(`[Push] FCM result for ${tokenRecord.fcm_token.substring(0, 10)}...: ${response.status}`)
+                    const response = await fetch(
+                        `https://fcm.googleapis.com/v1/projects/${serviceAccount.project_id}/messages:send`,
+                        {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${accessToken}`,
+                            },
+                            body: JSON.stringify(fcmPayload),
+                        }
+                    );
 
-                // Remove invalid tokens
-                if (response.status === 404 || result.error?.status === 'NOT_FOUND' || result.error?.details?.[0]?.errorCode === 'UNREGISTERED') {
-                    console.log('[Push] Removing invalid/unregistered token:', tokenRecord.fcm_token)
-                    await supabase
-                        .from('user_push_tokens')
-                        .delete()
-                        .eq('fcm_token', tokenRecord.fcm_token)
-                }
+                    const result = await response.json();
+                    console.log(`[Push] FCM result for ${tokenValue.substring(0, 10)}...: ${response.status}`);
 
-                return {
-                    token: tokenRecord.fcm_token,
-                    success: response.ok,
-                    error: response.ok ? null : result,
+                    // Remove invalid tokens
+                    if (response.status === 404 || result.error?.status === 'NOT_FOUND' || result.error?.details?.[0]?.errorCode === 'UNREGISTERED') {
+                        console.log('[Push] Removing invalid/unregistered token:', tokenValue);
+                        await supabase
+                            .from('user_push_tokens')
+                            .delete()
+                            .eq('fcm_token', tokenValue);
+                    }
+
+                    return {
+                        token: tokenValue,
+                        success: response.ok,
+                        error: response.ok ? null : result,
+                    };
                 }
             })
         )

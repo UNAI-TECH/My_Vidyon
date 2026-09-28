@@ -42,6 +42,7 @@
           "icon": "./assets/notification-icon.png",
           "color": "#FAB75A",
           "defaultChannel": "default",
+          "enableBackgroundRemoteNotifications": true,
           "sounds": []
         }
       ],

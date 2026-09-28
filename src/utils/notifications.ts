@@ -102,15 +102,30 @@ export async function registerForPushNotificationsAsync(userId: string) {
       return null;
     }
 
-    // Get the FCM token specifically, as your current edge function is coded for FCM
     try {
-        console.log('Attempting to get Device Push Token (FCM)...');
+      // Get Expo Push Token — this uses Expo's push service which has a
+      // background Firebase Messaging Service registered in the manifest,
+      // enabling notifications even when the app is killed/closed.
+      const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+      if (!projectId) {
+        console.error('[Push] Missing EAS project ID in app.json extra.eas.projectId');
+        return null;
+      }
+      console.log('Attempting to get Expo Push Token...');
+      const expoPushToken = await Notifications.getExpoPushTokenAsync({ projectId });
+      token = expoPushToken.data;
+      console.log('Register Success: Got Expo Push Token:', token);
+    } catch (e: any) {
+      console.warn('Could not get Expo push token:', e.message);
+      // Fallback: try native device token
+      try {
+        console.log('Falling back to Device Push Token (FCM)...');
         const deviceToken = await Notifications.getDevicePushTokenAsync();
         token = deviceToken.data;
-        console.log('Register Success: Got Device Push Token:', token);
-    } catch (e: any) {
-        console.warn('Could not get device push token (expected on some simulators):', e.message);
-        console.log('Skipping push registration as native tokens are required for direct FCM delivery.');
+        console.log('Fallback Success: Got Device Push Token:', token);
+      } catch (e2: any) {
+        console.warn('Could not get device push token either:', e2.message);
+      }
     }
   } else {
     console.log('Push Notifications: Skipping registration (Not a physical device)');
