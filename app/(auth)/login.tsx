@@ -2,23 +2,44 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, Image, ScrollView, Animated, Dimensions, Easing } from 'react-native';
 import { theme } from '../../src/theme';
 import { supabase } from '../../src/lib/supabase';
-import { Lock, Mail, ChevronRight, User as UserIcon, X, Phone, ShieldAlert } from 'lucide-react-native';
+import { Lock, Mail, ChevronRight, User as UserIcon, X, Phone, ShieldAlert, ArrowLeft, Eye, EyeOff, GraduationCap, Briefcase, Users as UsersIcon } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { useQuickLogin } from '../../src/hooks/useQuickLogin';
 import { useAuth } from '../../src/hooks/useAuth';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Modal, Linking } from 'react-native';
 
+type LoginStep = 'email' | 'password' | 'setup_password';
+
+interface LookedUpUser {
+  id: string;
+  full_name: string;
+  role: string;
+  institution_id: string;
+  image_url?: string;
+  class_name?: string;
+  section?: string;
+  institution_name?: string;
+}
+
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showBlockedModal, setShowBlockedModal] = useState(false);
   const [blockedContact, setBlockedContact] = useState<{name: string, phone: string} | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const { savedAccounts, saveAccount, switchToAccount, removeAccount, switchingAccount } = useQuickLogin();
   
   const { session } = useAuth();
+  
+  // Multi-step login state
+  const [loginStep, setLoginStep] = useState<LoginStep>('email');
+  const [lookedUpUser, setLookedUpUser] = useState<LookedUpUser | null>(null);
   
   // Animation state
   const [animatingAccount, setAnimatingAccount] = useState<any>(null);
@@ -57,8 +78,17 @@ export default function LoginScreen() {
           // 3. Try institutions table for admin/institution profiles
           if ((account.role === 'admin' || account.role === 'staff' || (profile && profile.role === 'admin')) && (account.institution_id || profile?.institution_id)) {
             const instId = account.institution_id || profile?.institution_id;
-            const { data: inst } = await supabase.from('institutions').select('logo_url').eq('institution_id', instId).maybeSingle() as any;
-            if (inst?.logo_url) foundImg = inst.logo_url;
+            const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+            let query = supabase.from('institutions').select('logo_url');
+            if (isUUID(instId)) {
+              query = query.eq('id', instId);
+            } else {
+              query = query.ilike('institution_id', instId);
+            }
+            const { data: inst } = await (query as any).maybeSingle();
+            if (inst?.logo_url && typeof inst.logo_url === 'string' && inst.logo_url.startsWith('http')) {
+              foundImg = inst.logo_url;
+            }
           }
 
           if (foundImg) {
@@ -93,12 +123,117 @@ export default function LoginScreen() {
     return false;
   };
 
+  // Step 1: Look up the email
+  const handleEmailContinue = async () => {
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail) {
+      setError('Please enter your email address');
+      return;
+    }
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      // Look up user in profiles table
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, full_name, role, institution_id, image_url, profile_image_url, avatar_url')
+        .eq('email', trimmedEmail)
+        .maybeSingle() as any;
+      
+      if (profileError) {
+        console.error('[Login] Profile lookup error:', profileError);
+      }
+      
+      if (!profile) {
+        setError('No account found with this email. Please contact your institution.');
+        setLoading(false);
+        return;
+      }
+      
+      // Check if blocked
+      if (profile.is_active === false) {
+        const isBlocked = await checkBlockedStatus(trimmedEmail);
+        if (isBlocked) {
+          setLoading(false);
+          return;
+        }
+      }
+      
+      // Build looked up user info
+      const userInfo: LookedUpUser = {
+        id: profile.id,
+        full_name: profile.full_name || trimmedEmail.split('@')[0],
+        role: profile.role || 'student',
+        institution_id: profile.institution_id || '',
+        image_url: profile.image_url || profile.profile_image_url || profile.avatar_url,
+      };
+      
+      // If student, get class info and image
+      if (profile.role === 'student') {
+        const { data: student } = await supabase
+          .from('students')
+          .select('name, class_name, section, image_url')
+          .or(`user_id.eq.${profile.id},profile_id.eq.${profile.id}`)
+          .maybeSingle() as any;
+        
+        if (student) {
+          userInfo.class_name = student.class_name;
+          userInfo.section = student.section;
+          if (student.image_url) userInfo.image_url = student.image_url;
+          if (student.name) userInfo.full_name = student.name;
+        }
+      }
+      
+      // Get institution name
+      if (profile.institution_id) {
+        const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+        let instQuery = supabase.from('institutions').select('name');
+        if (isUUID(profile.institution_id)) {
+          instQuery = instQuery.eq('id', profile.institution_id);
+        } else {
+          instQuery = instQuery.ilike('institution_id', profile.institution_id);
+        }
+        const { data: inst } = await (instQuery as any).maybeSingle();
+        if (inst?.name) userInfo.institution_name = inst.name;
+      }
+      
+      setLookedUpUser(userInfo);
+      
+      // Try to determine if user needs password setup by attempting default password sign-in
+      const defaultPassword = `VidyonSetup_${profile.institution_id}`;
+      const { data: testLogin, error: testError } = await supabase.auth.signInWithPassword({
+        email: trimmedEmail,
+        password: defaultPassword,
+      });
+      
+      if (testLogin?.user && !testError) {
+        // Default password worked - user needs to set their own password
+        console.log('[Login] Default password accepted - first time user');
+        // Sign out immediately - we just tested, user must set password first
+        await supabase.auth.signOut();
+        setLoginStep('setup_password');
+      } else {
+        // Default password didn't work - user already has a custom password
+        console.log('[Login] Default password rejected - existing user with custom password');
+        setLoginStep('password');
+      }
+      
+    } catch (e: any) {
+      setError(e.message || 'Something went wrong');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Step 2a: Regular login with password
   const handleLogin = async () => {
     setLoading(true);
     setError(null);
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
-        email,
+        email: email.trim().toLowerCase(),
         password,
       });
       if (error) {
@@ -135,12 +270,17 @@ export default function LoginScreen() {
 
           // If institution/admin, get logo from institutions table
           if ((profile.role === 'admin' || profile.role === 'staff') && profile.institution_id) {
-            const { data: inst } = await supabase
-              .from('institutions')
-              .select('logo_url')
-              .eq('institution_id', profile.institution_id)
-              .maybeSingle() as any;
-            if (inst?.logo_url) imageUrl = inst.logo_url;
+            const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+            let query = supabase.from('institutions').select('logo_url');
+            if (isUUID(profile.institution_id)) {
+              query = query.eq('id', profile.institution_id);
+            } else {
+              query = query.ilike('institution_id', profile.institution_id);
+            }
+            const { data: inst } = await (query as any).maybeSingle();
+            if (inst?.logo_url && typeof inst.logo_url === 'string' && inst.logo_url.startsWith('http')) {
+              imageUrl = inst.logo_url;
+            }
           }
 
           await saveAccount({
@@ -161,6 +301,97 @@ export default function LoginScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Step 2b: First-time password setup
+  const handleSetupPassword = async () => {
+    if (!newPassword || newPassword.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const trimmedEmail = email.trim().toLowerCase();
+      const defaultPassword = `VidyonSetup_${lookedUpUser?.institution_id}`;
+      
+      // Sign in with default password
+      const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
+        email: trimmedEmail,
+        password: defaultPassword,
+      });
+      
+      if (loginError) {
+        // This shouldn't happen since we tested it earlier, but handle gracefully
+        setError('Password setup failed. Your password may have already been set. Try logging in instead.');
+        setLoginStep('password');
+        setLoading(false);
+        return;
+      }
+      
+      // Now update the password to the user's chosen password
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword,
+        data: {
+          needs_password_setup: false,
+          force_password_change: false,
+        }
+      });
+      
+      if (updateError) {
+        console.error('[Login] Password update failed:', updateError);
+        setError('Failed to set password. Please try again.');
+        await supabase.auth.signOut();
+        setLoading(false);
+        return;
+      }
+      
+      console.log('[Login] Password set successfully for:', trimmedEmail);
+      
+      // Save account locally
+      if (loginData.user && loginData.session) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('id, full_name, role, institution_id, image_url')
+          .eq('id', loginData.user.id)
+          .maybeSingle() as any;
+        
+        if (profile) {
+          let imageUrl = lookedUpUser?.image_url || profile.image_url;
+          await saveAccount({
+            id: profile.id,
+            email: loginData.user.email!,
+            full_name: lookedUpUser?.full_name || profile.full_name || loginData.user.email!.split('@')[0],
+            role: profile.role,
+            institution_id: profile.institution_id,
+            image_url: imageUrl,
+            access_token: loginData.session.access_token,
+            refresh_token: loginData.session.refresh_token,
+          });
+        }
+      }
+      
+      router.replace('/');
+    } catch (e: any) {
+      setError(e.message || 'Failed to set password');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBack = () => {
+    setLoginStep('email');
+    setLookedUpUser(null);
+    setPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setError(null);
   };
 
   const handleAccountPress = (account: any) => {
@@ -231,6 +462,70 @@ export default function LoginScreen() {
     });
   };
 
+  const getRoleIcon = (role: string) => {
+    switch(role?.toLowerCase()) {
+      case 'student': return <GraduationCap size={20} color={theme.colors.primary} {...({} as any)} />;
+      case 'faculty': 
+      case 'teacher':
+      case 'staff':
+        return <Briefcase size={20} color={theme.colors.primary} {...({} as any)} />;
+      case 'parent': return <UsersIcon size={20} color={theme.colors.primary} {...({} as any)} />;
+      default: return <UserIcon size={20} color={theme.colors.primary} {...({} as any)} />;
+    }
+  };
+
+  const getRoleLabel = (role: string) => {
+    if (!role) return 'User';
+    if (role === 'canteen_manager') return 'Canteen';
+    return role.charAt(0).toUpperCase() + role.slice(1);
+  };
+
+  // ---- RENDER ----
+  const renderUserCard = () => {
+    if (!lookedUpUser) return null;
+    
+    const initials = lookedUpUser.full_name
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map(w => w[0])
+      .join('')
+      .toUpperCase();
+    
+    return (
+      <View style={styles.userCard}>
+        <View style={styles.userCardAvatar}>
+          {lookedUpUser.image_url ? (
+            <Image source={{ uri: lookedUpUser.image_url }} style={styles.userCardImage} />
+          ) : (
+            <View style={[styles.userCardImage, styles.userCardPlaceholder]}>
+              <Text style={styles.userCardInitials}>{initials}</Text>
+            </View>
+          )}
+        </View>
+        <Text style={styles.userCardName}>{lookedUpUser.full_name}</Text>
+        
+        <View style={styles.userCardBadgeRow}>
+          <View style={styles.userCardBadge}>
+            {getRoleIcon(lookedUpUser.role)}
+            <Text style={styles.userCardBadgeText}>{getRoleLabel(lookedUpUser.role)}</Text>
+          </View>
+          {lookedUpUser.class_name && (
+            <View style={[styles.userCardBadge, { backgroundColor: '#EEF2FF' }]}>
+              <Text style={[styles.userCardBadgeText, { color: '#4F46E5' }]}>
+                {lookedUpUser.class_name}{lookedUpUser.section ? ` - ${lookedUpUser.section}` : ''}
+              </Text>
+            </View>
+          )}
+        </View>
+        
+        {lookedUpUser.institution_name && (
+          <Text style={styles.userCardInstitution}>{lookedUpUser.institution_name}</Text>
+        )}
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.background }}>
       <KeyboardAvoidingView 
@@ -239,6 +534,7 @@ export default function LoginScreen() {
       >
         <ScrollView contentContainerStyle={styles.container} bounces={false}>
           <View style={styles.content}>
+            {/* Logo */}
             <View style={styles.logoContainer}>
               <Image 
                 source={require('../../assets/logo.png')} 
@@ -247,7 +543,8 @@ export default function LoginScreen() {
               />
             </View>
 
-          {savedAccounts.length > 0 && (
+          {/* Saved Accounts - only show on email step */}
+          {loginStep === 'email' && savedAccounts.length > 0 && (
             <View style={styles.savedAccountsContainer}>
               <Text style={styles.sectionTitle}>Continue as...</Text>
               <ScrollView 
@@ -289,46 +586,157 @@ export default function LoginScreen() {
 
           {error && <Text style={styles.errorText}>{error}</Text>}
 
-          <View style={styles.inputWrapper}>
-            <Mail size={20} color={theme.colors.textMuted} style={styles.inputIcon} {...({} as any)} />
-            <TextInput
-              style={styles.input}
-              placeholder="Email Address"
-              placeholderTextColor={theme.colors.textMuted}
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-            />
-          </View>
+          {/* ---- STEP: EMAIL ---- */}
+          {loginStep === 'email' && (
+            <>
+              <View style={styles.inputWrapper}>
+                <Mail size={20} color={theme.colors.textMuted} style={styles.inputIcon} {...({} as any)} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter your email"
+                  placeholderTextColor={theme.colors.textMuted}
+                  value={email}
+                  onChangeText={(t) => { setEmail(t); setError(null); }}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  onSubmitEditing={handleEmailContinue}
+                  returnKeyType="next"
+                />
+              </View>
 
-          <View style={styles.inputWrapper}>
-            <Lock size={20} color={theme.colors.textMuted} style={styles.inputIcon} {...({} as any)} />
-            <TextInput
-              style={styles.input}
-              placeholder="Password"
-              placeholderTextColor={theme.colors.textMuted}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-            />
-          </View>
+              <TouchableOpacity 
+                style={styles.loginBtn} 
+                onPress={handleEmailContinue}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="black" />
+                ) : (
+                  <>
+                    <Text style={styles.loginBtnText}>Continue</Text>
+                    <ChevronRight size={20} color="black" {...({} as any)} />
+                  </>
+                )}
+              </TouchableOpacity>
+            </>
+          )}
 
-          <TouchableOpacity 
-            style={styles.loginBtn} 
-            onPress={handleLogin}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="black" />
-            ) : (
-              <>
-                <Text style={styles.loginBtnText}>Login</Text>
-                <ChevronRight size={20} color="black" {...({} as any)} />
-              </>
-            )}
-          </TouchableOpacity>
+          {/* ---- STEP: PASSWORD (Existing User) ---- */}
+          {loginStep === 'password' && (
+            <>
+              {renderUserCard()}
 
+              <View style={styles.inputWrapper}>
+                <Lock size={20} color={theme.colors.textMuted} style={styles.inputIcon} {...({} as any)} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter your password"
+                  placeholderTextColor={theme.colors.textMuted}
+                  value={password}
+                  onChangeText={(t) => { setPassword(t); setError(null); }}
+                  secureTextEntry={!showPassword}
+                  onSubmitEditing={handleLogin}
+                  returnKeyType="done"
+                  autoFocus
+                />
+                <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={{ padding: 4 }}>
+                  {showPassword ? 
+                    <EyeOff size={20} color={theme.colors.textMuted} {...({} as any)} /> : 
+                    <Eye size={20} color={theme.colors.textMuted} {...({} as any)} />
+                  }
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity 
+                style={styles.loginBtn} 
+                onPress={handleLogin}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="black" />
+                ) : (
+                  <>
+                    <Text style={styles.loginBtnText}>Login</Text>
+                    <ChevronRight size={20} color="black" {...({} as any)} />
+                  </>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
+                <ArrowLeft size={16} color={theme.colors.textMuted} {...({} as any)} />
+                <Text style={styles.backBtnText}>Use a different account</Text>
+              </TouchableOpacity>
+            </>
+          )}
+
+          {/* ---- STEP: SETUP PASSWORD (First-Time User) ---- */}
+          {loginStep === 'setup_password' && (
+            <>
+              {renderUserCard()}
+
+              <View style={styles.setupBanner}>
+                <Text style={styles.setupBannerTitle}>Welcome! Set your password</Text>
+                <Text style={styles.setupBannerText}>This is your first login. Please create a password to secure your account.</Text>
+              </View>
+
+              <View style={styles.inputWrapper}>
+                <Lock size={20} color={theme.colors.textMuted} style={styles.inputIcon} {...({} as any)} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Create password"
+                  placeholderTextColor={theme.colors.textMuted}
+                  value={newPassword}
+                  onChangeText={(t) => { setNewPassword(t); setError(null); }}
+                  secureTextEntry={!showNewPassword}
+                  autoFocus
+                />
+                <TouchableOpacity onPress={() => setShowNewPassword(!showNewPassword)} style={{ padding: 4 }}>
+                  {showNewPassword ? 
+                    <EyeOff size={20} color={theme.colors.textMuted} {...({} as any)} /> : 
+                    <Eye size={20} color={theme.colors.textMuted} {...({} as any)} />
+                  }
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.inputWrapper}>
+                <Lock size={20} color={theme.colors.textMuted} style={styles.inputIcon} {...({} as any)} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Confirm password"
+                  placeholderTextColor={theme.colors.textMuted}
+                  value={confirmPassword}
+                  onChangeText={(t) => { setConfirmPassword(t); setError(null); }}
+                  secureTextEntry={!showNewPassword}
+                  onSubmitEditing={handleSetupPassword}
+                  returnKeyType="done"
+                />
+              </View>
+
+              {newPassword.length > 0 && newPassword.length < 6 && (
+                <Text style={styles.hintText}>Password must be at least 6 characters</Text>
+              )}
+
+              <TouchableOpacity 
+                style={[styles.loginBtn, (!newPassword || newPassword.length < 6 || newPassword !== confirmPassword) && { opacity: 0.5 }]} 
+                onPress={handleSetupPassword}
+                disabled={loading || !newPassword || newPassword.length < 6 || newPassword !== confirmPassword}
+              >
+                {loading ? (
+                  <ActivityIndicator color="black" />
+                ) : (
+                  <>
+                    <Text style={styles.loginBtnText}>Set Password & Login</Text>
+                    <ChevronRight size={20} color="black" {...({} as any)} />
+                  </>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
+                <ArrowLeft size={16} color={theme.colors.textMuted} {...({} as any)} />
+                <Text style={styles.backBtnText}>Use a different account</Text>
+              </TouchableOpacity>
+            </>
+          )}
 
         </View>
         </ScrollView>
@@ -454,17 +862,6 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  title: { 
-    fontSize: 32, 
-    fontWeight: 'bold', 
-    color: theme.colors.text, 
-    marginBottom: 4 
-  },
-  subtitle: { 
-    fontSize: 16, 
-    color: theme.colors.textMuted, 
-    marginBottom: 40 
-  },
   inputWrapper: { 
     width: '100%', 
     flexDirection: 'row', 
@@ -512,13 +909,20 @@ const styles = StyleSheet.create({
     fontSize: 18, 
     fontWeight: 'bold' 
   },
-
   errorText: { 
     color: '#ef4444', 
     marginBottom: 20, 
     textAlign: 'center',
     fontSize: 14,
     fontWeight: '500',
+  },
+  hintText: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+    marginBottom: 8,
+    textAlign: 'left',
+    width: '100%',
+    paddingLeft: 4,
   },
   savedAccountsContainer: {
     width: '100%',
@@ -589,6 +993,111 @@ const styles = StyleSheet.create({
     color: theme.colors.textMuted,
     fontWeight: '500',
   },
+  // User Card (recognized user big card)
+  userCard: {
+    width: '100%',
+    backgroundColor: 'white',
+    borderRadius: 24,
+    padding: 24,
+    alignItems: 'center',
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 4,
+  },
+  userCardAvatar: {
+    marginBottom: 16,
+  },
+  userCardImage: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    borderWidth: 3,
+    borderColor: theme.colors.primary + '30',
+  },
+  userCardPlaceholder: {
+    backgroundColor: theme.colors.primary + '15',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  userCardInitials: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: theme.colors.primary,
+  },
+  userCardName: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: theme.colors.text,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  userCardBadgeRow: {
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  userCardBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: theme.colors.primary + '12',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 100,
+  },
+  userCardBadgeText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: theme.colors.primary,
+  },
+  userCardInstitution: {
+    fontSize: 13,
+    color: theme.colors.textMuted,
+    fontWeight: '500',
+    marginTop: 4,
+  },
+  // Setup banner
+  setupBanner: {
+    width: '100%',
+    backgroundColor: '#FEF3C7',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  setupBannerTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#92400E',
+    marginBottom: 4,
+  },
+  setupBannerText: {
+    fontSize: 13,
+    color: '#A16207',
+    lineHeight: 18,
+  },
+  // Back button
+  backBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 20,
+    paddingVertical: 8,
+  },
+  backBtnText: {
+    color: theme.colors.textMuted,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  // Modal styles
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',

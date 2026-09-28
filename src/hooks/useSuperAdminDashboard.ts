@@ -7,6 +7,10 @@ import { startOfMonth, subMonths, format } from 'date-fns';
 export interface SuperAdminDashboardStats {
     totalInstitutions: number;
     totalRevenue: number;
+    adRevenue: number;
+    adRevenueEarned: number;
+    feeRevenue: number;
+    activeCampaigns: number;
     totalUsers: number;
     serverHealth: string;
     recentActivity: any[];
@@ -42,6 +46,14 @@ export function useSuperAdminDashboard() {
             )
             .on(
                 'postgres_changes',
+                { event: '*', schema: 'public', table: 'academic_events' },
+                () => {
+                    queryClient.invalidateQueries({ queryKey: ['superadmin-revenue'] });
+                    queryClient.invalidateQueries({ queryKey: ['superadmin-revenue-trend'] });
+                }
+            )
+            .on(
+                'postgres_changes',
                 { event: '*', schema: 'public', table: 'profiles' },
                 () => {
                     queryClient.invalidateQueries({ queryKey: ['superadmin-users'] });
@@ -66,15 +78,47 @@ export function useSuperAdminDashboard() {
         },
     });
 
-    // 2. Global Revenue
-    const { data: totalRevenue = 0, isLoading: loadingRev } = useQuery({
+    // 2. Global Revenue (Student Fees + Ad Sponsor Earnings)
+    const { 
+        data: revenueData = { totalRevenue: 0, adRevenue: 0, adRevenueEarned: 0, feeRevenue: 0, activeCampaigns: 0 }, 
+        isLoading: loadingRev 
+    } = useQuery({
         queryKey: ['superadmin-revenue'],
         queryFn: async () => {
-            const { data } = await supabase
+            // A. Student Fee Payments
+            const { data: fees } = await supabase
                 .from('fee_payments')
-                .select('amount');
+                .select('amount_paid, amount');
             
-            return (data as any[] || []).reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
+            const feeRevenue = (fees as any[] || []).reduce((acc, curr) => 
+                acc + (Number(curr.amount_paid) || Number(curr.amount) || 0), 0
+            );
+
+            // B. Ad Sponsor Revenue from academic_events
+            const { data: ads } = await (supabase
+                .from('academic_events') as any)
+                .select('paid_amount, amount_debited, remaining_balance')
+                .eq('is_admin_added', true);
+            
+            const adRevenueTotal = (ads as any[] || []).reduce((acc, curr) => 
+                acc + (Number(curr.paid_amount) || 0), 0
+            );
+            const adRevenueEarned = (ads as any[] || []).reduce((acc, curr) => 
+                acc + (Number(curr.amount_debited) || 0), 0
+            );
+            const activeCampaigns = (ads as any[] || []).filter(a => 
+                (Number(a.remaining_balance) > 0 || Number(a.paid_amount) > 0)
+            ).length;
+
+            const totalRevenue = feeRevenue + adRevenueTotal;
+
+            return {
+                totalRevenue,
+                feeRevenue,
+                adRevenue: adRevenueTotal,
+                adRevenueEarned,
+                activeCampaigns
+            };
         },
     });
 
@@ -196,13 +240,17 @@ export function useSuperAdminDashboard() {
 
     const performanceRatios = [
         Math.min(totalInstitutions / instTarget, 1),
-        Math.min(totalRevenue / revTarget, 1),
+        Math.min(revenueData.totalRevenue / revTarget, 1),
         Math.min(totalUsers / userTarget, 1)
     ];
 
     const stats: SuperAdminDashboardStats = {
         totalInstitutions,
-        totalRevenue,
+        totalRevenue: revenueData.totalRevenue,
+        adRevenue: revenueData.adRevenue,
+        adRevenueEarned: revenueData.adRevenueEarned,
+        feeRevenue: revenueData.feeRevenue,
+        activeCampaigns: revenueData.activeCampaigns,
         totalUsers,
         serverHealth: '99.99%',
         recentActivity,

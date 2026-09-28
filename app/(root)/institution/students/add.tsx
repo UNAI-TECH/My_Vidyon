@@ -17,6 +17,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { CalendarModal } from '../../../../src/components/common/CalendarPicker';
+import { uploadToSupabaseStorage } from '../../../../src/utils/fileUpload';
 
 type UserRole = 'student' | 'faculty' | 'accountant' | 'canteen_manager' | 'driver' | 'parent';
 
@@ -265,13 +266,11 @@ export default function AddUserScreen() {
 
     setIsLoading(true);
     const email = autoEmail;
-    const password = institutionId || 'password123';
     const fullName = `${form.firstName} ${form.lastName}`;
 
     try {
       const body: any = {
         email,
-        password,
         role: selectedRole,
         full_name: fullName,
         institution_id: institutionId,
@@ -307,16 +306,15 @@ export default function AddUserScreen() {
       if (image) {
         try {
           const fileName = `user_${Date.now()}.jpg`;
-          const formDataBlob = new FormData();
-          formDataBlob.append('file', { uri: image, name: fileName, type: 'image/jpeg' } as any);
-          const { data: uploadData, error: uploadError } = await supabase.storage
-            .from('student-photos')
-            .upload(fileName, formDataBlob);
-          if (!uploadError) {
-            const { data: { publicUrl } } = supabase.storage.from('student-photos').getPublicUrl(fileName);
-            body.image_url = publicUrl;
-          }
-        } catch (e) { console.warn('Photo upload failed:', e); }
+          const { publicUrl } = await uploadToSupabaseStorage({
+            bucket: 'student-photos',
+            path: fileName,
+            uri: image,
+            mimeType: 'image/jpeg',
+            upsert: true,
+          });
+          body.image_url = publicUrl;
+        } catch (e) { console.error('[Student Photo Upload Error]:', e); }
       }
 
       const { data: responseData, error } = await supabase.functions.invoke('create-user', { body });
@@ -327,7 +325,7 @@ export default function AddUserScreen() {
       setAlertConfig({
         visible: true,
         title: '✅ User Created!',
-        message: `${fullName} (${selectedRole})\n\nEmail: ${email}\nPassword: ${password}`,
+        message: `${fullName} (${selectedRole})\n\nEmail: ${email}\n\nThe user will set their own password on first login.`,
         buttons: [
           { 
             text: 'Add Another', 
@@ -443,12 +441,13 @@ export default function AddUserScreen() {
           row.section || '', row.register_number || row.roll_number || '',
           row.staff_id || ''
         );
-        const password = row.password || institutionId || 'password123';
+        const password = row.password || undefined; // Only use if explicitly provided in sheet
 
         try {
           const { data, error } = await supabase.functions.invoke('create-user', {
             body: {
-              email, password,
+              email,
+              ...(password ? { password } : {}),
               role: role === 'teacher' ? 'faculty' : role,
               full_name: name,
               institution_id: institutionId,
@@ -471,7 +470,7 @@ export default function AddUserScreen() {
           });
           if (error) throw error;
           if (data?.error) throw new Error(data.error);
-          return { name, email, password, status: 'success' };
+          return { name, email, status: 'success' };
         } catch (err: any) {
           let msg = err.message;
           if (err.context) {
@@ -480,7 +479,7 @@ export default function AddUserScreen() {
               if (body.error) msg = body.error;
             } catch (e) {}
           }
-          return { name, email, password, status: 'error', message: msg };
+          return { name, email, status: 'error', message: msg };
         }
       });
 

@@ -16,6 +16,7 @@ import {
 import * as DocumentPicker from 'expo-document-picker';
 import { useFacultyDashboard } from '../../../../src/hooks/useFacultyDashboard';
 import { AlertModal } from '../../../../src/components/common/AlertModal';
+import { uploadToSupabaseStorage } from '../../../../src/utils/fileUpload';
 
 export default function FacultyMaterialsUpload() {
   const { user, institutionId, institutionUuid } = useAuth();
@@ -67,22 +68,13 @@ export default function FacultyMaterialsUpload() {
       const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
       const filePath = `materials/${selectedMapping.class_id}/${fileName}`;
 
-      const formData = new FormData();
-      formData.append('file', {
-        uri: Platform.OS === 'ios' ? pickedFile.uri.replace('file://', '') : pickedFile.uri,
-        name: pickedFile.name,
-        type: pickedFile.mimeType || 'application/octet-stream',
-      } as any);
-
-      const { error: storageError } = await supabase.storage
-        .from('materials')
-        .upload(filePath, formData as any);
-
-      if (storageError) throw storageError;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('materials')
-        .getPublicUrl(filePath);
+      const { publicUrl } = await uploadToSupabaseStorage({
+        bucket: 'materials',
+        path: filePath,
+        uri: pickedFile.uri,
+        mimeType: pickedFile.mimeType || 'application/octet-stream',
+        upsert: false,
+      });
 
       // 2. Insert into subject_materials table using the validated hook method
       await uploadMaterial({
@@ -107,11 +99,11 @@ export default function FacultyMaterialsUpload() {
       });
       setTimeout(() => router.back(), 2000);
     } catch (error: any) {
-      console.error('Upload error:', error);
+      console.error('[Faculty Materials Upload Error]:', error);
       setAlertConfig({
         visible: true,
         title: 'Upload Failed',
-        message: error.message || 'There was an error uploading the material.',
+        message: 'There was an error uploading the material. Please try again.',
         type: 'error'
       });
     } finally {

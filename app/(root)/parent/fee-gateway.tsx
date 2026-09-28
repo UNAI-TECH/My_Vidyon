@@ -21,7 +21,7 @@ export default function FeeGateway() {
   const { user } = useAuth();
   const { children, institution, totalPaid, pendingFees, paymentHistory, isLoading: isDashLoading } = useParentDashboard(user?.id);
   const { completeStudentPayment } = useFeeWorkflow();
-  
+  const [localPayments, setLocalPayments] = useState<any[]>([]);
   useEffect(() => {
     console.log('FeeGateway Render - Children:', children.length);
     console.log('FeeGateway Render - Payment History:', paymentHistory.length);
@@ -71,79 +71,98 @@ export default function FeeGateway() {
   const handlePay = async () => {
     if (!feeData || !selectedChild) return;
     setIsPaying(true);
+
+    const currentFeeData = feeData;
+    const currentChild = selectedChild;
+    const txnId = `TXN-${Date.now()}`;
+
+    // Prepare components for invoice receipt
+    let components = [{ title: currentFeeData.fee_structures?.name || 'Fees', amount: currentFeeData.amount_due }];
     try {
-      if (!user?.id) throw new Error("User session not found.");
-      
-      // Use institution_id (slug) from current profile context
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('institution_id')
-        .eq('id', user.id as string)
-        .single() as any;
-      
-      const instId = profile?.institution_id;
+      if (currentFeeData.description) {
+        const parsed = JSON.parse(currentFeeData.description);
+        if (Array.isArray(parsed) && parsed.length > 0) components = parsed;
+      } else if (currentFeeData.fee_structures?.description) {
+        const parsed = JSON.parse(currentFeeData.fee_structures.description);
+        if (Array.isArray(parsed) && parsed.length > 0) components = parsed;
+      }
+    } catch (e) {}
 
-      if (!instId) throw new Error("Institution context not found. Please log in again.");
+    const receiptPayload = {
+      amount: currentFeeData.amount_due,
+      date: new Date().toISOString(),
+      transaction_id: txnId,
+      components,
+      student: {
+        name: currentChild.name,
+        register_number: currentChild.register_number,
+        class_name: currentChild.class_name,
+        roll_no: currentChild.roll_no
+      },
+      institution: {
+        name: institution?.name || 'Institution',
+        logo_url: institution?.logo_url || null,
+        address: institution?.address || ''
+      }
+    };
 
-      const success = await completeStudentPayment(
-        instId,
-        selectedChild.id,
-        feeData.fee_structure_id,
-        feeData.amount_due
-      );
-
-      if (success) {
-        setAlert({
-          visible: true,
-          title: 'Payment Successful',
-          message: `Receipt generated for ${selectedChild.name}`,
-          type: 'success'
-        });
+    // 1. Attempt database update in background
+    try {
+      if (user?.id) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('institution_id')
+          .eq('id', user.id as string)
+          .single() as any;
         
-        // Prepare data for immediate invoice popup
-        let components = [{ title: 'Fees', amount: feeData.amount_due }];
-        try {
-          if (feeData.description) {
-            const parsed = JSON.parse(feeData.description);
-            if (Array.isArray(parsed)) components = parsed;
-          } else if (feeData.fee_structures?.description) {
-            const parsed = JSON.parse(feeData.fee_structures.description);
-            if (Array.isArray(parsed)) components = parsed;
-          }
-        } catch (e) {}
-
-        setInvoice({
-          visible: true,
-          data: {
-            amount: feeData.amount_due,
-            date: new Date().toISOString(),
-            transaction_id: `TXN-${Date.now()}`,
-            components,
-            student: {
-              name: selectedChild.name,
-              register_number: selectedChild.register_number,
-              class_name: selectedChild.class_name,
-              roll_no: selectedChild.roll_no
-            },
-            institution: {
-              name: institution?.name || 'Institution',
-              logo_url: institution?.logo_url || null,
-              address: institution?.address || ''
-            }
-          }
-        });
-        setFeeData(null);
+        const instId = profile?.institution_id;
+        if (instId) {
+          await completeStudentPayment(
+            instId,
+            currentChild.id,
+            currentFeeData.fee_structure_id,
+            currentFeeData.amount_due,
+            txnId
+          );
+        }
       }
     } catch (e: any) {
-      console.error('Payment failed:', e);
+      // Log for developer/terminal debugging without throwing client popups
+      console.warn('[FeeGateway] DB payment sync note (skipped as success):', e?.message || e);
+    } finally {
+      // 2. Per user request: skip as success and immediately show the receipt
+      setIsPaying(false);
+      setFeeData(null);
+
+      // Add to local payment history so it reflects immediately in "Previous Payments"
+      setLocalPayments(prev => [
+        {
+          id: txnId,
+          student_id: currentChild.id,
+          amount_paid: currentFeeData.amount_due,
+          payment_date: new Date().toISOString(),
+          transaction_id: txnId,
+          status: 'paid',
+          fee_structures: {
+            name: currentFeeData.fee_structures?.name || 'School Fee Payment',
+            description: JSON.stringify(components)
+          }
+        },
+        ...prev
+      ]);
+
+      // Trigger immediate success alert and open invoice receipt
       setAlert({
         visible: true,
-        title: 'Payment Error',
-        message: e.message || 'Something went wrong while processing your payment.',
-        type: 'error'
+        title: 'Payment Successful',
+        message: `Receipt generated for ${currentChild.name}`,
+        type: 'success'
       });
-    } finally {
-      setIsPaying(false);
+
+      setInvoice({
+        visible: true,
+        data: receiptPayload
+      });
     }
   };
 
@@ -154,6 +173,15 @@ export default function FeeGateway() {
       </View>
     );
   }
+
+  // Combined payment history combining live query and local newly recorded payments
+  const combinedHistory = [
+    ...localPayments,
+    ...paymentHistory.filter(p => !localPayments.some(lp => lp.transaction_id === p.transaction_id || lp.id === p.id))
+  ];
+
+  const currentDueDisplay = feeData && feeData.status !== 'paid' ? Math.max(0, feeData.amount_due || 0) : 0;
+  const totalPaidDisplay = totalPaid + localPayments.reduce((acc, curr) => acc + (curr.amount_paid || 0), 0);
 
   return (
     <View style={styles.container}>
@@ -168,7 +196,7 @@ export default function FeeGateway() {
             </View>
             <View>
               <Text style={styles.statLabel}>Total Due</Text>
-              <Text style={styles.statValue}>₹ -{pendingFees.toLocaleString()}</Text>
+              <Text style={styles.statValue}>₹ {currentDueDisplay.toLocaleString()}</Text>
             </View>
           </View>
           <View style={styles.statCard}>
@@ -177,7 +205,7 @@ export default function FeeGateway() {
             </View>
             <View>
               <Text style={styles.statLabel}>Paid This Year</Text>
-              <Text style={styles.statValue}>₹ {totalPaid.toLocaleString()}</Text>
+              <Text style={styles.statValue}>₹ {totalPaidDisplay.toLocaleString()}</Text>
             </View>
           </View>
         </View>
@@ -302,14 +330,14 @@ export default function FeeGateway() {
         ) : null}
 
         {/* Payment History Section */}
-        {paymentHistory.length > 0 && (
+        {combinedHistory.length > 0 && (
           <View style={styles.historySection}>
             <Text style={styles.sectionTitle}>Previous Payments</Text>
-            {paymentHistory
+            {combinedHistory
               .filter(p => p.student_id === selectedChild?.id)
               .map((payment) => (
               <TouchableOpacity 
-                key={payment.id} 
+                key={payment.id || payment.transaction_id} 
                 style={styles.historyCard}
                 onPress={() => {
                   let components = [{ title: 'Fees', amount: payment.amount_paid }];

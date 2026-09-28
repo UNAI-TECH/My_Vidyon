@@ -85,7 +85,7 @@ export default function ParentLeaves() {
       // Try parent_student_links table, then fall back to students.parent_id
       const { data, error } = await supabase
         .from('students')
-        .select('id, name, register_number, class_name, section')
+        .select('id, name, register_number, class_name, section, institution_id')
         .eq('parent_id', user.id);
       if (error) {
         console.error('Error fetching children:', error);
@@ -149,35 +149,40 @@ export default function ParentLeaves() {
       }
       
       try {
-        // Find class
-        // 1. Find class UUID by name and institution slug (matched via students table)
-        const { data: classes } = await supabase
-          .from('classes')
-          .select('id, name')
+        const { data: classesData } = await (supabase
+          .from('classes' as any) as any)
+          .select('id, name, class_teacher_id, sections')
+          .eq('institution_id', selectedChild.institution_id)
           .eq('name', selectedChild.class_name);
-        
-        // Match institution (since students.institution_id is slug)
-        const matchingClass = classes?.find(c => (c as any).id !== undefined); // Simplified for now since we trust students.class_name links to available classes
 
-        if (classes && classes.length > 0) {
-          const classId = (classes[0] as any).id; // Use first match or refine if multiple
-          
-          const { data: assignment } = await supabase
-            .from('faculty_subjects')
+        const classes = (classesData || []) as any[];
+
+        if (classes.length > 0) {
+          const matchedClass: any = classes.find((c: any) => 
+            !selectedChild.section || (Array.isArray(c.sections) && c.sections.includes(selectedChild.section))
+          ) || classes[0];
+
+          const { data: assignment } = await (supabase
+            .from('faculty_subjects' as any) as any)
             .select(`
               faculty_profile_id,
               profiles:faculty_profile_id (full_name)
             `)
-            .eq('class_id', classId)
+            .eq('class_id', matchedClass.id)
+            .eq('institution_id', selectedChild.institution_id)
             .eq('assignment_type', 'class_teacher')
+            .eq('section', selectedChild.section || 'A')
             .maybeSingle();
-          if ((assignment as any)?.profiles) {
-            const name = (assignment as any).profiles.full_name;
-            // Assuming setClassTeacherName and setAssignedClassTeacherId are state setters
-            // that would be declared elsewhere in the component if needed.
-            // For now, we'll just set the classTeacher state.
-            setClassTeacher(name);
-            // setAssignedClassTeacherId(assignment.faculty_profile_id); // This state setter is not defined.
+
+          if ((assignment as any)?.profiles?.full_name) {
+            setClassTeacher((assignment as any).profiles.full_name);
+          } else if (matchedClass.class_teacher_id) {
+            const { data: ctProf } = await (supabase
+              .from('profiles' as any) as any)
+              .select('full_name')
+              .eq('id', matchedClass.class_teacher_id)
+              .maybeSingle();
+            setClassTeacher(ctProf?.full_name || 'Class Teacher');
           } else {
             setClassTeacher('Class Teacher');
           }

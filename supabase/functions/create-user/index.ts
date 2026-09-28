@@ -78,9 +78,10 @@ Deno.serve(async (req: Request) => {
         };
         const finalRole = normalizeRole(role);
 
-        // Use provided password or fallback to institution code
-        let finalPassword = password || institution_id;
-        const forcePasswordChange = !password;
+        // Use provided password or fallback to a deterministic default for first-time setup
+        const needsPasswordSetup = !password;
+        let finalPassword = password || `VidyonSetup_${institution_id}`;
+        const forcePasswordChange = needsPasswordSetup;
 
         console.log(`Processing user: ${email.toLowerCase()}, role: ${finalRole}`);
 
@@ -105,7 +106,8 @@ Deno.serve(async (req: Request) => {
                     role: finalRole,
                     full_name,
                     institution_id,
-                    force_password_change: forcePasswordChange
+                    force_password_change: forcePasswordChange,
+                    needs_password_setup: needsPasswordSetup
                 },
                 email_confirm: true
             })
@@ -191,6 +193,7 @@ Deno.serve(async (req: Request) => {
         if (department) profileData.department = department;
         if (date_of_birth) profileData.date_of_birth = date_of_birth;
         if (image_url) {
+            profileData.image_url = image_url;
             profileData.profile_image_url = image_url;
             profileData.avatar_url = image_url;
         }
@@ -258,7 +261,8 @@ Deno.serve(async (req: Request) => {
                     institution_id: institution_id,
                     name: full_name,
                     email: email.toLowerCase(),
-                    phone: phone || null
+                    phone: phone || null,
+                    image_url: image_url || null
                 }, { onConflict: 'profile_id' })
                 .select()
                 .single();
@@ -272,7 +276,8 @@ Deno.serve(async (req: Request) => {
                         profile_id: userId,
                         institution_id: institution_id,
                         name: full_name,
-                        phone: phone || null
+                        phone: phone || null,
+                        image_url: image_url || null
                     }, { onConflict: 'profile_id' })
                     .select()
                     .single();

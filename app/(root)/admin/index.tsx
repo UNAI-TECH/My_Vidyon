@@ -84,10 +84,24 @@ export default function AdminDashboard() {
         />
         <StatCard
           title="Total Revenue"
-          value={`₹${(stats.totalRevenue/10000000).toFixed(2)}Cr`}
+          value={stats.totalRevenue >= 10000000 
+            ? `₹${(stats.totalRevenue / 10000000).toFixed(2)}Cr` 
+            : stats.totalRevenue >= 100000 
+              ? `₹${(stats.totalRevenue / 100000).toFixed(1)}L` 
+              : `₹${(stats.totalRevenue || 0).toLocaleString()}`}
           icon={CreditCard}
           iconColor="#10B981"
           change="On track"
+          changeType="positive"
+        />
+        <StatCard
+          title="Ad Sponsor Rev"
+          value={stats.adRevenue >= 100000 
+            ? `₹${(stats.adRevenue / 100000).toFixed(1)}L` 
+            : `₹${(stats.adRevenue || 0).toLocaleString()}`}
+          icon={Megaphone}
+          iconColor="#F59E0B"
+          change={`₹${(stats.adRevenueEarned || 0).toLocaleString()} earned`}
           changeType="positive"
         />
         <StatCard

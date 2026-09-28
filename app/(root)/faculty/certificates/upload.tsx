@@ -19,6 +19,7 @@ import { useFacultyDashboard } from '../../../../src/hooks/useFacultyDashboard';
 import { useQuery } from '@tanstack/react-query';
 import { Modal } from 'react-native';
 import { useThemedAlert } from '../../../../src/components/common/ThemedAlert';
+import { uploadToSupabaseStorage } from '../../../../src/utils/fileUpload';
 
 export default function FacultyCertificateUpload() {
   const { user, institutionId } = useAuth();
@@ -91,22 +92,13 @@ export default function FacultyCertificateUpload() {
       const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
       const filePath = `certificates/${selectedStudent.id}/${fileName}`;
 
-      const formData = new FormData();
-      formData.append('file', {
-        uri: Platform.OS === 'ios' ? pickedFile.uri.replace('file://', '') : pickedFile.uri,
-        name: pickedFile.name,
-        type: pickedFile.mimeType || 'application/octet-stream',
-      } as any);
-
-      const { error: storageError } = await supabase.storage
-        .from('certificates')
-        .upload(filePath, formData as any);
-
-      if (storageError) throw storageError;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('certificates')
-        .getPublicUrl(filePath);
+      const { publicUrl } = await uploadToSupabaseStorage({
+        bucket: 'certificates',
+        path: filePath,
+        uri: pickedFile.uri,
+        mimeType: pickedFile.mimeType || 'application/octet-stream',
+        upsert: true,
+      });
 
       // 2. Insert into certificates table
       const { error: dbError } = await (supabase.from('certificates') as any).insert({
@@ -132,8 +124,8 @@ export default function FacultyCertificateUpload() {
       showAlert({ title: 'Success', message: 'Certificate uploaded successfully', type: 'success' });
       router.back();
     } catch (error: any) {
-      console.error('Upload error:', error);
-      showAlert({ title: 'Upload Failed', message: error.message, type: 'error' });
+      console.error('[Faculty Certificate Upload Error]:', error);
+      showAlert({ title: 'Upload Failed', message: 'Failed to upload certificate. Please try again.', type: 'error' });
     } finally {
       setIsUploading(false);
     }

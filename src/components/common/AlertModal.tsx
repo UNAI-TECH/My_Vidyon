@@ -43,6 +43,40 @@ export const AlertModal = ({
     }
   };
 
+  React.useEffect(() => {
+    if (visible && type === 'error') {
+      console.error(`\n🚨 [TERMINAL ERROR REPORT] 🚨\nTitle: ${title}\nMessage: ${message}\n`);
+    }
+  }, [visible, type, title, message]);
+
+  const displayMessage = React.useMemo(() => {
+    if (type !== 'error') return message;
+    const lower = (message || '').toLowerCase();
+    const isTechnical = 
+      lower.includes('mime type') ||
+      lower.includes('not supported') ||
+      lower.includes('network request failed') ||
+      lower.includes('referenceerror') ||
+      lower.includes('syntaxerror') ||
+      lower.includes('typeerror') ||
+      lower.includes('postgrest') ||
+      lower.includes('violates') ||
+      lower.includes('foreign key') ||
+      lower.includes('jwt') ||
+      lower.includes('null value') ||
+      lower.includes('column') ||
+      lower.includes('relation') ||
+      lower.includes('status code');
+
+    if (isTechnical) {
+      if (title.toLowerCase().includes('upload') || lower.includes('mime')) {
+        return 'Unable to upload file. Please check the file and try again.';
+      }
+      return 'An unexpected error occurred. Please try again.';
+    }
+    return message;
+  }, [message, type, title]);
+
   return (
     <Modal visible={visible} transparent animationType="fade">
       <View style={styles.overlay}>
@@ -51,7 +85,7 @@ export const AlertModal = ({
             {getIcon()}
           </View>
           <Text style={styles.title}>{title}</Text>
-          <Text style={styles.message}>{message}</Text>
+          <Text style={styles.message}>{displayMessage}</Text>
           
           <View style={styles.actions}>
             {buttons ? (

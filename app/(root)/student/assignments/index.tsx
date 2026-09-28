@@ -12,7 +12,10 @@ import { AdBanner } from '../../../../src/components/common/Ads/AdBanner';
 export default function StudentAssignments() {
   const { user } = useAuth();
   const router = useRouter();
-  const { assignments, isLoading } = useStudentDashboard(user?.id);
+  const { assignments, isAssignmentsLoading, refetchAssignments } = useStudentDashboard(
+    user?.id,
+    (user as any)?.user_metadata?.institution_id
+  );
 
   return (
     <View style={styles.container}>
@@ -22,6 +25,8 @@ export default function StudentAssignments() {
         data={assignments}
         keyExtractor={(item: any) => item.id}
         contentContainerStyle={styles.list}
+        refreshing={isAssignmentsLoading}
+        onRefresh={refetchAssignments}
         renderItem={({ item }) => (
           <TouchableOpacity 
             style={styles.card}
@@ -46,7 +51,19 @@ export default function StudentAssignments() {
             </Badge>
           </TouchableOpacity>
         )}
-        ListEmptyComponent={<Text style={styles.empty}>No assignments assigned.</Text>}
+        ListEmptyComponent={
+          !isAssignmentsLoading ? (
+            <View style={styles.emptyContainer}>
+              <View style={styles.emptyIconBox}>
+                <FileText size={36} color={theme.colors.textMuted} />
+              </View>
+              <Text style={styles.emptyTitle}>No Assignments Yet</Text>
+              <Text style={styles.emptySubtitle}>
+                No assignments have been assigned to your class in this institution yet.
+              </Text>
+            </View>
+          ) : null
+        }
         ListFooterComponent={<AdBanner type="STUDENT" />}
       />
     </View>
@@ -63,5 +80,8 @@ const styles = StyleSheet.create({
   subject: { fontSize: 12, color: theme.colors.textMuted, marginTop: 2 },
   footer: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8 },
   due: { fontSize: 10, color: theme.colors.textMuted },
-  empty: { textAlign: 'center', marginTop: 40, color: theme.colors.textMuted },
+  emptyContainer: { alignItems: 'center', justifyContent: 'center', marginTop: 60, paddingHorizontal: 20 },
+  emptyIconBox: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
+  emptyTitle: { fontSize: 16, fontWeight: 'bold', color: theme.colors.text, marginBottom: 6 },
+  emptySubtitle: { fontSize: 13, color: theme.colors.textMuted, textAlign: 'center', lineHeight: 18 },
 });

@@ -1,5 +1,6 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import { resolveImageToBase64 } from './fileUpload';
 
 export const generateInvoice = async (
     studentName: string,
@@ -10,6 +11,8 @@ export const generateInvoice = async (
     institutionName?: string,
     logoUrl?: string
 ) => {
+    const resolvedLogo = await resolveImageToBase64(logoUrl);
+
     const htmlContent = `
         <html>
           <head>
@@ -50,7 +53,7 @@ export const generateInvoice = async (
           <body>
             <div class="header">
               <div class="header-left">
-                ${logoUrl ? `<img src="${logoUrl}" style="height: 60px; width: 60px; object-fit: contain; border-radius: 8px;" />` : ''}
+                ${resolvedLogo ? `<img src="${resolvedLogo}" onerror="this.style.display='none'" style="height: 60px; width: 60px; object-fit: contain; border-radius: 8px;" />` : ''}
                 <div>
                   <h1 class="inst-name">${institutionName || 'Institution'}</h1>
                 </div>

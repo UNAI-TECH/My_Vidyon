@@ -63,23 +63,98 @@ export function useStudentDashboard(authUserId?: string, institutionId?: string)
     });
 
     const studentId = studentProfile?.id;
+    const effectiveInstId = institutionId || studentProfile?.institution_id;
 
-    // 1. Fetch Assignments for student's class
-    const { data: assignments = [], refetch: refetchAssignments } = useQuery({
-        queryKey: ['student-assignments', studentId, studentProfile?.class_name],
+    // 1. Fetch Assignments strictly scoped to student's institution, class, and section
+    const { data: assignments = [], isLoading: isAssignmentsLoading, refetch: refetchAssignments } = useQuery({
+        queryKey: ['student-assignments', studentId, effectiveInstId, studentProfile?.class_name, studentProfile?.section],
         queryFn: async () => {
             if (!studentId || !studentProfile) return [];
             
-            // Fetch assignments for this class
-            const assignmentsQuery = supabase
+            const rawInstId = effectiveInstId || studentProfile?.institution_id;
+            if (!rawInstId) {
+                console.warn('[useStudentDashboard] No institution ID found for student:', studentId);
+                return [];
+            }
+
+            const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+            let validInstIds: string[] = [rawInstId];
+
+            // Resolve both UUID ('id') and code ('institution_id') of the institution
+            try {
+                const instQuery = supabase.from('institutions').select('id, institution_id');
+                if (isUUID(rawInstId)) {
+                    instQuery.eq('id', rawInstId);
+                } else {
+                    instQuery.eq('institution_id', rawInstId);
+                }
+                const { data: instData } = await (instQuery as any).maybeSingle();
+                if (instData) {
+                    const instObj = instData as any;
+                    if (instObj.id) validInstIds.push(instObj.id);
+                    if (instObj.institution_id) validInstIds.push(instObj.institution_id);
+                }
+            } catch (instErr) {
+                console.warn('[useStudentDashboard] Error resolving institution for assignments:', instErr);
+            }
+            validInstIds = Array.from(new Set(validInstIds.filter(Boolean)));
+
+            // Resolve class UUIDs matching this student's class name within this institution
+            const studentClassName = (studentProfile as any).class_name;
+            if (!studentClassName) return [];
+
+            const { data: potentialClasses } = await supabase
+                .from('classes')
+                .select('id, name')
+                .in('institution_id', validInstIds);
+
+            const className = studentClassName.toLowerCase().trim();
+            const matchingClasses = (potentialClasses as any[] || []).filter((c: any) => {
+                const cName = (c.name || '').toLowerCase().trim();
+                return cName === className ||
+                    cName === `class ${className}` ||
+                    `class ${cName}` === className ||
+                    cName.replace(/class\s*/i, '') === className.replace(/class\s*/i, '') ||
+                    cName.replace(/[^a-z0-9]/g, '') === className.replace(/[^a-z0-9]/g, '');
+            });
+
+            const classIds = matchingClasses.map((c: any) => c.id).filter(Boolean);
+
+            // Filter to valid UUIDs for assignments.institution_id (UUID column in Postgres)
+            const validUuidInstIds = validInstIds.filter(id => isUUID(id));
+            if (validUuidInstIds.length === 0) {
+                return [];
+            }
+
+            // Query assignments strictly belonging to this institution
+            let assignmentsQuery = supabase
                 .from('assignments')
                 .select('*')
-                .eq('class_name', (studentProfile as Student).class_name);
+                .in('institution_id', validUuidInstIds);
 
-            const section = (studentProfile as Student).section;
-            if (section) {
-                assignmentsQuery.eq('section', section);
+            // Match student's class (by class_id UUIDs or class_name string)
+            if (classIds.length > 0) {
+                const classIdInFilter = classIds.map(id => `"${id}"`).join(',');
+                if (isUUID(studentClassName)) {
+                    assignmentsQuery = assignmentsQuery.or(`class_id.in.(${classIdInFilter}),class_name.ilike."${studentClassName}",class_id.eq."${studentClassName}"`);
+                } else {
+                    assignmentsQuery = assignmentsQuery.or(`class_id.in.(${classIdInFilter}),class_name.ilike."${studentClassName}"`);
+                }
+            } else {
+                if (isUUID(studentClassName)) {
+                    assignmentsQuery = assignmentsQuery.or(`class_name.ilike."${studentClassName}",class_id.eq."${studentClassName}"`);
+                } else {
+                    assignmentsQuery = assignmentsQuery.ilike('class_name', studentClassName);
+                }
             }
+
+            // Match section: match student's section, or unassigned/null/empty section (whole class)
+            const studentSection = (studentProfile as any).section;
+            if (studentSection) {
+                assignmentsQuery = assignmentsQuery.or(`section.ilike."${studentSection}",section.is.null,section.eq.""`);
+            }
+
+            assignmentsQuery = assignmentsQuery.order('due_date', { ascending: false });
 
             const { data: assignmentsData, error: assignmentsError } = await assignmentsQuery;
 
@@ -103,8 +178,8 @@ export function useStudentDashboard(authUserId?: string, institutionId?: string)
                 return {
                     id: a.id,
                     title: a.title,
-                    subject: a.subject,
-                    dueDate: a.due_date,
+                    subject: a.subject || 'General',
+                    dueDate: a.due_date ? a.due_date.split('T')[0] : 'No Due Date',
                     status: (mySubmission as any)?.status || 'pending',
                 };
             });
@@ -199,7 +274,7 @@ export function useStudentDashboard(authUserId?: string, institutionId?: string)
                 .eq('institution_id', institutionId)
                 .eq('name', studentProfile.class_name);
             
-            const classIds = classesData?.map(c => c.id) || [];
+            const classIds = (classesData as any[])?.map((c: any) => c.id) || [];
             
             // 2. Fetch schedules for my class (Match either the Name or the resolved UUID)
             let query = supabase
@@ -208,8 +283,12 @@ export function useStudentDashboard(authUserId?: string, institutionId?: string)
                 .eq('institution_id', institutionId);
 
             if (classIds.length > 0) {
-                // Match either the name "10th" or the UUID "f47a..."
-                query = query.or(`class_id.eq."${studentProfile.class_name}",class_id.in.(${classIds.map(id => `"${id}"`).join(',')})`);
+                const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+                if (isUUID(studentProfile.class_name)) {
+                    query = query.or(`class_id.eq."${studentProfile.class_name}",class_id.in.(${classIds.map(id => `"${id}"`).join(',')})`);
+                } else {
+                    query = query.in('class_id', classIds);
+                }
             } else {
                 query = query.eq('class_id', studentProfile.class_name);
             }
@@ -250,18 +329,22 @@ export function useStudentDashboard(authUserId?: string, institutionId?: string)
     };
 
     // 6. Fetch Institution Logo/Name
+    const effectiveInst = institutionId || (studentProfile as any)?.institution_id;
     const { data: institution = null } = useQuery({
-        queryKey: ['student-institution', institutionId],
+        queryKey: ['student-institution', effectiveInst],
         queryFn: async () => {
-            if (!institutionId) return null;
-            const { data } = await supabase
-                .from('institutions')
-                .select('name, logo_url')
-                .eq('institution_id', institutionId)
-                .maybeSingle();
+            if (!effectiveInst) return null;
+            const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+            let query = supabase.from('institutions').select('name, logo_url, id, institution_id');
+            if (isUUID(effectiveInst)) {
+                query = query.eq('id', effectiveInst);
+            } else {
+                query = query.ilike('institution_id', effectiveInst);
+            }
+            const { data } = await (query as any).maybeSingle();
             return data as any;
         },
-        enabled: !!institutionId,
+        enabled: !!effectiveInst,
     });
 
     // 7. Fetch Certificates
@@ -420,7 +503,9 @@ export function useStudentDashboard(authUserId?: string, institutionId?: string)
         certificates,
         materials,
         exams,
-        isLoading: isProfileLoading || isCertificatesLoading || isMaterialsLoading || isExamsLoading,
+        isLoading: isProfileLoading || isAssignmentsLoading || isCertificatesLoading || isMaterialsLoading || isExamsLoading,
+        isAssignmentsLoading,
+        refetchAssignments,
     };
 }
 

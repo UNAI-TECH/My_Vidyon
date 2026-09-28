@@ -56,10 +56,10 @@ export default function AccountantTabs() {
       />
 
       {/* Hidden Screens */}
-      <Tabs.Screen name="fees/index" options={{ href: null }} />
-      <Tabs.Screen name="quick-bills/index" options={{ href: null }} />
-      <Tabs.Screen name="reports/index" options={{ href: null }} />
-      <Tabs.Screen name="transactions/index" options={{ href: null }} />
+      <Tabs.Screen name="fees" options={{ href: null }} />
+      <Tabs.Screen name="quick-bills" options={{ href: null }} />
+      <Tabs.Screen name="reports" options={{ href: null }} />
+      <Tabs.Screen name="transactions" options={{ href: null }} />
       <Tabs.Screen name="notifications" options={{ href: null }} />
     </Tabs>
   );

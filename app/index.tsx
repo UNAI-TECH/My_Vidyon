@@ -6,7 +6,7 @@ import { theme } from '../src/theme';
 import { supabase } from '../src/lib/supabase';
 
 export default function AppEntryPoint() {
-  const { session, role, loading, institutionUuid, signOut } = useAuth();
+  const { session, role, loading, institutionUuid, institutionId, signOut } = useAuth();
   const [showSplash, setShowSplash] = useState(true);
   const [instLogo, setInstLogo] = useState<string | null>(null);
   const [showRetry, setShowRetry] = useState(false);
@@ -18,12 +18,23 @@ export default function AppEntryPoint() {
     console.log('[AppIndex] Effect triggered. Loading:', loading, 'Session:', !!session, 'Role:', role);
     
     if (!loading && session) {
-      if (institutionUuid) {
+      const targetInst = institutionUuid || institutionId;
+      if (targetInst) {
         (async () => {
           try {
-            console.log('[AppIndex] Fetching institution logo for:', institutionUuid);
-            const { data } = await supabase.from('institutions').select('logo_url').eq('id', institutionUuid).maybeSingle();
-            if (isMounted && (data as any)?.logo_url) setInstLogo((data as any).logo_url);
+            console.log('[AppIndex] Fetching institution logo for:', targetInst);
+            const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+            let query = supabase.from('institutions').select('logo_url');
+            if (isUUID(targetInst)) {
+              query = query.eq('id', targetInst);
+            } else {
+              query = query.ilike('institution_id', targetInst);
+            }
+            const { data } = await (query as any).maybeSingle();
+            const logo = (data as any)?.logo_url;
+            if (isMounted && logo && typeof logo === 'string' && logo.startsWith('http')) {
+              setInstLogo(logo);
+            }
           } catch (e) {
             console.warn('[AppIndex] Logo fetch failed:', e);
           } finally {
@@ -76,6 +87,7 @@ export default function AppEntryPoint() {
             <Image 
                 source={{ uri: instLogo }} 
                 style={{ width: 80, height: 80, resizeMode: 'contain', borderRadius: 12 }} 
+                onError={() => setInstLogo(null)}
             />
           </View>
         )}

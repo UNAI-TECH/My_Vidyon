@@ -119,11 +119,14 @@ export function useInstitutionDashboard(institutionId?: string) {
         queryKey: ['institution-details', institutionId],
         queryFn: async () => {
             if (!institutionId) return null;
-            const { data } = await supabase
-                .from('institutions')
-                .select('*')
-                .eq('institution_id', institutionId)
-                .maybeSingle();
+            const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+            let query = supabase.from('institutions').select('*');
+            if (isUUID(institutionId)) {
+                query = query.eq('id', institutionId);
+            } else {
+                query = query.ilike('institution_id', institutionId);
+            }
+            const { data } = await (query as any).maybeSingle();
             return data as any;
         },
         enabled: !!institutionId,

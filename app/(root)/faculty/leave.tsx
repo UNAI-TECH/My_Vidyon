@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, TextInput, Image, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, TextInput, Image, KeyboardAvoidingView, Platform, RefreshControl } from 'react-native';
 import { theme } from '../../../src/theme';
 import { PageHeader } from '../../../src/components/common/PageHeader';
 import { AlertModal } from '../../../src/components/common/AlertModal';
@@ -22,7 +22,7 @@ import { CalendarModal } from '../../../src/components/common/CalendarPicker';
 import { LeaveHistoryModal } from '../../../src/components/leave/LeaveHistoryModal';
 
 export default function LeaveManagement() {
-  const { user } = useAuth();
+  const { user, institutionId } = useAuth();
   const queryClient = useQueryClient();
   const [isProcessing, setIsProcessing] = React.useState<string | null>(null);
   const [activeTab, setActiveTab] = React.useState<'review' | 'my-leaves'>('review');
@@ -52,20 +52,105 @@ export default function LeaveManagement() {
 
   // Fetch pending leave requests where current faculty is the Class Teacher
   const { data: requests = [], isLoading, refetch } = useQuery<any[]>({
-    queryKey: ['pending-leaves', user?.id],
+    queryKey: ['pending-leaves', user?.id, institutionId],
     queryFn: async () => {
       if (!user?.id) return [];
-      const { data, error } = await supabase
-        .from('leave_requests')
-        .select('*, students:student_id(name, register_number, image_url)')
+
+      let instId = institutionId;
+      if (!instId) {
+        const { data: prof } = await (supabase
+          .from('profiles') as any)
+          .select('institution_id')
+          .eq('id', user.id)
+          .maybeSingle();
+        instId = prof?.institution_id;
+      }
+
+      // 1. Fetch direct leaves assigned to this teacher
+      let directQuery = (supabase
+        .from('leave_requests') as any)
+        .select('*, students:student_id(name, register_number, image_url, class_name, section, institution_id)')
         .eq('assigned_class_teacher_id', user.id)
         .order('created_at', { ascending: false });
 
-      if (error) {
-        console.error('Error fetching leaves:', error);
-        return [];
+      if (instId) {
+        directQuery = directQuery.eq('institution_id', instId);
       }
-      return data || [];
+
+      const { data: directLeaves, error: directErr } = await directQuery;
+
+      if (directErr) {
+        console.error('Error fetching direct leaves:', directErr);
+      }
+
+      // Filter strictly to ensure no foreign institution records slip through
+      let allLeaves = (directLeaves || []).filter((l: any) => {
+        if (!instId) return true;
+        if (l.institution_id && l.institution_id !== instId) return false;
+        if (l.students?.institution_id && l.students.institution_id !== instId) return false;
+        return true;
+      });
+
+      // 2. Also check if there are classes where this faculty is class teacher (in faculty_subjects or classes.class_teacher_id)
+      try {
+        let fsQuery = (supabase
+          .from('faculty_subjects') as any)
+          .select('class_id, section, classes:class_id(id, name, institution_id)')
+          .eq('faculty_profile_id', user.id)
+          .eq('assignment_type', 'class_teacher');
+
+        let cQuery = (supabase
+          .from('classes') as any)
+          .select('id, name, institution_id')
+          .eq('class_teacher_id', user.id);
+
+        if (instId) {
+          cQuery = cQuery.eq('institution_id', instId);
+        }
+
+        const [fsRes, cRes] = await Promise.all([fsQuery, cQuery]);
+
+        const classNames: string[] = [];
+        (cRes.data || []).forEach((c: any) => {
+          if ((!instId || c.institution_id === instId) && c.name) {
+            classNames.push(c.name);
+          }
+        });
+        (fsRes.data || []).forEach((fs: any) => {
+          if ((!instId || fs.classes?.institution_id === instId) && fs.classes?.name) {
+            classNames.push(fs.classes.name);
+          }
+        });
+
+        if (classNames.length > 0 && instId) {
+          const { data: classLeaves, error: classLeavesErr } = await (supabase
+            .from('leave_requests') as any)
+            .select('*, students:student_id(name, register_number, image_url, class_name, section, institution_id)')
+            .eq('institution_id', instId)
+            .not('student_id', 'is', null)
+            .order('created_at', { ascending: false });
+
+          if (classLeavesErr) {
+            console.error('Error fetching fallback class leaves:', classLeavesErr);
+          }
+
+          if (classLeaves && classLeaves.length > 0) {
+            const existingIds = new Set(allLeaves.map((l: any) => l.id));
+            const extra = classLeaves.filter((l: any) => {
+              if (existingIds.has(l.id)) return false;
+              // Strict institution isolation
+              if (l.institution_id !== instId) return false;
+              if (l.students?.institution_id && l.students.institution_id !== instId) return false;
+              return l.students?.class_name && classNames.includes(l.students.class_name);
+            });
+            allLeaves = [...allLeaves, ...extra];
+          }
+        }
+      } catch (err) {
+        console.error('Error checking fallback class leaves:', err);
+      }
+
+      return allLeaves;
     },
     enabled: !!user?.id && activeTab === 'review',
   });
@@ -89,6 +174,23 @@ export default function LeaveManagement() {
     },
     enabled: !!user?.id && activeTab === 'my-leaves',
   });
+
+  // Realtime subscription for live leave updates
+  React.useEffect(() => {
+    if (!user?.id) return;
+
+    const channel = supabase
+      .channel(`faculty-leaves-live-${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leave_requests' }, () => {
+        refetch();
+        refetchMyLeaves();
+      })
+      .subscribe();
+
+    return () => {
+      channel.unsubscribe();
+    };
+  }, [user?.id, institutionId]);
 
   const handleApplyLeave = async () => {
     if (!reason.trim()) {
@@ -162,8 +264,8 @@ export default function LeaveManagement() {
     }
   };
 
-  const pendingRequests = requests.filter(r => r.status === 'pending');
-  const historyRequests = requests.filter(r => r.status !== 'pending');
+  const pendingRequests = requests.filter(r => r.status === 'pending' && (!r.requester_role || r.requester_role === 'student'));
+  const historyRequests = requests.filter(r => r.status !== 'pending' && (!r.requester_role || r.requester_role === 'student'));
 
   if (isLoading) {
     return (
@@ -179,7 +281,19 @@ export default function LeaveManagement() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
     >
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView 
+        contentContainerStyle={styles.content} 
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl 
+            refreshing={isLoading || isLoadingMyLeaves} 
+            onRefresh={() => {
+              if (activeTab === 'review') refetch();
+              else refetchMyLeaves();
+            }} 
+          />
+        }
+      >
         <PageHeader title="Leave Management" subtitle={activeTab === 'review' ? "Review and approve student leaves" : "Apply for and track your own leaves"} />
 
         <View style={styles.tabContainer}>

@@ -5,6 +5,7 @@ import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
 import { useFacultyDashboard } from '../../../../src/hooks/useFacultyDashboard';
 import { useAuth } from '../../../../src/hooks/useAuth';
+import { supabase } from '../../../../src/lib/supabase';
 import { 
   CheckCircle2, 
   Circle, 
@@ -84,17 +85,23 @@ export default function AssignmentDetails() {
   const loadData = async () => {
     try {
       setLoading(true);
-      // 1. Find assignment details from the hook's cached data or re-fetch
-      const currentAssignment = myAssignments.find((a: any) => a.id === id);
-      if (!currentAssignment) {
-        // If not in cache, fallback logic could go here, but usually it's in cache
-        console.warn('Assignment not found in cache');
+      // 1. Find assignment details from the hook's cached data or re-fetch directly
+      let currentAssignment = myAssignments.find((a: any) => a.id === id);
+      if (!currentAssignment && id) {
+        const { data: fetchedAssignment } = await supabase
+          .from('assignments')
+          .select('*, subjects:subject_id(name), classes:class_id(name)')
+          .eq('id', id)
+          .maybeSingle();
+        currentAssignment = fetchedAssignment;
       }
       setAssignment(currentAssignment);
 
       if (currentAssignment) {
-        // 2. Fetch all students in this class/section
-        const classStudents = await fetchClassStudents(currentAssignment.classes?.name, currentAssignment.section);
+        // 2. Fetch all students in this class/section strictly for this institution
+        const targetClass = currentAssignment.classes?.name || currentAssignment.class_name;
+        const targetInst = currentAssignment.institution_id || institutionUuid || institutionId;
+        const classStudents = await fetchClassStudents(targetClass, currentAssignment.section, targetInst);
         setStudents(classStudents || []);
 
         // 3. Fetch submissions for this assignment
@@ -178,7 +185,7 @@ export default function AssignmentDetails() {
       >
         <PageHeader 
           title={assignment.title} 
-          subtitle={`${assignment.subjects?.name || 'Subject'} • ${assignment.classes?.name || 'Class'} - ${assignment.section}`} 
+          subtitle={`${assignment.subjects?.name || assignment.subject || 'Subject'} • ${assignment.classes?.name || assignment.class_name || 'Class'}${assignment.section ? ` - ${assignment.section}` : ''}`} 
         />
 
         <View style={styles.assignmentInfo}>

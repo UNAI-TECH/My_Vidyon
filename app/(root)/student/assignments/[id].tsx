@@ -18,14 +18,19 @@ import * as DocumentPicker from 'expo-document-picker';
 import { format } from 'date-fns';
 import { useStudentDashboard } from '../../../../src/hooks/useStudentDashboard';
 import { AlertModal } from '../../../../src/components/common/AlertModal';
+import { uploadToSupabaseStorage } from '../../../../src/utils/fileUpload';
 
 export default function StudentAssignmentDetails() {
   const { id } = useLocalSearchParams();
   const { user } = useAuth();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { studentProfile } = useStudentDashboard(user?.id);
+  const { studentProfile } = useStudentDashboard(
+    user?.id,
+    (user as any)?.user_metadata?.institution_id
+  );
   
+  const rawInstId = (user as any)?.user_metadata?.institution_id || studentProfile?.institution_id;
   const [pickedFile, setPickedFile] = React.useState<any>(null);
   const [isUploading, setIsUploading] = React.useState(false);
   const [alertConfig, setAlertConfig] = React.useState({
@@ -36,8 +41,8 @@ export default function StudentAssignmentDetails() {
   });
 
   // Fetch assignment details
-  const { data: assignment, isLoading: isLoadingAssignment } = useQuery<any>({
-    queryKey: ['student-assignment', id],
+  const { data: assignment, isLoading: isLoadingAssignment, isError: isAssignmentError } = useQuery<any>({
+    queryKey: ['student-assignment', id, rawInstId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('assignments')
@@ -46,6 +51,31 @@ export default function StudentAssignmentDetails() {
         .single();
       
       if (error) throw error;
+
+      // Validate institution ownership to prevent cross-institution leakage
+      if (data && rawInstId) {
+        const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+        let validInstIds: string[] = [rawInstId];
+        try {
+          const instQuery = supabase.from('institutions').select('id, institution_id');
+          if (isUUID(rawInstId)) {
+            instQuery.eq('id', rawInstId);
+          } else {
+            instQuery.eq('institution_id', rawInstId);
+          }
+          const { data: instData } = await (instQuery as any).maybeSingle();
+          if (instData) {
+            if (instData.id) validInstIds.push(instData.id);
+            if (instData.institution_id) validInstIds.push(instData.institution_id);
+          }
+        } catch (_) {}
+
+        const assignmentData = data as any;
+        if (assignmentData?.institution_id && !validInstIds.includes(assignmentData.institution_id)) {
+          throw new Error('Unauthorized: Assignment does not belong to your institution.');
+        }
+      }
+
       return data;
     },
     enabled: !!id,
@@ -118,22 +148,13 @@ export default function StudentAssignmentDetails() {
       const fileName = `${Date.now()}_submission_${studentProfile?.id}.${fileExt}`;
       const filePath = `submissions/${id}/${fileName}`;
 
-      const formData = new FormData();
-      formData.append('file', {
-        uri: Platform.OS === 'ios' ? pickedFile.uri.replace('file://', '') : pickedFile.uri,
-        name: pickedFile.name,
-        type: pickedFile.mimeType || 'application/octet-stream',
-      } as any);
-
-      const { error: storageError } = await supabase.storage
-        .from('assignments')
-        .upload(filePath, formData as any);
-
-      if (storageError) throw storageError;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('assignments')
-        .getPublicUrl(filePath);
+      const { publicUrl } = await uploadToSupabaseStorage({
+        bucket: 'assignments',
+        path: filePath,
+        uri: pickedFile.uri,
+        mimeType: pickedFile.mimeType || 'application/octet-stream',
+        upsert: true,
+      });
       
       console.log('Student: Generated Public URL:', publicUrl);
 
@@ -185,11 +206,11 @@ export default function StudentAssignmentDetails() {
       await queryClient.invalidateQueries({ queryKey: ['student-submission', id, user?.id] });
       refetch();
     } catch (error: any) {
-      console.error('Submission error:', error);
+      console.error('[Student Assignment Submission Error]:', error);
       setAlertConfig({
         visible: true,
         title: 'Upload Failed',
-        message: error.message || 'Something went wrong during submission.',
+        message: 'Something went wrong during submission. Please try again.',
         type: 'error'
       });
     } finally {
@@ -205,11 +226,17 @@ export default function StudentAssignmentDetails() {
     );
   }
 
-  if (!assignment) {
+  if (isAssignmentError || !assignment) {
     return (
       <View style={styles.centered}>
         <AlertCircle size={48} color={theme.colors.textMuted} {...({} as any)} />
-        <Text style={styles.emptyText}>Assignment details not found.</Text>
+        <Text style={styles.emptyText}>Assignment not found or does not belong to your institution.</Text>
+        <TouchableOpacity 
+          onPress={() => router.back()} 
+          style={{ marginTop: 16, paddingVertical: 10, paddingHorizontal: 20, backgroundColor: theme.colors.primary, borderRadius: 12 }}
+        >
+          <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 14 }}>Go Back</Text>
+        </TouchableOpacity>
       </View>
     );
   }

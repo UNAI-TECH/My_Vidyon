@@ -124,10 +124,11 @@ export default function ExamGrading() {
     queryFn: async () => {
       if (!id || !selectedSubject?.subject_id || !isUUID(selectedSubject.subject_id)) return [];
       
-      // 1. Get all students in this class/section
+      // 1. Get all students in this class/section for THIS institution
       const { data: students, error: studentError } = await supabase
         .from('students')
         .select('id, name, register_number')
+        .eq('institution_id', exam.institution_id)
         .eq('class_name', classData?.name || exam.class_id)
         .eq('section', exam.section)
         .order('name');

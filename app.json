@@ -4,15 +4,10 @@
     "slug": "my-vidyon-rebuild",
     "scheme": "myvidyonrebuild",
     "version": "1.0.0",
-    "sdkVersion": "54.0.0",
+    "sdkVersion": "57.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
     "ios": {
       "supportsTablet": true
     },
@@ -24,12 +19,7 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "package": "com.myvidyon.app",
-      "googleServicesFile": "./google-services.json",
-      "notification": {
-        "icon": "./assets/notification-icon.png",
-        "color": "#FAB75A",
-        "androidMode": "default"
-      }
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -38,6 +28,14 @@
       "expo-router",
       "expo-asset",
       "expo-secure-store",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff"
+        }
+      ],
       [
         "expo-notifications",
         {
@@ -54,7 +52,9 @@
           "androidAppId": "ca-app-pub-8782577961794696~4810132296",
           "iosAppId": "ca-app-pub-8782577961794696~4810132296"
         }
-      ]
+      ],
+      "expo-sharing",
+      "expo-status-bar"
     ],
     "extra": {
       "router": {},

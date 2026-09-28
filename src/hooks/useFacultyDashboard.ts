@@ -42,16 +42,41 @@ export interface FacultyProfile {
     department: string | null;
 }
 
+const resolveInstitutionIds = async (rawId?: string) => {
+    if (!rawId) return [];
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    const validInstIds = new Set<string>([rawId, rawId.toUpperCase(), rawId.toLowerCase()]);
+    try {
+        const instQuery = supabase.from('institutions').select('id, institution_id');
+        if (isUUID(rawId)) {
+            instQuery.eq('id', rawId);
+        } else {
+            instQuery.ilike('institution_id', rawId);
+        }
+        const { data: instData } = await (instQuery as any).maybeSingle();
+        if (instData) {
+            if (instData.id) validInstIds.add(instData.id);
+            if (instData.institution_id) {
+                validInstIds.add(instData.institution_id);
+                validInstIds.add(instData.institution_id.toUpperCase());
+                validInstIds.add(instData.institution_id.toLowerCase());
+            }
+        }
+    } catch (_) {}
+    return Array.from(validInstIds).filter(Boolean);
+};
+
 export function useFacultyDashboard(facultyId?: string, institutionId?: string) {
     // 1. Total Students in Institution
     const { data: totalStudents = 0, isLoading: isLoadingTotal, refetch: refetchStudents } = useQuery({
         queryKey: ['faculty-total-students', institutionId],
         queryFn: async () => {
             if (!institutionId) return 0;
-            const { count } = await supabase
-                .from('students')
+            const validInstIds = await resolveInstitutionIds(institutionId);
+            const { count } = await (supabase
+                .from('students') as any)
                 .select('id', { count: 'exact', head: true })
-                .eq('institution_id', institutionId);
+                .in('institution_id', validInstIds.length > 0 ? validInstIds : [institutionId]);
             return count || 0;
         },
         enabled: !!institutionId,
@@ -59,7 +84,7 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
 
     // 2. Assigned Subjects & Students in those classes
     const { data: assignedData = { subjects: [], studentCount: 0 }, isLoading: isLoadingAssigned, refetch: refetchAssigned } = useQuery({
-        queryKey: ['faculty-assigned-subjects', facultyId],
+        queryKey: ['faculty-assigned-subjects', facultyId, institutionId],
         queryFn: async () => {
             if (!facultyId) return { subjects: [], studentCount: 0 };
             
@@ -80,10 +105,18 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
             
             let studentCount = 0;
             if (subjects.length > 0) {
-                const { count } = await supabase
-                    .from('students')
+                let sQuery = (supabase
+                    .from('students') as any)
                     .select('id', { count: 'exact', head: true })
                     .in('class_name', subjects.map(s => s.classes?.name).filter(Boolean) as string[]);
+                
+                if (institutionId) {
+                    const validInstIds = await resolveInstitutionIds(institutionId);
+                    if (validInstIds.length > 0) {
+                        sQuery = sQuery.in('institution_id', validInstIds);
+                    }
+                }
+                const { count } = await sQuery;
                 studentCount = count || 0;
             }
 
@@ -175,11 +208,14 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
         queryKey: ['faculty-institution', institutionId],
         queryFn: async () => {
             if (!institutionId) return null;
-            const { data: inst } = await supabase
-                .from('institutions')
-                .select('*')
-                .eq('institution_id', institutionId)
-                .maybeSingle();
+            const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+            let query = supabase.from('institutions').select('*');
+            if (isUUID(institutionId)) {
+                query = query.eq('id', institutionId);
+            } else {
+                query = query.ilike('institution_id', institutionId);
+            }
+            const { data: inst } = await (query as any).maybeSingle();
             return inst as any;
         },
         enabled: !!institutionId,
@@ -395,14 +431,32 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
         return data;
     };
 
-    const fetchClassStudents = async (className: string, section: string) => {
-        const { data, error } = await supabase
-            .from('students')
-            .select('*')
-            .eq('class_name', className)
-            .eq('section', section);
-        if (error) throw error;
-        return data;
+    const fetchClassStudents = async (className?: string, section?: string, targetInstId?: string) => {
+        const rawInstId = targetInstId || institutionId;
+        let query = (supabase.from('students') as any).select('*');
+
+        if (rawInstId) {
+            const validInstIds = await resolveInstitutionIds(rawInstId);
+            if (validInstIds.length > 0) {
+                query = query.in('institution_id', validInstIds);
+            }
+        }
+
+        if (className) {
+            query = query.or(`class_name.ilike."${className.trim()}",class_name.eq."${className.trim()}"`);
+        }
+        if (section && section.trim()) {
+            query = query.or(`section.ilike."${section.trim()}",section.eq."${section.trim()}"`);
+        }
+
+        query = query.order('name', { ascending: true });
+
+        const { data, error } = await query;
+        if (error) {
+            console.error('Error fetching class students:', error);
+            throw error;
+        }
+        return data || [];
     };
 
     const verifySubmission = async (submissionId: string, updateData: any) => {

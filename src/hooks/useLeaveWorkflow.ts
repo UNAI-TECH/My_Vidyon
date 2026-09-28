@@ -40,36 +40,63 @@ export function useLeaveWorkflow() {
   }) => {
     const { studentId, parentId, fromDate, toDate, reason, leaveType } = params;
 
-    // 1. Fetch student info to get class_name and section
-    const { data: student } = await supabase
-      .from('students')
+    // 1. Fetch student info to get institution_id, class_name and section
+    const { data: studentData } = await (supabase
+      .from('students' as any) as any)
       .select('institution_id, class_name, section')
       .eq('id', studentId)
       .single();
 
+    const student = studentData as any;
     if (!student) return { error: { message: 'Student not found' } };
 
-    // 2. Find the class teacher for this class/section
-    // Query classes first to get class_id
-    const { data: classData } = await supabase
-      .from('classes')
-      .select('id')
+    // 2. Find matching class in the student's same institution
+    const { data: classData } = await (supabase
+      .from('classes' as any) as any)
+      .select('id, name, class_teacher_id, sections')
       .eq('institution_id', student.institution_id)
-      .eq('name', student.class_name)
-      .eq('section', student.section || 'A')
-      .single();
+      .eq('name', student.class_name);
 
-    let classTeacherId = null;
-    if (classData) {
-      const { data: teacherData } = await (supabase
-        .from('faculty_subjects') as any)
-        .select('faculty_profile_id')
-        .eq('class_id', classData.id)
-        .eq('assignment_type', 'class_teacher')
-        .limit(1)
-        .single();
-      
-      if (teacherData) classTeacherId = teacherData.faculty_profile_id;
+    const classList = (classData || []) as any[];
+    let classTeacherId: string | null = null;
+
+    if (classList.length > 0) {
+      // Find class that includes student's section or pick first matching class in this school
+      const matchedClass: any = classList.find((c: any) => 
+        !student.section || (Array.isArray(c.sections) && c.sections.includes(student.section))
+      ) || classList[0];
+
+      if (matchedClass) {
+        // A. Check faculty_subjects for class_teacher assignment
+        const { data: teacherData } = await (supabase
+          .from('faculty_subjects' as any) as any)
+          .select('faculty_profile_id')
+          .eq('class_id', matchedClass.id)
+          .eq('institution_id', student.institution_id)
+          .eq('assignment_type', 'class_teacher')
+          .eq('section', student.section || 'A')
+          .maybeSingle();
+
+        if (teacherData?.faculty_profile_id) {
+          classTeacherId = teacherData.faculty_profile_id;
+        } else if (matchedClass.class_teacher_id) {
+          // B. Direct class_teacher_id on the class row
+          classTeacherId = matchedClass.class_teacher_id;
+        } else {
+          // C. Any class_teacher for this class
+          const { data: anyTeacher } = await (supabase
+            .from('faculty_subjects' as any) as any)
+            .select('faculty_profile_id')
+            .eq('class_id', matchedClass.id)
+            .eq('institution_id', student.institution_id)
+            .eq('assignment_type', 'class_teacher')
+            .maybeSingle();
+
+          if (anyTeacher?.faculty_profile_id) {
+            classTeacherId = anyTeacher.faculty_profile_id;
+          }
+        }
+      }
     }
 
     // Check for overlapping approved leaves
@@ -91,6 +118,7 @@ export function useLeaveWorkflow() {
       .insert({
         student_id: studentId,
         parent_id: parentId || null,
+        institution_id: student.institution_id,
         from_date: fromDate,
         to_date: toDate,
         reason,

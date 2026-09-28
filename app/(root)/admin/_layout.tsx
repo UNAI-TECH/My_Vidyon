@@ -53,32 +53,12 @@ export default function AdminTabs() {
         tabBarInactiveTintColor: theme.colors.textMuted,
       }}
     >
+      {/* Visible Bottom Nav Tabs — Only Dashboard + Settings */}
       <Tabs.Screen
         name="index"
         options={{
           tabBarLabel: 'Dashboard',
           tabBarIcon: ({ color }) => <LayoutDashboard size={22} color={color} {...({} as any)} />,
-        }}
-      />
-      <Tabs.Screen
-        name="institutions/index"
-        options={{
-          tabBarLabel: 'Institutions',
-          tabBarIcon: ({ color }) => <Building size={22} color={color} {...({} as any)} />,
-        }}
-      />
-      <Tabs.Screen
-        name="communication"
-        options={{
-          tabBarLabel: 'Broadcast',
-          tabBarIcon: ({ color }) => <MessageSquare size={22} color={color} {...({} as any)} />,
-        }}
-      />
-      <Tabs.Screen
-        name="revenue/index"
-        options={{
-          tabBarLabel: 'Analytics',
-          tabBarIcon: ({ color, focused }) => <BarChart3 size={22} color={color} {...({} as any)} />,
         }}
       />
       <Tabs.Screen
@@ -89,14 +69,18 @@ export default function AdminTabs() {
         }}
       />
 
-      {/* Hidden Screens */}
+      {/* Hidden Screens — Accessible via dashboard shortcuts, not in bottom nav */}
+      <Tabs.Screen name="institutions" options={{ href: null }} />
+      <Tabs.Screen name="communication" options={{ href: null }} />
+      <Tabs.Screen name="revenue" options={{ href: null }} />
       <Tabs.Screen name="users" options={{ href: null }} />
-      <Tabs.Screen name="logs/index" options={{ href: null }} />
-      <Tabs.Screen name="status/index" options={{ href: null }} />
-      <Tabs.Screen name="onboarding/index" options={{ href: null }} />
-      <Tabs.Screen name="promotions/index" options={{ href: null }} />
+      <Tabs.Screen name="logs" options={{ href: null }} />
+      <Tabs.Screen name="status" options={{ href: null }} />
+      <Tabs.Screen name="onboarding" options={{ href: null }} />
+      <Tabs.Screen name="promotions" options={{ href: null }} />
       <Tabs.Screen name="notifications" options={{ href: null }} />
-      <Tabs.Screen name="ads/index" options={{ href: null }} />
+      <Tabs.Screen name="ads" options={{ href: null }} />
+      <Tabs.Screen name="ads/leads" options={{ href: null }} />
     </Tabs>
   );
 }

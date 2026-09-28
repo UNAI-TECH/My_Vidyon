@@ -60,6 +60,22 @@ export const PageHeader = ({ title, subtitle, actions, leftAction, institutionNa
     router.push(`/(root)/${roleSlug}/settings`);
   };
 
+  const [logoFailed, setLogoFailed] = React.useState(false);
+
+  React.useEffect(() => {
+    setLogoFailed(false);
+  }, [institutionLogo]);
+
+  const isValidLogo = Boolean(
+    institutionLogo &&
+    typeof institutionLogo === 'string' &&
+    institutionLogo.startsWith('http') &&
+    !logoFailed
+  );
+  const initialLetters = institutionName 
+    ? institutionName.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase() 
+    : 'MV';
+
   const showInstitutionCard = !!userRole || !!institutionName || !!institutionLogo;
   
   return (
@@ -71,11 +87,16 @@ export const PageHeader = ({ title, subtitle, actions, leftAction, institutionNa
             activeOpacity={0.7}
             onPress={handleProfilePress}
           >
-            {institutionLogo ? (
-              <Image source={{ uri: institutionLogo }} style={styles.institutionLogoBig} />
+            {isValidLogo ? (
+              <Image 
+                source={{ uri: institutionLogo }} 
+                style={styles.institutionLogoBig} 
+                resizeMode="cover"
+                onError={() => setLogoFailed(true)}
+              />
             ) : (
-              <View style={[styles.institutionLogoBig, { backgroundColor: theme.colors.primary + '20', justifyContent: 'center', alignItems: 'center' }]}>
-                <Text style={{ fontWeight: 'bold', color: theme.colors.primary, fontSize: 20 }}>{institutionName?.substring(0, 1) || 'M'}</Text>
+              <View style={[styles.institutionLogoBig, { backgroundColor: theme.colors.primary + '15', justifyContent: 'center', alignItems: 'center' }]}>
+                <Text style={{ fontWeight: 'bold', color: theme.colors.primary, fontSize: 18 }}>{initialLetters}</Text>
               </View>
             )}
             <View style={{ flex: 1 }}>

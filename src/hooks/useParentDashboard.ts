@@ -104,8 +104,20 @@ export function useParentDashboard(parentId?: string): ParentDashboardData & { i
         queryFn: async () => {
             if (!parentId) return null;
             const { data: profile } = await supabase.from('profiles').select('institution_id').eq('id', parentId).maybeSingle();
-            if (!profile || !(profile as any).institution_id) return null;
-            const { data: inst } = await supabase.from('institutions').select('*').eq('institution_id', (profile as any).institution_id).maybeSingle();
+            let instId = (profile as any)?.institution_id;
+            if (!instId && children.length > 0) {
+                instId = (children[0] as any)?.institution_id;
+            }
+            if (!instId) return null;
+
+            const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+            let query = supabase.from('institutions').select('*');
+            if (isUUID(instId)) {
+                query = query.eq('id', instId);
+            } else {
+                query = query.ilike('institution_id', instId);
+            }
+            const { data: inst } = await (query as any).maybeSingle();
             return inst;
         },
         enabled: !!parentId,

@@ -233,43 +233,77 @@ export default function InstitutionExams() {
       setIsLoadingMaterials(true);
       const subObj = subjects.find(s => s.name === subject);
       
-      // Try by subject_id first with join for subject naming consistency
-      let query = supabase
-        .from('subject_materials')
-        .select(`
-          *,
-          profiles:faculty_id(full_name),
-          subjects:subject_id(name)
-        `)
-        .eq('class_id', classId);
+      console.log('[ExamMgmt] fetchMaterials called:', { classId, subject, subjectId: subObj?.id, institutionId });
       
+      // Query 1: Try by subject_id + class_id
       if (subObj) {
-        query = query.eq('subject_id', subObj.id);
-      }
-
-      const { data, error } = await query;
-      if (error) throw error;
-      
-      let results = data || [];
-      
-      // Fallback: If no matches by ID, try all for class and filter client-side by subject name
-      if (results.length === 0 && subject) {
-        const { data: allClassMaterials, error: allErr } = await supabase
+        const { data, error } = await supabase
           .from('subject_materials')
-          .select('*, subjects:subject_id(name)')
-          .eq('class_id', classId);
+          .select(`
+            *,
+            profiles:faculty_id(full_name),
+            subjects:subject_id(name)
+          `)
+          .eq('class_id', classId)
+          .eq('subject_id', subObj.id);
         
-        if (!allErr && allClassMaterials) {
-          results = allClassMaterials.filter((m: any) => 
-            m.subjects?.name?.toLowerCase().includes(subject.toLowerCase()) ||
-            m.title?.toLowerCase().includes(subject.toLowerCase())
-          );
+        if (!error && data && data.length > 0) {
+          console.log('[ExamMgmt] Found materials by class_id + subject_id:', data.length);
+          setAvailableMaterials(data);
+          return;
         }
       }
 
-      setAvailableMaterials(results);
+      // Query 2: Try by institution_id + subject_id (materials may have different class_id format)
+      if (subObj && institutionId) {
+        const { data, error } = await supabase
+          .from('subject_materials')
+          .select(`
+            *,
+            profiles:faculty_id(full_name),
+            subjects:subject_id(name)
+          `)
+          .eq('institution_id', institutionId)
+          .eq('subject_id', subObj.id);
+        
+        if (!error && data && data.length > 0) {
+          console.log('[ExamMgmt] Found materials by institution_id + subject_id:', data.length);
+          setAvailableMaterials(data);
+          return;
+        }
+      }
+
+      // Query 3: Fallback - fetch all materials for this institution and filter by subject name
+      if (institutionId) {
+        const { data, error } = await supabase
+          .from('subject_materials')
+          .select('*, subjects:subject_id(name), profiles:faculty_id(full_name)')
+          .eq('institution_id', institutionId);
+        
+        console.log('[ExamMgmt] All institution materials:', data?.length, error?.message);
+
+        if (!error && data) {
+          const filtered = data.filter((m: any) => 
+            m.subjects?.name?.toLowerCase() === subject.toLowerCase() ||
+            m.subjects?.name?.toLowerCase().includes(subject.toLowerCase()) ||
+            m.title?.toLowerCase().includes(subject.toLowerCase())
+          );
+          console.log('[ExamMgmt] Filtered by subject name:', filtered.length);
+          setAvailableMaterials(filtered);
+          return;
+        }
+      }
+
+      // Query 4: Last resort - all materials for this class
+      const { data, error } = await supabase
+        .from('subject_materials')
+        .select('*, subjects:subject_id(name), profiles:faculty_id(full_name)')
+        .eq('class_id', classId);
+      
+      console.log('[ExamMgmt] All class materials fallback:', data?.length, error?.message);
+      setAvailableMaterials(data || []);
     } catch (err) {
-      console.error("Error fetching materials:", err);
+      console.error("[ExamMgmt] Error fetching materials:", err);
     } finally {
       setIsLoadingMaterials(false);
     }
@@ -693,38 +727,42 @@ export default function InstitutionExams() {
               </TouchableOpacity>
 
               <Text style={styles.listLabel}>Existing Materials</Text>
+            <ScrollView style={{ maxHeight: 300 }} nestedScrollEnabled>
               {isLoadingMaterials ? (
-                <ActivityIndicator size="small" color={theme.colors.primary} />
+                <ActivityIndicator size="small" color={theme.colors.primary} style={{ marginVertical: 20 }} />
               ) : availableMaterials.length > 0 ? (
-                <FlatList
-                  data={availableMaterials}
-                  keyExtractor={(item) => item.id}
-                  renderItem={({ item }) => {
-                    const entry = formData.entries.find(e => e.id === materialsModal.entryId);
-                    const isAttached = entry?.attached_materials?.some((m: any) => m.url === item.file_url);
-                    
-                    return (
-                      <TouchableOpacity 
-                        style={[styles.materialItem, isAttached && styles.materialItemSelected]}
-                        onPress={() => {
-                          const currentMats = entry?.attached_materials || [];
-                          if (isAttached) {
-                             updateEntry(materialsModal.entryId, 'attached_materials', currentMats.filter((m: any) => m.url !== item.file_url));
-                          } else {
-                             updateEntry(materialsModal.entryId, 'attached_materials', [...currentMats, { name: item.title, url: item.file_url, type: 'existing' }]);
-                          }
-                        }}
-                      >
-                        <BookOpen size={18} color={isAttached ? theme.colors.primary : theme.colors.textMuted} {...({} as any)} />
+                availableMaterials.map((item: any) => {
+                  const entry = formData.entries.find(e => e.id === materialsModal.entryId);
+                  const isAttached = entry?.attached_materials?.some((m: any) => m.url === item.file_url);
+                  
+                  return (
+                    <TouchableOpacity 
+                      key={item.id}
+                      style={[styles.materialItem, isAttached && styles.materialItemSelected]}
+                      onPress={() => {
+                        const currentMats = entry?.attached_materials || [];
+                        if (isAttached) {
+                           updateEntry(materialsModal.entryId, 'attached_materials', currentMats.filter((m: any) => m.url !== item.file_url));
+                        } else {
+                           updateEntry(materialsModal.entryId, 'attached_materials', [...currentMats, { name: item.title, url: item.file_url, type: 'existing' }]);
+                        }
+                      }}
+                    >
+                      <BookOpen size={18} color={isAttached ? theme.colors.primary : theme.colors.textMuted} {...({} as any)} />
+                      <View style={{ flex: 1 }}>
                         <Text style={[styles.materialName, isAttached && styles.materialNameSelected]}>{item.title}</Text>
-                        {isAttached && <CheckCircle2 size={18} color={theme.colors.primary} {...({} as any)} />}
-                      </TouchableOpacity>
-                    );
-                  }}
-                />
+                        {item.profiles?.full_name && (
+                          <Text style={{ fontSize: 11, color: theme.colors.textMuted, marginTop: 2 }}>by {item.profiles.full_name}</Text>
+                        )}
+                      </View>
+                      {isAttached && <CheckCircle2 size={18} color={theme.colors.primary} {...({} as any)} />}
+                    </TouchableOpacity>
+                  );
+                })
               ) : (
                 <Text style={styles.noMaterials}>No existing materials found for this subject.</Text>
               )}
+            </ScrollView>
             </View>
 
             <TouchableOpacity 
@@ -813,11 +851,11 @@ const styles = StyleSheet.create({
   attachedItem: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#EDF2F7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, maxWidth: '100%' },
   attachedName: { fontSize: 12, color: theme.colors.textMuted, maxWidth: 100 },
 
-  modalOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', zIndex: 1000 },
-  materialsModal: { width: '90%', maxHeight: '80%', backgroundColor: 'white', borderRadius: 24, padding: 24, elevation: 5 },
+  modalOverlay: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', zIndex: 1000 },
+  materialsModal: { width: '90%', maxHeight: '80%', backgroundColor: 'white', borderRadius: 24, padding: 24, elevation: 5, flexDirection: 'column' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  modalTitle: { fontSize: 18, fontWeight: 'bold', color: theme.colors.text },
-  modalBody: { flex: 1 },
+  modalTitle: { fontSize: 18, fontWeight: 'bold', color: theme.colors.text, flex: 1, marginRight: 10 },
+  modalBody: { minHeight: 200 },
   modalSub: { fontSize: 14, color: theme.colors.textMuted, marginBottom: 16 },
   uploadBox: { borderWidth: 2, borderStyle: 'dashed', borderColor: theme.colors.primary + '40', borderRadius: 16, padding: 20, alignItems: 'center', gap: 8, marginBottom: 20 },
   uploadText: { fontSize: 14, fontWeight: 'bold', color: theme.colors.primary },

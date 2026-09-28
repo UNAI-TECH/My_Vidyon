@@ -13,6 +13,8 @@ import {
 import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
 import { AlertModal } from '../../../../src/components/common/AlertModal';
+import { CalendarModal } from '../../../../src/components/common/CalendarPicker';
+import { format } from 'date-fns';
 import { useAuth } from '../../../../src/hooks/useAuth';
 import { useInstitutionClasses } from '../../../../src/hooks/useInstitutionClasses';
 import { useClassStudents } from '../../../../src/hooks/useClassStudents';
@@ -46,6 +48,7 @@ export default function AccountantFeeStructure() {
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [newFeeName, setNewFeeName] = useState('');
   const [dueDate, setDueDate] = useState('');
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [feeComponents, setFeeComponents] = useState<{ title: string; amount: string }[]>([
     { title: 'Tuition Fee', amount: '' }
   ]);
@@ -324,13 +327,22 @@ export default function AccountantFeeStructure() {
                 onChangeText={setNewFeeName}
               />
 
-              <Text style={styles.label}>Due Date (YYYY-MM-DD)</Text>
-              <TextInput 
-                style={styles.input}
-                placeholder="e.g. 2026-06-30"
-                value={dueDate}
-                onChangeText={setDueDate}
-              />
+              <Text style={styles.label}>Due Date</Text>
+              <TouchableOpacity 
+                style={styles.datePickerBtn}
+                onPress={() => setShowDatePicker(true)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.datePickerContent}>
+                  <Calendar size={18} color={theme.colors.primary} {...({} as any)} />
+                  <Text style={[styles.datePickerText, !dueDate && styles.placeholderText]}>
+                    {dueDate ? format(new Date(dueDate + 'T00:00:00'), 'MMM d, yyyy') : 'Select Due Date'}
+                  </Text>
+                </View>
+                {dueDate ? (
+                  <Text style={styles.datePickerSubtext}>{dueDate}</Text>
+                ) : null}
+              </TouchableOpacity>
 
               <View style={styles.compHeader}>
                 <Text style={styles.label}>Fee Components</Text>
@@ -384,6 +396,18 @@ export default function AccountantFeeStructure() {
           </View>
         </View>
       </Modal>
+
+      {/* Calendar Date Picker Modal */}
+      <CalendarModal 
+        visible={showDatePicker}
+        onClose={() => setShowDatePicker(false)}
+        onSelect={(date) => {
+          setDueDate(date);
+          setShowDatePicker(false);
+        }}
+        initialDate={dueDate || undefined}
+        title="Select Due Date"
+      />
 
       {/* Themed Success/Error Modal */}
       <AlertModal 
@@ -439,6 +463,36 @@ const styles = StyleSheet.create({
   modalForm: { flex: 1 },
   label: { fontSize: 14, fontWeight: '600', color: theme.colors.text, marginBottom: 8 },
   input: { backgroundColor: '#F8FAFC', borderRadius: 12, padding: 16, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 20, fontSize: 15 },
+  datePickerBtn: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  datePickerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  datePickerText: {
+    fontSize: 15,
+    color: theme.colors.text,
+    fontWeight: '600',
+  },
+  placeholderText: {
+    color: '#94A3B8',
+    fontWeight: 'normal',
+  },
+  datePickerSubtext: {
+    fontSize: 13,
+    color: theme.colors.textMuted,
+    fontWeight: '500',
+  },
   compHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   addCompLabel: { color: theme.colors.primary, fontWeight: 'bold', fontSize: 13 },
   compRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },

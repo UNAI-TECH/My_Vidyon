@@ -38,12 +38,22 @@ export const EventAdCarousel: React.FC<EventAdCarouselProps> = ({
   nativeAdUnitID, 
   adInterval = 2 
 }) => {
-  const { user, institutionUuid } = useAuth();
+  const { user, role, fullName, institutionUuid } = useAuth();
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
   const indexRef = useRef(0);
+
+  // Frequency Balancing Ref (Google Ads style):
+  // Tracks timestamp when each ad was last seen by this user in the carousel
+  const lastSeenAdRef = useRef<{ [adId: string]: number }>({});
+  // Impression debit window: only debit at most 1 view per 30 minutes per ad
+  const lastDebitedViewRef = useRef<{ [adId: string]: number }>({});
+  // View lead recording window: 15 minutes per user per ad to avoid flooding
+  const recordedViewLeadsRef = useRef<{ [key: string]: number }>({});
+  // Click throttle ref (3s)
+  const lastAdClickRef = useRef<{ [adId: string]: number }>({});
  
   // 1. Fetch Events
   const { data: events = [], isLoading } = useQuery({
@@ -73,27 +83,284 @@ export const EventAdCarousel: React.FC<EventAdCarouselProps> = ({
     enabled: !!user
   });
 
-  // 2. Mix Events and Ads
+  // Record User Lead details on click or view
+  const recordAdLead = async (ad: any, actionType: 'click' | 'view' = 'click') => {
+    try {
+      if (!ad?.id || !ad?.is_admin_added) return;
+
+      // Do NOT include admin or superadmin in ad leads
+      const currentRole = (role || '').toLowerCase();
+      if (currentRole === 'admin' || currentRole === 'superadmin') return;
+
+      // Deduplicate views per user per ad so rotating carousel doesn't spam database
+      if (actionType === 'view') {
+        const viewKey = `${ad.id}_${user?.id || 'anon'}`;
+        const lastRecorded = recordedViewLeadsRef.current[viewKey] || 0;
+        if (Date.now() - lastRecorded < 15 * 60 * 1000) return; // 15-minute window
+        recordedViewLeadsRef.current[viewKey] = Date.now();
+      }
+
+      let contactNumber = user?.phone || '';
+      let name = fullName || (user?.user_metadata as any)?.full_name || '';
+      let email = user?.email || '';
+      let institutionName = '';
+
+      // Check profile if phone/name not populated in auth context
+      if (user?.id) {
+        const { data: prof } = await (supabase.from('profiles') as any)
+          .select('phone, full_name, email, institution_id, role')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (prof) {
+          if (prof.role === 'admin' || prof.role === 'superadmin') return;
+          contactNumber = prof.phone || contactNumber;
+          name = prof.full_name || name;
+          email = prof.email || email;
+
+          if (prof.institution_id) {
+            const { data: inst } = await (supabase.from('institutions') as any)
+              .select('name')
+              .eq('institution_id', prof.institution_id)
+              .maybeSingle();
+            if (inst?.name) institutionName = inst.name;
+          }
+        }
+
+        // Additional fallback for students / parents
+        if (!contactNumber || !name) {
+          if (role === 'student') {
+            const { data: stu } = await (supabase.from('students') as any)
+              .select('name, phone, emergency_contact, parent_phone')
+              .or(`user_id.eq.${user.id},profile_id.eq.${user.id}`)
+              .maybeSingle();
+            if (stu) {
+              name = stu.name || name;
+              contactNumber = stu.phone || stu.emergency_contact || stu.parent_phone || contactNumber;
+            }
+          } else if (role === 'parent') {
+            const { data: par } = await (supabase.from('parents') as any)
+              .select('name, phone, emergency_phone')
+              .eq('user_id', user.id)
+              .maybeSingle();
+            if (par) {
+              name = par.name || name;
+              contactNumber = par.phone || par.emergency_phone || contactNumber;
+            }
+          }
+        }
+      }
+
+      const finalName = name || (user?.email ? user.email.split('@')[0] : 'App User');
+      const finalContact = contactNumber || 'Not Provided';
+      const finalEmail = email || user?.email || 'Not Provided';
+      const userRole = role || 'user';
+
+      // 1. Try atomic database function
+      const { error: rpcErr } = await (supabase.rpc as any)('record_ad_lead', {
+        p_ad_id: ad.id,
+        p_user_id: user?.id || null,
+        p_user_name: finalName,
+        p_contact_number: finalContact,
+        p_user_email: finalEmail,
+        p_user_role: userRole,
+        p_action_type: actionType
+      });
+
+      if (rpcErr) {
+        // Fallback direct table insertion
+        await (supabase.from('ad_leads') as any).insert({
+          ad_id: ad.id,
+          ad_title: ad.title || 'Sponsored Campaign',
+          user_id: user?.id || null,
+          user_name: finalName,
+          contact_number: finalContact,
+          user_email: finalEmail,
+          user_role: userRole,
+          institution_name: institutionName || null,
+          action_type: actionType
+        });
+      }
+    } catch (err) {
+      console.warn('Could not record ad lead:', err);
+    }
+  };
+
+  // Record Click Debit
+  const recordAdClick = async (ad: any) => {
+    if (!ad?.id || !ad?.is_admin_added) return;
+    if (ad.ad_pricing_type === 'view') return; // Free clicks for View-only ads
+
+    const now = Date.now();
+    const lastClick = lastAdClickRef.current[ad.id] || 0;
+    if (now - lastClick < 3000) return; // Prevent double debit within 3 seconds
+    lastAdClickRef.current[ad.id] = now;
+
+    try {
+      const { error: rpcError } = await (supabase.rpc as any)('record_ad_click', { p_ad_id: ad.id });
+      if (rpcError) {
+        // Fallback: try record_ad_visit
+        const { error: visitError } = await (supabase.rpc as any)('record_ad_visit', { p_ad_id: ad.id });
+        if (visitError) {
+          const { data: currentAd } = await (supabase.from('academic_events') as any)
+            .select('paid_amount, amount_debited, cost_per_click, cost_per_visit, clicks_count, visits_count')
+            .eq('id', ad.id)
+            .single();
+
+          if (currentAd) {
+            const cost = Number(currentAd.cost_per_click || currentAd.cost_per_visit || ad.cost_per_click || ad.cost_per_visit || 2.5);
+            const currentDebited = Number(currentAd.amount_debited || 0);
+            const totalPaid = Number(currentAd.paid_amount || ad.paid_amount || 0);
+            const newDebited = totalPaid > 0 ? Math.min(totalPaid, currentDebited + cost) : currentDebited + cost;
+            const newClicks = Number(currentAd.clicks_count || currentAd.visits_count || 0) + 1;
+            const newRemaining = Math.max(0, totalPaid - newDebited);
+
+            await (supabase.from('academic_events') as any)
+              .update({
+                amount_debited: newDebited,
+                remaining_balance: newRemaining,
+                clicks_count: newClicks,
+                visits_count: newClicks,
+              })
+              .eq('id', ad.id);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to record ad click debit:', err);
+    }
+  };
+
+  // Record View Impression Debit & Lead
+  const recordAdView = async (ad: any) => {
+    if (!ad?.id || !ad?.is_admin_added) return;
+
+    // Log the user who viewed this ad in ad_leads
+    recordAdLead(ad, 'view');
+
+    // Only debit if this ad has view pricing (hybrid or view)
+    if (ad.ad_pricing_type === 'click') return; // Free views for Click-only ads
+
+    const now = Date.now();
+    const lastView = lastDebitedViewRef.current[ad.id] || 0;
+    // Impression cooldown: At most 1 debit per ad per 30 minutes for this user session
+    // This ensures opening/closing the app repeatedly over months NEVER repeatedly deducts money!
+    if (now - lastView < 30 * 60 * 1000) return;
+    lastDebitedViewRef.current[ad.id] = now;
+
+    try {
+      const { error: rpcError } = await (supabase.rpc as any)('record_ad_view', { p_ad_id: ad.id });
+      if (rpcError) {
+        const { data: currentAd } = await (supabase.from('academic_events') as any)
+          .select('paid_amount, amount_debited, cost_per_view, views_count')
+          .eq('id', ad.id)
+          .single();
+
+        if (currentAd) {
+          const cost = Number(currentAd.cost_per_view || ad.cost_per_view || 0.20);
+          const currentDebited = Number(currentAd.amount_debited || 0);
+          const totalPaid = Number(currentAd.paid_amount || ad.paid_amount || 0);
+          const newDebited = totalPaid > 0 ? Math.min(totalPaid, currentDebited + cost) : currentDebited + cost;
+          const newViews = Number(currentAd.views_count || 0) + 1;
+          const newRemaining = Math.max(0, totalPaid - newDebited);
+
+          await (supabase.from('academic_events') as any)
+            .update({
+              amount_debited: newDebited,
+              remaining_balance: newRemaining,
+              views_count: newViews,
+            })
+            .eq('id', ad.id);
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to record ad view debit:', err);
+    }
+  };
+
+  // 2. Mix Events and Ads with Google Ads Frequency Balancing & Dashboard Targeting
   const mixedData = React.useMemo(() => {
     let result: any[] = [];
-    if (events.length === 0) {
-       return [{ type: 'ad' }];
+    const now = new Date();
+
+    const regularEvents: any[] = [];
+    const sponsoredAds: any[] = [];
+
+    events.forEach((event: any) => {
+      if (event.is_admin_added) {
+        // 1. Dashboard / Target Audience Matching
+        const target = event.target_audience || 'all';
+        const matchesDashboard = 
+          target === 'all' || 
+          !role || 
+          role === 'admin' || 
+          role === 'superadmin' || 
+          target === role;
+
+        if (!matchesDashboard) return;
+
+        // 2. No Due Dates: Runs until sponsor paid amount is completely depleted
+        const paid = Number(event.paid_amount || 0);
+        if (paid > 0) {
+          const remaining = Number(event.remaining_balance ?? paid);
+          if (remaining <= 0) return; // budget fully exhausted
+        }
+
+        sponsoredAds.push(event);
+      } else {
+        // Regular institution event: check expiry
+        if (event.end_date) {
+          if (new Date(event.end_date) >= now) regularEvents.push(event);
+        } else if (event.event_date) {
+          const endOfDay = new Date(event.event_date);
+          endOfDay.setHours(23, 59, 59, 999);
+          if (endOfDay >= now) regularEvents.push(event);
+        } else {
+          regularEvents.push(event);
+        }
+      }
+    });
+
+    // 3. Frequency Balancing for Ads (Google Ads Style):
+    // Ads least recently seen by this user appear first; recently seen ads cool down
+    sponsoredAds.sort((a, b) => {
+      const seenA = lastSeenAdRef.current[a.id] || 0;
+      const seenB = lastSeenAdRef.current[b.id] || 0;
+      return seenA - seenB;
+    });
+
+    // Merge balanced ads and regular events
+    const combinedList = [...sponsoredAds, ...regularEvents];
+
+    if (combinedList.length === 0) {
+      return [{ type: 'ad' }];
     }
 
-    events.forEach((event: any, index: number) => {
-      result.push({ ...(event as object), type: 'event' });
+    combinedList.forEach((item: any, index: number) => {
+      result.push({ ...(item as object), type: 'event' });
       if ((index + 1) % adInterval === 0) {
         result.push({ type: 'ad', id: `ad-${index}` });
       }
     });
 
     return result;
-  }, [events, adInterval]);
+  }, [events, adInterval, role]);
 
   // Sync ref when activeIndex changes manually (e.g. from user scroll)
   useEffect(() => {
     indexRef.current = activeIndex;
   }, [activeIndex]);
+
+  // Track initial/current visible ad on mount or when activeIndex updates
+  useEffect(() => {
+    if (mixedData && mixedData.length > 0) {
+      const currentItem = mixedData[activeIndex] || mixedData[0];
+      if (currentItem && currentItem.is_admin_added && currentItem.id) {
+        lastSeenAdRef.current[currentItem.id] = Date.now();
+        recordAdView(currentItem);
+      }
+    }
+  }, [mixedData, activeIndex]);
 
   // Auto-scroll logic for infinite loop
   useEffect(() => {
@@ -120,10 +387,18 @@ export const EventAdCarousel: React.FC<EventAdCarouselProps> = ({
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current;
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
     if (viewableItems && viewableItems.length > 0) {
-      const index = viewableItems[0].index;
+      const top = viewableItems[0];
+      const index = top.index;
       if (index !== null && index !== undefined) {
         setActiveIndex(index);
         indexRef.current = index;
+      }
+
+      // Track view for Google Ads frequency balancing & record impression debit
+      const item = top.item;
+      if (item && item.is_admin_added && item.id) {
+        lastSeenAdRef.current[item.id] = Date.now();
+        recordAdView(item);
       }
     }
   }).current;
@@ -143,6 +418,13 @@ export const EventAdCarousel: React.FC<EventAdCarouselProps> = ({
       <TouchableOpacity 
         style={styles.carouselItem} 
         onPress={async () => {
+          if (isSponsored) {
+            // Debit click cost only on actual user click/tap
+            recordAdClick(item);
+            // Capture user lead details
+            recordAdLead(item);
+          }
+
           if (item.hyperlink && isSponsored) {
             const cleanUrl = extractUrl(item.hyperlink);
             if (cleanUrl) {

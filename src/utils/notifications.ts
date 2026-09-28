@@ -7,15 +7,17 @@ import { LargeSecureStore } from '../lib/storage';
 import Constants from 'expo-constants';
 
 // Configure how notifications are handled when the app is in the foreground
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+if (Platform.OS !== 'web') {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
+}
 
 /**
  * Sets up the default Android notification channel.
@@ -156,6 +158,13 @@ export async function registerForPushNotificationsAsync(userId: string) {
  * Returning these allow the caller to remove them on unmount.
  */
 export function setupNotificationListeners(onResponse?: (data: any) => void) {
+  if (Platform.OS === 'web') {
+    return {
+      notificationListener: { remove: () => {} } as any,
+      responseListener: { remove: () => {} } as any
+    };
+  }
+
   const notificationListener = Notifications.addNotificationReceivedListener(notification => {
     console.log('Notification Received (foreground):', notification);
   });

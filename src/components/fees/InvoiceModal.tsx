@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, Modal, TouchableOpacity, Image, ScrollView } from 'react-native';
 import { theme } from '../../theme';
 import { 
@@ -11,6 +11,7 @@ import {
   Hash,
   FileText
 } from 'lucide-react-native';
+import { resolveImageToBase64 } from '../../utils/fileUpload';
 
 // Safe requirement of native modules
 let Print: any;
@@ -47,12 +48,15 @@ interface InvoiceModalProps {
 }
 
 export function InvoiceModal({ visible, onClose, institution, student, payment, themeColor = '#1e3a8a' }: InvoiceModalProps) {
+  const [logoError, setLogoError] = useState(false);
   
   const generatePDF = async () => {
     try {
       if (!Print || !Print.printToFileAsync) {
         throw new Error('Native module ExpoPrint not found. Please rebuild your development client.');
       }
+
+      const resolvedLogo = await resolveImageToBase64(institution.logo_url);
 
       const html = `
         <html>
@@ -62,7 +66,7 @@ export function InvoiceModal({ visible, onClose, institution, student, payment, 
               body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 0; margin: 0; color: #1e293b; background: white; }
               .header { background: #FAB75A; padding: 40px; color: #1E293B; display: flex; justify-content: space-between; align-items: center; }
               .header-left { display: flex; align-items: center; gap: 20px; }
-              .logo { width: 70px; height: 70px; border-radius: 12px; background: white; }
+              .logo { width: 70px; height: 70px; border-radius: 12px; background: white; object-fit: contain; }
               .inst-name { font-size: 24px; font-weight: bold; margin: 0; }
               .inst-sub { font-size: 13px; opacity: 0.8; margin-top: 4px; }
               .header-right { text-align: right; }
@@ -101,7 +105,7 @@ export function InvoiceModal({ visible, onClose, institution, student, payment, 
           <body>
             <div class="header">
               <div class="header-left">
-                ${institution.logo_url ? `<img src="${institution.logo_url}" class="logo" />` : '<div class="logo"></div>'}
+                ${resolvedLogo ? `<img src="${resolvedLogo}" onerror="this.style.display='none'" class="logo" />` : '<div class="logo"></div>'}
                 <div>
                   <h1 class="inst-name">${institution.name}</h1>
                   <p class="inst-sub">${institution.address}</p>
@@ -197,8 +201,12 @@ export function InvoiceModal({ visible, onClose, institution, student, payment, 
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            {institution.logo_url ? (
-              <Image source={{ uri: institution.logo_url }} style={styles.logo} />
+            {institution.logo_url && !logoError ? (
+              <Image 
+                source={{ uri: institution.logo_url }} 
+                style={styles.logo} 
+                onError={() => setLogoError(true)}
+              />
             ) : (
               <View style={styles.logoPlaceholder} />
             )}

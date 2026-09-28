@@ -27,6 +27,7 @@ import { supabase } from '../../../../src/lib/supabase';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AlertModal } from '../../../../src/components/common/AlertModal';
+import { uploadToSupabaseStorage } from '../../../../src/utils/fileUpload';
 
 // Removed global steps array to make it dynamic inside component
 
@@ -1210,17 +1211,23 @@ export default function InstitutionOnboarding() {
       
       if (stepId === 1) {
         // Partial Save: Basic Info
-        let finalLogoUrl = logo;
-        if (logo && logo.startsWith('file://')) {
+        let finalLogoUrl = (logo && logo.startsWith('http')) ? logo : null;
+        if (logo && !logo.startsWith('http')) {
           const fileExt = logo.split('.').pop() || 'jpeg';
           const fileName = `${basicInfo.school_code}-${Math.random()}.${fileExt}`;
-          const formData = new FormData();
-          formData.append('file', { uri: logo, name: fileName, type: `image/${fileExt}` } as any);
-          
-          const { error: uploadError } = await supabase.storage.from('logos').upload(fileName, formData, { upsert: true });
-          if (!uploadError) {
-            const { data: { publicUrl } } = supabase.storage.from('logos').getPublicUrl(fileName);
-            finalLogoUrl = publicUrl;
+          try {
+            const { publicUrl } = await uploadToSupabaseStorage({
+              bucket: 'logos',
+              path: fileName,
+              uri: logo,
+              mimeType: `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`,
+              upsert: true,
+            });
+            if (publicUrl && publicUrl.startsWith('http')) {
+              finalLogoUrl = publicUrl;
+            }
+          } catch (uploadError) {
+            console.error('[Onboarding Logo Upload Error]:', uploadError);
           }
         }
 
@@ -1352,31 +1359,23 @@ export default function InstitutionOnboarding() {
       setSubmitting(true);
       
       // 1. Upload Logo if it's a new local URI (Skip in security mode)
-      let finalLogoUrl = logo;
-      if (!isSecurityMode && logo && logo.startsWith('file://')) {
+      let finalLogoUrl = (logo && logo.startsWith('http')) ? logo : null;
+      if (!isSecurityMode && logo && !logo.startsWith('http')) {
         const fileExt = logo.split('.').pop() || 'jpeg';
         const fileName = `${basicInfo.school_code}-${Math.random()}.${fileExt}`;
-        const formData = new FormData();
-        
-        formData.append('file', {
-          uri: logo,
-          name: fileName,
-          type: `image/${fileExt}`
-        } as unknown as Blob);
-        
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('logos')
-          .upload(fileName, formData, {
-            upsert: true
+        try {
+          const { publicUrl } = await uploadToSupabaseStorage({
+            bucket: 'logos',
+            path: fileName,
+            uri: logo,
+            mimeType: `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`,
+            upsert: true,
           });
-          
-        if (!uploadError) {
-          const { data: { publicUrl } } = supabase.storage
-            .from('logos')
-            .getPublicUrl(fileName);
-          finalLogoUrl = publicUrl;
-        } else {
-          console.error("Logo upload failed", uploadError);
+          if (publicUrl && publicUrl.startsWith('http')) {
+            finalLogoUrl = publicUrl;
+          }
+        } catch (uploadError) {
+          console.error('[Onboarding Final Logo Upload Error]:', uploadError);
         }
       }
 

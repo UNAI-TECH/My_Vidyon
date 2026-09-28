@@ -21,6 +21,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { AlertModal } from '../../../../src/components/common/AlertModal';
 import { format } from 'date-fns';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { uploadToSupabaseStorage } from '../../../../src/utils/fileUpload';
 
 type EventType = 'holiday' | 'exam' | 'sports' | 'cultural' | 'other';
 
@@ -28,7 +29,8 @@ export default function InstitutionEvents() {
   const { user, institutionUuid } = useAuth();
   const queryClient = useQueryClient();
   const [isModalVisible, setIsModalVisible] = useState(false);
-  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState<'start' | 'end' | null>(null);
+  const [showTimePicker, setShowTimePicker] = useState<'start' | 'end' | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   
   // Form State
@@ -37,6 +39,7 @@ export default function InstitutionEvents() {
     description: '',
     event_type: 'other' as EventType,
     event_date: new Date(),
+    end_date: new Date(Date.now() + 24 * 60 * 60 * 1000), // Default: 1 day
     hyperlink: '',
     banner_url: '',
     category: 'academic',
@@ -71,7 +74,7 @@ export default function InstitutionEvents() {
           ...newEvent,
           institution_id: institutionUuid,
           start_date: newEvent.event_date.toISOString(),
-          end_date: newEvent.event_date.toISOString(),
+          end_date: newEvent.end_date.toISOString(),
           event_date: format(newEvent.event_date, 'yyyy-MM-dd')
         }]);
       if (error) throw error;
@@ -83,7 +86,8 @@ export default function InstitutionEvents() {
       showAlert('Success', 'Event added to the calendar!', 'success');
     },
     onError: (error: any) => {
-      showAlert('Error', error.message, 'error');
+      console.error('[Institution Events Create Mutation Error]:', error);
+      showAlert('Error', 'Failed to schedule event. Please try again.', 'error');
     }
   });
 
@@ -101,7 +105,8 @@ export default function InstitutionEvents() {
       showAlert('Deleted', 'Event has been removed.', 'success');
     },
     onError: (error: any) => {
-      showAlert('Error', error.message, 'error');
+      console.error('[Institution Events Delete Mutation Error]:', error);
+      showAlert('Error', 'Failed to remove event. Please try again.', 'error');
     }
   });
 
@@ -111,6 +116,7 @@ export default function InstitutionEvents() {
       description: '',
       event_type: 'other',
       event_date: new Date(),
+      end_date: new Date(Date.now() + 24 * 60 * 60 * 1000),
       hyperlink: '',
       banner_url: '',
       category: 'academic',
@@ -129,47 +135,39 @@ export default function InstitutionEvents() {
     }
 
     let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [16, 9],
       quality: 0.8,
     });
 
     if (!result.canceled && result.assets && result.assets.length > 0) {
-      handleUpload(result.assets[0].uri);
+      handleUpload(result.assets[0]);
     }
   };
 
-  const handleUpload = async (uri: string) => {
+  const handleUpload = async (asset: ImagePicker.ImagePickerAsset) => {
     try {
       setIsUploading(true);
-      const fileExt = uri.split('.').pop()?.toLowerCase();
+      const uri = asset.uri;
+      const fileExt = (asset.fileName?.split('.').pop() || uri.split('.').pop()?.split('?')[0] || 'jpg').toLowerCase();
       const fileName = `${institutionUuid}/${Date.now()}.${fileExt}`;
       const filePath = `events/${fileName}`;
+      const mimeType = asset.mimeType || (fileExt === 'png' ? 'image/png' : 'image/jpeg');
 
-      const formData = new FormData();
-      formData.append('file', {
-        uri: uri,
-        name: fileName,
-        type: `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`,
-      } as any);
-
-      const { data, error } = await supabase.storage
-        .from('event-banners')
-        .upload(filePath, formData, {
-           upsert: true
-        });
-
-      if (error) throw error;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('event-banners')
-        .getPublicUrl(filePath);
+      const { publicUrl } = await uploadToSupabaseStorage({
+        bucket: 'event-banners',
+        path: filePath,
+        uri,
+        mimeType,
+        upsert: true,
+      });
 
       setForm({ ...form, banner_url: publicUrl });
       showAlert('Uploaded', 'Banner image ready!', 'success');
     } catch (err: any) {
-      showAlert('Upload Failed', err.message, 'error');
+      console.error('[Institution Events Upload Failed]:', err);
+      showAlert('Upload Failed', 'Failed to upload banner image. Please try again.', 'error');
     } finally {
       setIsUploading(false);
     }
@@ -184,9 +182,30 @@ export default function InstitutionEvents() {
   };
 
   const onDateChange = (event: any, selectedDate?: Date) => {
-    setShowDatePicker(false);
-    if (selectedDate) {
-      setForm({ ...form, event_date: selectedDate });
+    const pickerType = showDatePicker;
+    setShowDatePicker(null);
+    if (selectedDate && pickerType) {
+      if (pickerType === 'start') {
+        setForm({ ...form, event_date: selectedDate });
+      } else {
+        setForm({ ...form, end_date: selectedDate });
+      }
+    }
+  };
+
+  const onTimeChange = (event: any, selectedDate?: Date) => {
+    const pickerType = showTimePicker;
+    setShowTimePicker(null);
+    if (selectedDate && pickerType) {
+      if (pickerType === 'start') {
+        const updated = new Date(form.event_date);
+        updated.setHours(selectedDate.getHours(), selectedDate.getMinutes());
+        setForm({ ...form, event_date: updated });
+      } else {
+        const updated = new Date(form.end_date);
+        updated.setHours(selectedDate.getHours(), selectedDate.getMinutes());
+        setForm({ ...form, end_date: updated });
+      }
     }
   };
 
@@ -227,11 +246,17 @@ export default function InstitutionEvents() {
                 <View style={styles.eventMeta}>
                   <Clock size={12} color={theme.colors.textMuted} />
                   <Text style={styles.eventDateText}>
-                    {format(new Date(event.event_date), 'MMMM do, yyyy')}
+                    {format(new Date(event.event_date), 'MMM d, yyyy')}
+                    {event.end_date ? ` → ${format(new Date(event.end_date), 'MMM d, h:mm a')}` : ''}
                   </Text>
                   <View style={styles.dot} />
                   <School size={12} color={theme.colors.textMuted} />
                   <Text style={styles.eventTypeTag}>{event.event_type.toUpperCase()}</Text>
+                  {event.end_date && new Date(event.end_date) < new Date() && (
+                    <View style={{ backgroundColor: '#FEF2F2', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4, marginLeft: 4 }}>
+                      <Text style={{ fontSize: 8, fontWeight: '800', color: '#EF4444' }}>ENDED</Text>
+                    </View>
+                  )}
                 </View>
                 <Text style={styles.eventDesc} numberOfLines={2}>{event.description}</Text>
                 {event.hyperlink && (
@@ -296,17 +321,42 @@ export default function InstitutionEvents() {
                 ))}
               </View>
 
-              <Text style={styles.label}>DATE</Text>
-              <TouchableOpacity style={styles.dateSelector} onPress={() => setShowDatePicker(true)}>
-                <Calendar size={20} color={theme.colors.primary} />
-                <Text style={styles.dateSelectorText}>{format(form.event_date, 'MMMM do, yyyy')}</Text>
-              </TouchableOpacity>
+              <Text style={styles.label}>START DATE & TIME</Text>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TouchableOpacity style={[styles.dateSelector, { flex: 1 }]} onPress={() => setShowDatePicker('start')}>
+                  <Calendar size={16} color={theme.colors.primary} {...({} as any)} />
+                  <Text style={styles.dateSelectorText}>{format(form.event_date, 'MMM d, yyyy')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.dateSelector, { flex: 0.6 }]} onPress={() => setShowTimePicker('start')}>
+                  <Clock size={16} color={theme.colors.primary} {...({} as any)} />
+                  <Text style={styles.dateSelectorText}>{format(form.event_date, 'h:mm a')}</Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.label}>END DATE & TIME</Text>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TouchableOpacity style={[styles.dateSelector, { flex: 1 }]} onPress={() => setShowDatePicker('end')}>
+                  <Calendar size={16} color={theme.colors.primary} {...({} as any)} />
+                  <Text style={styles.dateSelectorText}>{format(form.end_date, 'MMM d, yyyy')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.dateSelector, { flex: 0.6 }]} onPress={() => setShowTimePicker('end')}>
+                  <Clock size={16} color={theme.colors.primary} {...({} as any)} />
+                  <Text style={styles.dateSelectorText}>{format(form.end_date, 'h:mm a')}</Text>
+                </TouchableOpacity>
+              </View>
 
               {showDatePicker && (
                 <DateTimePicker
-                  value={form.event_date}
+                  value={showDatePicker === 'start' ? form.event_date : form.end_date}
                   mode="date"
                   onChange={onDateChange}
+                />
+              )}
+              {showTimePicker && (
+                <DateTimePicker
+                  value={showTimePicker === 'start' ? form.event_date : form.end_date}
+                  mode="time"
+                  onChange={onTimeChange}
                 />
               )}
 

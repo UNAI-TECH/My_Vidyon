@@ -36,8 +36,9 @@ export function useNotifications() {
   const { user, role, institutionUuid, lastReadEventsAt } = useAuth();
   const queryClient = useQueryClient();
   // Globalize local read state via React Query so all instances of useNotifications sync perfectly
-  const { data: readState } = useQuery({
+  const { data: readState = { lastReadAt: null, readIds: new Set<string>() } } = useQuery({
     queryKey: ['notifications-local-read-state', user?.id],
+    queryFn: () => ({ lastReadAt: null as string | null, readIds: new Set<string>() }),
     initialData: { lastReadAt: null as string | null, readIds: new Set<string>() },
     staleTime: Infinity,
   });

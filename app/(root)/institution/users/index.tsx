@@ -18,6 +18,7 @@ import { useRouter } from 'expo-router';
 import { supabase } from '../../../../src/lib/supabase';
 import { useQuery } from '@tanstack/react-query';
 import * as Clipboard from 'expo-clipboard';
+import { uploadToSupabaseStorage } from '../../../../src/utils/fileUpload';
 
 type UserCategory = 'students' | 'staff' | 'parents' | 'accountants' | 'canteen' | 'drivers';
 
@@ -329,24 +330,46 @@ export default function UserManagementScreen() {
   };
 
   const confirmPhotoUpload = async () => {
-    if (!pendingPhoto) return;
+    if (!pendingPhoto || !selectedUser) return;
     setShowPhotoPreview(false);
     try {
       setIsPhotoUploading(true);
       const uri = pendingPhoto;
-      const fileExt = uri.split('.').pop();
+      const fileExt = uri.split('.').pop() || 'jpg';
       const fileName = `${selectedUser.id}_${Date.now()}.${fileExt}`;
       const filePath = `avatars/${activeTab}/${fileName}`;
-      const formData = new FormData();
-      formData.append('file', { uri, name: fileName, type: `image/${fileExt}` } as any);
-      const { error: uploadError } = await supabase.storage.from('avatars').upload(filePath, formData);
-      if (uploadError) throw uploadError;
-      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(filePath);
+      const { publicUrl } = await uploadToSupabaseStorage({
+        bucket: 'avatars',
+        path: filePath,
+        uri,
+        mimeType: `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`,
+        upsert: true,
+      });
+
+      // 1. Update edit form state
       setEditForm((prev: any) => ({ ...prev, image_url: publicUrl }));
-      showAlert("Success", "Photo changed! Save changes to finalize.", "success");
+
+      // 2. Immediately persist avatar to database so it is saved directly
+      const type = activeTab === 'students' ? 'student' : (activeTab === 'parents' ? 'parent' : 'staff');
+      const res = await updateUser(selectedUser.id, type, {
+        image_url: publicUrl,
+        profile_id: selectedUser.profile_id || (selectedUser.profiles ? selectedUser.profiles.id : undefined),
+      });
+
+      if (res.success) {
+        setSelectedUser((prev: any) => ({
+          ...prev,
+          image_url: publicUrl,
+          profile_image_url: publicUrl,
+          avatar_url: publicUrl,
+        }));
+        showAlert("Success", "Photo changed and saved successfully!", "success");
+      } else {
+        showAlert("Notice", "Photo uploaded. Click 'Save Changes' below to finalize.", "info");
+      }
     } catch (error: any) {
-      console.error('Photo upload error:', error);
-      showAlert("Error", "Failed to upload photo", "error");
+      console.error('[User Photo Upload Error]:', error);
+      showAlert("Error", "Failed to upload photo. Please try again.", "error");
     } finally {
       setIsPhotoUploading(false);
       setPendingPhoto(null);
@@ -369,14 +392,18 @@ export default function UserManagementScreen() {
       updates.dob = editForm.dob;
       updates.parent_id = editForm.parent_id;
     } else if (activeTab === 'parents') {
+      updates.name = editForm.name;
       updates.full_name = editForm.name;
       updates.phone = editForm.phone;
+      if (selectedUser.profile_id) {
+        updates.profile_id = selectedUser.profile_id;
+      }
     } else {
       updates.full_name = editForm.name;
       updates.phone = editForm.phone;
       updates.department = editForm.department;
     }
-    if (editForm.image_url !== (selectedUser.image_url || selectedUser.profile_image_url || selectedUser.avatar_url)) {
+    if (editForm.image_url) {
       updates.image_url = editForm.image_url;
     }
     const res = await updateUser(selectedUser.id, type, updates);

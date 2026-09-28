@@ -91,6 +91,41 @@ export const ThemedAlertProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const alertType = config?.type || 'info';
   const buttons = config?.buttons || [{ text: 'OK', style: 'default' as const }];
 
+  React.useEffect(() => {
+    if (visible && alertType === 'error') {
+      console.error(`\n🚨 [TERMINAL ERROR REPORT] 🚨\nTitle: ${config?.title}\nMessage: ${config?.message}\n`);
+    }
+  }, [visible, alertType, config]);
+
+  const displayMessage = React.useMemo(() => {
+    if (alertType !== 'error') return config?.message || '';
+    const raw = config?.message || '';
+    const lower = raw.toLowerCase();
+    const isTechnical = 
+      lower.includes('mime type') ||
+      lower.includes('not supported') ||
+      lower.includes('network request failed') ||
+      lower.includes('referenceerror') ||
+      lower.includes('syntaxerror') ||
+      lower.includes('typeerror') ||
+      lower.includes('postgrest') ||
+      lower.includes('violates') ||
+      lower.includes('foreign key') ||
+      lower.includes('jwt') ||
+      lower.includes('null value') ||
+      lower.includes('column') ||
+      lower.includes('relation') ||
+      lower.includes('status code');
+
+    if (isTechnical) {
+      if ((config?.title || '').toLowerCase().includes('upload') || lower.includes('mime')) {
+        return 'Unable to complete upload. Please check the file and try again.';
+      }
+      return 'An unexpected error occurred. Please try again.';
+    }
+    return raw;
+  }, [alertType, config]);
+
   return (
     <AlertContext.Provider value={{ showAlert }}>
       {children}
@@ -109,7 +144,7 @@ export const ThemedAlertProvider: React.FC<{ children: React.ReactNode }> = ({ c
             <Text style={styles.title}>{config?.title}</Text>
 
             {/* Message */}
-            <Text style={styles.message}>{config?.message}</Text>
+            <Text style={styles.message}>{displayMessage}</Text>
 
             {/* Buttons */}
             <View style={styles.buttonRow}>

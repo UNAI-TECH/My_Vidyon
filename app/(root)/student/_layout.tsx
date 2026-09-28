@@ -1,7 +1,7 @@
 import { Tabs } from 'expo-router';
 import { TouchableOpacity } from 'react-native';
 import { theme } from '../../../src/theme';
-import { Home, Award, Settings, LogOut } from 'lucide-react-native';
+import { Home, Settings, LogOut } from 'lucide-react-native';
 import { useAuth } from '../../../src/hooks/useAuth';
 import { HeaderLogo } from '../../../src/components/common/HeaderLogo';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -48,7 +48,6 @@ export default function StudentTabs() {
         }}
       />
 
-      <Tabs.Screen name="certificates" options={{ href: null }} />
       <Tabs.Screen
         name="settings"
         options={{
@@ -61,18 +60,17 @@ export default function StudentTabs() {
       <Tabs.Screen name="academic" options={{ href: null }} />
       <Tabs.Screen name="ai-tutor" options={{ href: null }} />
       <Tabs.Screen name="fees" options={{ href: null }} />
-      <Tabs.Screen name="notices/index" options={{ href: null }} />
-      <Tabs.Screen name="assignments/index" options={{ href: null }} />
+      <Tabs.Screen name="notices" options={{ href: null }} />
+      <Tabs.Screen name="assignments" options={{ href: null }} />
       <Tabs.Screen name="assignments/[id]" options={{ href: null }} />
-      <Tabs.Screen name="attendance/index" options={{ href: null }} />
-      <Tabs.Screen name="calendar/index" options={{ href: null }} />
-      <Tabs.Screen name="courses/index" options={{ href: null }} />
-      <Tabs.Screen name="grades/index" options={{ href: null }} />
-      <Tabs.Screen name="timetable/index" options={{ href: null }} />
-      <Tabs.Screen name="exams/index" options={{ href: null }} />
-      <Tabs.Screen name="certificates/index" options={{ href: null }} />
+      <Tabs.Screen name="attendance" options={{ href: null }} />
+      <Tabs.Screen name="calendar" options={{ href: null }} />
+      <Tabs.Screen name="courses" options={{ href: null }} />
+      <Tabs.Screen name="grades" options={{ href: null }} />
+      <Tabs.Screen name="timetable" options={{ href: null }} />
+      <Tabs.Screen name="exams" options={{ href: null }} />
+      <Tabs.Screen name="certificates" options={{ href: null }} />
       <Tabs.Screen name="notifications" options={{ href: null }} />
-      <Tabs.Screen name="leave/index" options={{ href: null }} />
       <Tabs.Screen name="leave" options={{ href: null }} />
     </Tabs>
   );
