@@ -5,8 +5,18 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./*"]
-    },
-    "ignoreDeprecations": "6.0"
+    }
   },
-  "exclude": ["node_modules", "supabase"]
+  "include": [
+    "src",
+    "app",
+    ".expo/types/**/*.ts",
+    "expo-env.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "supabase",
+    "dist",
+    "MyVidyon-win32-x64"
+  ]
 }

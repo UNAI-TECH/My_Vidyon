@@ -1211,10 +1211,11 @@ export default function InstitutionOnboarding() {
       
       if (stepId === 1) {
         // Partial Save: Basic Info
-        let finalLogoUrl = (logo && logo.startsWith('http')) ? logo : null;
-        if (logo && !logo.startsWith('http')) {
-          const fileExt = logo.split('.').pop() || 'jpeg';
-          const fileName = `${basicInfo.school_code}-${Math.random()}.${fileExt}`;
+        let finalLogoUrl = (logo && logo.startsWith('http') && !logo.includes('127.0.0.1') && !logo.includes('localhost') && !logo.startsWith('blob:')) ? logo : null;
+        if (logo && (!logo.startsWith('http') || logo.includes('127.0.0.1') || logo.includes('localhost') || logo.startsWith('blob:'))) {
+          const rawExt = logo.split('?')[0].split('.').pop()?.toLowerCase() || 'png';
+          const fileExt = ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(rawExt) ? (rawExt === 'jpg' ? 'jpeg' : rawExt) : 'png';
+          const fileName = `${basicInfo.school_code || 'inst'}-${Date.now()}-${Math.floor(Math.random() * 10000)}.${fileExt}`;
           try {
             const { publicUrl } = await uploadToSupabaseStorage({
               bucket: 'logos',
@@ -1359,10 +1360,11 @@ export default function InstitutionOnboarding() {
       setSubmitting(true);
       
       // 1. Upload Logo if it's a new local URI (Skip in security mode)
-      let finalLogoUrl = (logo && logo.startsWith('http')) ? logo : null;
-      if (!isSecurityMode && logo && !logo.startsWith('http')) {
-        const fileExt = logo.split('.').pop() || 'jpeg';
-        const fileName = `${basicInfo.school_code}-${Math.random()}.${fileExt}`;
+      let finalLogoUrl = (logo && logo.startsWith('http') && !logo.includes('127.0.0.1') && !logo.includes('localhost') && !logo.startsWith('blob:')) ? logo : null;
+      if (!isSecurityMode && logo && (!logo.startsWith('http') || logo.includes('127.0.0.1') || logo.includes('localhost') || logo.startsWith('blob:'))) {
+        const rawExt = logo.split('?')[0].split('.').pop()?.toLowerCase() || 'png';
+        const fileExt = ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(rawExt) ? (rawExt === 'jpg' ? 'jpeg' : rawExt) : 'png';
+        const fileName = `${basicInfo.school_code || 'inst'}-${Date.now()}-${Math.floor(Math.random() * 10000)}.${fileExt}`;
         try {
           const { publicUrl } = await uploadToSupabaseStorage({
             bucket: 'logos',

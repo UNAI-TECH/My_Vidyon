@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
+import { Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NotificationBell } from '../../../src/components/common/NotificationBell';
 import { theme } from '../../../src/theme';
@@ -41,6 +42,13 @@ const chartConfig = {
 export default function StudentDashboard() {
   const insets = useSafeAreaInsets();
   const { user, institutionId, role, imageUrl } = useAuth();
+
+  if (role && role !== 'student') {
+    const target = (role === 'admin' || role === 'superadmin')
+      ? '/(root)/admin'
+      : (role === 'institution' ? '/(root)/institution' : `/(root)/${role}`);
+    return <Redirect href={target as any} />;
+  }
   const { stats, assignments, institution, studentProfile, isLoading: isDashboardLoading } = useStudentDashboard(user?.id, institutionId || undefined);
 
   const { slots, specialSlots, isLoading: isTimetableLoading } = useStudentTimetable(user?.id);

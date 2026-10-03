@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, Image, ScrollView, Animated, Dimensions, Easing } from 'react-native';
 import { theme } from '../../src/theme';
 import { supabase } from '../../src/lib/supabase';
-import { Lock, Mail, ChevronRight, User as UserIcon, X, Phone, ShieldAlert, ArrowLeft, Eye, EyeOff, GraduationCap, Briefcase, Users as UsersIcon } from 'lucide-react-native';
+import { Lock, Mail, ChevronRight, User as UserIcon, X, Phone, ShieldAlert, ArrowLeft, Eye, EyeOff, GraduationCap, Briefcase, Users as UsersIcon, Building } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { useQuickLogin } from '../../src/hooks/useQuickLogin';
 import { useAuth } from '../../src/hooks/useAuth';
@@ -31,6 +31,8 @@ export default function LoginScreen() {
   const [error, setError] = useState<string | null>(null);
   const [showBlockedModal, setShowBlockedModal] = useState(false);
   const [blockedContact, setBlockedContact] = useState<{name: string, phone: string} | null>(null);
+  const [showInstitutionDisabledModal, setShowInstitutionDisabledModal] = useState(false);
+  const [disabledInstitutionInfo, setDisabledInstitutionInfo] = useState<{name: string, phone: string} | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const { savedAccounts, saveAccount, switchToAccount, removeAccount, switchingAccount } = useQuickLogin();
@@ -123,6 +125,45 @@ export default function LoginScreen() {
     return false;
   };
 
+  const checkInstitutionDisabled = async (institutionId: string, role?: string): Promise<boolean> => {
+    // Super admins are never blocked by institution status
+    if (role === 'admin' || role === 'superadmin' || !institutionId) {
+      return false;
+    }
+
+    try {
+      const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+      let query = supabase
+        .from('institutions')
+        .select('name, status, phone, office_phone');
+      
+      if (isUUID(institutionId)) {
+        query = query.eq('id', institutionId);
+      } else {
+        query = query.ilike('institution_id', institutionId);
+      }
+
+      const { data: inst, error } = await (query as any).maybeSingle();
+
+      if (error) {
+        console.warn('[Login] Institution status check query error:', error);
+        return false;
+      }
+
+      if (inst && inst.status && inst.status.toLowerCase() !== 'active') {
+        setDisabledInstitutionInfo({
+          name: inst.name || 'Your Institution',
+          phone: inst.office_phone || inst.phone || '',
+        });
+        setShowInstitutionDisabledModal(true);
+        return true;
+      }
+    } catch (e) {
+      console.warn('[Login] Institution status check failed:', e);
+    }
+    return false;
+  };
+
   // Step 1: Look up the email
   const handleEmailContinue = async () => {
     const trimmedEmail = email.trim().toLowerCase();
@@ -138,7 +179,7 @@ export default function LoginScreen() {
       // Look up user in profiles table
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('id, full_name, role, institution_id, image_url, profile_image_url, avatar_url')
+        .select('id, full_name, role, institution_id, image_url, profile_image_url, avatar_url, is_active')
         .eq('email', trimmedEmail)
         .maybeSingle() as any;
       
@@ -160,12 +201,21 @@ export default function LoginScreen() {
           return;
         }
       }
+
+      // Check if user's institution is disabled
+      if (profile.institution_id) {
+        const isInstDisabled = await checkInstitutionDisabled(profile.institution_id, profile.role);
+        if (isInstDisabled) {
+          setLoading(false);
+          return;
+        }
+      }
       
       // Build looked up user info
       const userInfo: LookedUpUser = {
         id: profile.id,
         full_name: profile.full_name || trimmedEmail.split('@')[0],
-        role: profile.role || 'student',
+        role: profile.role || 'unknown',
         institution_id: profile.institution_id || '',
         image_url: profile.image_url || profile.profile_image_url || profile.avatar_url,
       };
@@ -251,6 +301,16 @@ export default function LoginScreen() {
           .maybeSingle() as any;
 
         if (profile && data.session) {
+          // Enforce institution access: Block disabled institutions
+          if (profile.institution_id) {
+            const isInstDisabled = await checkInstitutionDisabled(profile.institution_id, profile.role);
+            if (isInstDisabled) {
+              await supabase.auth.signOut();
+              setLoading(false);
+              return;
+            }
+          }
+
           let imageUrl = profile.image_url || profile.profile_image_url || profile.avatar_url;
           let fullName = profile.full_name;
 
@@ -394,9 +454,18 @@ export default function LoginScreen() {
     setError(null);
   };
 
-  const handleAccountPress = (account: any) => {
-    setAnimatingAccount(account);
+  const handleAccountPress = async (account: any) => {
     setError(null);
+
+    // Pre-check if institution is disabled before initiating switch
+    if (account.institution_id && account.role !== 'admin' && account.role !== 'superadmin') {
+      const isInstDisabled = await checkInstitutionDisabled(account.institution_id, account.role);
+      if (isInstDisabled) {
+        return;
+      }
+    }
+
+    setAnimatingAccount(account);
     
     // Reset values just in case
     scaleValue.setValue(0.5);
@@ -419,6 +488,16 @@ export default function LoginScreen() {
     ]).start(async () => {
       const success = await switchToAccount(account);
       if (success) {
+        // Enforce institution access after switch
+        if (account.institution_id && account.role !== 'admin' && account.role !== 'superadmin') {
+          const isInstDisabled = await checkInstitutionDisabled(account.institution_id, account.role);
+          if (isInstDisabled) {
+            await supabase.auth.signOut();
+            setAnimatingAccount(null);
+            return;
+          }
+        }
+
         // Transition animation out into the app
         Animated.parallel([
           Animated.timing(scaleValue, {
@@ -451,6 +530,12 @@ export default function LoginScreen() {
         ]).start(async () => {
           setAnimatingAccount(null);
           
+          // Check if institution is disabled
+          if (account.institution_id && account.role !== 'admin' && account.role !== 'superadmin') {
+            const isInstDisabled = await checkInstitutionDisabled(account.institution_id, account.role);
+            if (isInstDisabled) return;
+          }
+
           // Check if this saved account was recently blocked
           const isBlocked = await checkBlockedStatus(account.id);
           if (!isBlocked) {
@@ -829,6 +914,64 @@ export default function LoginScreen() {
                 <Phone size={18} color="white" style={{ marginRight: 8 }} {...({} as any)} />
                 <Text style={styles.callBtnText}>Call Now</Text>
               </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Institution Disabled Modal */}
+      <Modal
+        visible={showInstitutionDisabledModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowInstitutionDisabledModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View style={[styles.alertIconContainer, { backgroundColor: '#FEF3C7' }]}>
+                <Building size={32} color="#D97706" {...({} as any)} />
+              </View>
+              <Text style={styles.modalTitle}>Institution Disabled</Text>
+            </View>
+            
+            <View style={styles.modalBody}>
+              <Text style={styles.modalMessage}>
+                Access to <Text style={{ fontWeight: 'bold', color: theme.colors.text }}>{disabledInstitutionInfo?.name || 'this institution'}</Text> has been disabled by the administrator.
+              </Text>
+              <Text style={styles.modalSubMessage}>
+                All accounts under this institution are currently inactive. Please contact your institution administrator.
+              </Text>
+              
+              {disabledInstitutionInfo?.phone && disabledInstitutionInfo.phone !== 'N/A' && disabledInstitutionInfo.phone.trim() !== '' ? (
+                <View style={styles.contactInfoBox}>
+                  <Text style={styles.contactLabel}>Institution Contact:</Text>
+                  <Text style={styles.contactPhone}>{disabledInstitutionInfo.phone}</Text>
+                </View>
+              ) : null}
+            </View>
+            
+            <View style={styles.modalFooter}>
+              <TouchableOpacity 
+                style={styles.closeBtn}
+                onPress={() => setShowInstitutionDisabledModal(false)}
+              >
+                <Text style={styles.closeBtnText}>Dismiss</Text>
+              </TouchableOpacity>
+              
+              {disabledInstitutionInfo?.phone && disabledInstitutionInfo.phone !== 'N/A' && disabledInstitutionInfo.phone.trim() !== '' ? (
+                <TouchableOpacity 
+                  style={styles.callBtn}
+                  onPress={() => {
+                    if (disabledInstitutionInfo?.phone) {
+                      Linking.openURL(`tel:${disabledInstitutionInfo.phone}`);
+                    }
+                  }}
+                >
+                  <Phone size={18} color="white" style={{ marginRight: 8 }} {...({} as any)} />
+                  <Text style={styles.callBtnText}>Call Now</Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
           </View>
         </View>

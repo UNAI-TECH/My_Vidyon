@@ -1,4 +1,4 @@
-import { Tabs } from 'expo-router';
+import { Tabs, Redirect } from 'expo-router';
 import { TouchableOpacity } from 'react-native';
 import { theme } from '../../../src/theme';
 import { Home, Settings, LogOut } from 'lucide-react-native';
@@ -7,8 +7,17 @@ import { HeaderLogo } from '../../../src/components/common/HeaderLogo';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function StudentTabs() {
-  const { signOut } = useAuth();
+  const { signOut, role } = useAuth();
   const insets = useSafeAreaInsets();
+
+  // Role Guard: If logged in user is NOT a student, redirect to their proper dashboard
+  if (role && role !== 'student') {
+    const target = (role === 'admin' || role === 'superadmin')
+      ? '/(root)/admin'
+      : (role === 'institution' ? '/(root)/institution' : `/(root)/${role}`);
+    console.log(`[StudentTabs] Non-student role detected (${role}), redirecting to ${target}`);
+    return <Redirect href={target as any} />;
+  }
 
   return (
     <Tabs

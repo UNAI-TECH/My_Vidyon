@@ -42,6 +42,15 @@ export function InstitutionCard({
 
   const s = statusConfig[status] || statusConfig.active;
 
+  const [imgError, setImgError] = React.useState(false);
+
+  const isValidImg = Boolean(
+    logoUrl &&
+    typeof logoUrl === 'string' &&
+    (logoUrl.startsWith('http') || logoUrl.startsWith('data:')) &&
+    !imgError
+  );
+
   return (
     <TouchableOpacity style={styles.card} onPress={onClick} activeOpacity={0.7}>
       {/* Top Accent Bar */}
@@ -50,8 +59,12 @@ export function InstitutionCard({
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.logoContainer}>
-          {logoUrl ? (
-            <Image source={{ uri: logoUrl }} style={styles.logo} />
+          {isValidImg ? (
+            <Image 
+              source={{ uri: logoUrl! }} 
+              style={styles.logo} 
+              onError={() => setImgError(true)}
+            />
           ) : (
             <View style={[styles.logoPlaceholder, { backgroundColor: theme.colors.primary + '15' }]}>
               <Text style={[styles.logoInitial, { color: theme.colors.primary }]}>{name.charAt(0)}</Text>
