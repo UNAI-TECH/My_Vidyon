@@ -67,7 +67,7 @@ export default function RootLayout() {
     initMobileAds();
   }, []);
 
-  if (loading) {
+  if (loading && !session) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.background }}>
         <ActivityIndicator size="large" color={theme.colors.primary} />
@@ -75,17 +75,22 @@ export default function RootLayout() {
     );
   }
 
-  if (!session) {
+  if (!session && !loading) {
     return <Redirect href="/(auth)/login" />;
   }
 
+  // Determine role-based initial route so the Stack never defaults blindly to student
+  const initialRoute = (role === 'admin' || role === 'superadmin')
+    ? 'admin'
+    : (role || 'student');
+
   return (
     <>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="student" />
-        <Stack.Screen name="faculty" />
+      <Stack screenOptions={{ headerShown: false }} initialRouteName={initialRoute as any}>
         <Stack.Screen name="admin" />
         <Stack.Screen name="institution" />
+        <Stack.Screen name="faculty" />
+        <Stack.Screen name="student" />
         <Stack.Screen name="accountant" />
         <Stack.Screen name="parent" />
         <Stack.Screen name="canteen" />

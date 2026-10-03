@@ -39,3 +39,31 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Builds and Executables
+*.exe
+*.exe.manifest
+*.msi
+*.dmg
+*.pkg
+*.app/
+*.deb
+*.rpm
+*.AppImage
+*.apk
+*.aab
+
+# Desktop / Electron builds
+/MyVidyon-win32-*/
+/*-win32-*/
+/*-darwin-*/
+/*-linux-*/
+/out/
+/build/
+
+# Bundles
+*.bundle
+*.jsbundle
+/bundle/
+/bundles/
+

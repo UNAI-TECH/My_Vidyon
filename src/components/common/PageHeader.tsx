@@ -44,9 +44,11 @@ const getRoleLabel = (role?: string) => {
 export const PageHeader = ({ title, subtitle, actions, leftAction, institutionName, institutionLogo, userRole, userAvatar, userSubtitle }: PageHeaderProps) => {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { role: authRole, fullName: authName, imageUrl: authAvatar } = useAuth();
+  const { role: authRole, fullName: authName, imageUrl: authAvatar, institutionLogo: authInstLogo, institutionName: authInstName } = useAuth();
 
   const displayRole = (userRole || authRole || '') as string;
+  const effectiveInstLogo = institutionLogo || authInstLogo;
+  const effectiveInstName = institutionName || authInstName;
   const displayUserName = title || (authName ? `Hello, ${authName}!` : 'Welcome!');
   const displayUserAvatar = (userAvatar?.trim() || authAvatar?.trim()) || undefined;
 
@@ -64,19 +66,19 @@ export const PageHeader = ({ title, subtitle, actions, leftAction, institutionNa
 
   React.useEffect(() => {
     setLogoFailed(false);
-  }, [institutionLogo]);
+  }, [effectiveInstLogo]);
 
   const isValidLogo = Boolean(
-    institutionLogo &&
-    typeof institutionLogo === 'string' &&
-    institutionLogo.startsWith('http') &&
+    effectiveInstLogo &&
+    typeof effectiveInstLogo === 'string' &&
+    effectiveInstLogo.startsWith('http') &&
     !logoFailed
   );
-  const initialLetters = institutionName 
-    ? institutionName.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase() 
+  const initialLetters = effectiveInstName 
+    ? effectiveInstName.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase() 
     : 'MV';
 
-  const showInstitutionCard = !!userRole || !!institutionName || !!institutionLogo;
+  const showInstitutionCard = !!userRole || !!effectiveInstName || !!effectiveInstLogo || !!authRole;
   
   return (
     <View style={[styles.outerContainer, { paddingTop: Math.max(insets.top, theme.spacing.s) }]}>
@@ -89,7 +91,7 @@ export const PageHeader = ({ title, subtitle, actions, leftAction, institutionNa
           >
             {isValidLogo ? (
               <Image 
-                source={{ uri: institutionLogo }} 
+                source={{ uri: effectiveInstLogo! }} 
                 style={styles.institutionLogoBig} 
                 resizeMode="cover"
                 onError={() => setLogoFailed(true)}
@@ -100,7 +102,7 @@ export const PageHeader = ({ title, subtitle, actions, leftAction, institutionNa
               </View>
             )}
             <View style={{ flex: 1 }}>
-              <Text style={styles.institutionNameBig} numberOfLines={1}>{institutionName || 'My Vidyon ERP'}</Text>
+              <Text style={styles.institutionNameBig} numberOfLines={1}>{effectiveInstName || 'My Vidyon ERP'}</Text>
               <Text style={styles.institutionSubtitle}>{displayRole ? `${getRoleLabel(displayRole)} Portal` : 'Powered by My Vidyon'}</Text>
             </View>
           </TouchableOpacity>
