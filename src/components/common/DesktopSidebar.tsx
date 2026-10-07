@@ -25,6 +25,9 @@ import {
   Megaphone,
   Activity,
   ShieldCheck,
+  UserPlus,
+  CreditCard,
+  KeyRound,
   LucideIcon
 } from 'lucide-react-native';
 
@@ -41,6 +44,9 @@ interface DesktopSidebarProps {
 
 const INSTITUTION_NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', href: '/(root)/institution', icon: LayoutDashboard },
+  { label: 'Admissions', href: '/(root)/institution/admissions', icon: UserPlus },
+  { label: 'Promotions', href: '/(root)/institution/promotions', icon: CalendarRange },
+  { label: 'Fee Management', href: '/(root)/institution/fees', icon: CreditCard },
   { label: 'Departments', href: '/(root)/institution/departments', icon: Briefcase },
   { label: 'Users Directory', href: '/(root)/institution/users', icon: Users },
   { label: 'Add User', href: '/(root)/institution/students/add', icon: GraduationCap },
@@ -64,7 +70,8 @@ const ADMIN_NAV_ITEMS: NavItem[] = [
   { label: 'Revenue & Reports', href: '/(root)/admin/revenue', icon: BarChart3 },
   { label: 'Ad Management', href: '/(root)/admin/ads', icon: Megaphone },
   { label: 'Promotions', href: '/(root)/admin/promotions', icon: CalendarRange },
-  { label: 'User Directory', href: '/(root)/admin/users', icon: Users },
+  { label: 'User Management', href: '/(root)/admin/users', icon: Users },
+  { label: 'Password Resets', href: '/(root)/admin/users?tab=reset_requests', icon: KeyRound },
   { label: 'System Logs', href: '/(root)/admin/logs', icon: Activity },
   { label: 'Network Status', href: '/(root)/admin/status', icon: ShieldCheck },
   { label: 'Settings & Config', href: '/(root)/admin/settings', icon: Settings },
@@ -85,13 +92,71 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({ role }) => {
 
   const [logoFailed, setLogoFailed] = React.useState(false);
 
-  const items = role === 'admin' ? ADMIN_NAV_ITEMS : INSTITUTION_NAV_ITEMS;
+  const items = React.useMemo(() => {
+    if (role === 'admin') {
+      if (userRole === 'ad_manager') {
+        return [
+          { label: 'Dashboard', href: '/(root)/admin', icon: LayoutDashboard },
+          { label: 'Ad Management', href: '/(root)/admin/ads', icon: Megaphone },
+          { label: 'Advertiser Leads', href: '/(root)/admin/ads/leads', icon: Users },
+          { label: 'Broadcast Comm', href: '/(root)/admin/communication', icon: MessageSquare },
+          { label: 'Settings & Config', href: '/(root)/admin/settings', icon: Settings },
+        ];
+      }
+      if (userRole === 'finance_manager') {
+        return [
+          { label: 'Dashboard', href: '/(root)/admin', icon: LayoutDashboard },
+          { label: 'Revenue & Reports', href: '/(root)/admin/revenue', icon: BarChart3 },
+          { label: 'Institutions', href: '/(root)/admin/institutions', icon: Building },
+          { label: 'Settings & Config', href: '/(root)/admin/settings', icon: Settings },
+        ];
+      }
+      return ADMIN_NAV_ITEMS;
+    }
+
+    // Role is institution layout
+    if (userRole === 'admission_officer' || userRole === 'admissions') {
+      return [
+        { label: 'Dashboard', href: '/(root)/institution', icon: LayoutDashboard },
+        { label: 'Admissions', href: '/(root)/institution/admissions', icon: UserPlus },
+        { label: 'Add Student/User', href: '/(root)/institution/students/add', icon: GraduationCap },
+        { label: 'Promotions', href: '/(root)/institution/promotions', icon: CalendarRange },
+        { label: 'Communication', href: '/(root)/institution/communication', icon: Bell },
+        { label: 'Events & Notices', href: '/(root)/institution/events', icon: Calendar },
+        { label: 'Settings', href: '/(root)/institution/settings', icon: Settings },
+      ];
+    }
+
+    if (userRole === 'accountant' || userRole === 'finance') {
+      return [
+        { label: 'Dashboard', href: '/(root)/institution', icon: LayoutDashboard },
+        { label: 'Fee Management', href: '/(root)/institution/fees', icon: CreditCard },
+        { label: 'Reports', href: '/(root)/institution/reports', icon: FileText },
+        { label: 'Analytics', href: '/(root)/institution/analytics', icon: TrendingUp },
+        { label: 'Communication', href: '/(root)/institution/communication', icon: Bell },
+        { label: 'Settings', href: '/(root)/institution/settings', icon: Settings },
+      ];
+    }
+
+    if (userRole === 'reports_manager') {
+      return [
+        { label: 'Dashboard', href: '/(root)/institution', icon: LayoutDashboard },
+        { label: 'Reports', href: '/(root)/institution/reports', icon: FileText },
+        { label: 'Analytics', href: '/(root)/institution/analytics', icon: TrendingUp },
+        { label: 'Exams & Grades', href: '/(root)/institution/exams', icon: ClipboardList },
+        { label: 'Settings', href: '/(root)/institution/settings', icon: Settings },
+      ];
+    }
+
+    return INSTITUTION_NAV_ITEMS;
+  }, [role, userRole]);
 
   const isItemActive = (href: string) => {
+    const baseHref = href.split('?')[0];
     if (href === '/(root)/admin' || href === '/(root)/institution') {
       return pathname === href || pathname === `${href}/` || pathname === `${href}/index`;
     }
-    return pathname.startsWith(href);
+    return pathname.startsWith(baseHref);
   };
 
   const effectiveLogo = institutionLogo;
@@ -107,26 +172,17 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({ role }) => {
 
   return (
     <View style={styles.container}>
-      {/* Brand / Logo Header - Clickable to Home */}
+      {/* Brand / Logo Header - Always Official Vidyon Logo */}
       <TouchableOpacity 
         style={styles.header}
         onPress={() => router.push(homeHref as any)}
         activeOpacity={0.7}
       >
-        {isValidLogo ? (
-          <Image
-            source={{ uri: effectiveLogo! }}
-            style={styles.customBrandLogo}
-            resizeMode="contain"
-            onError={() => setLogoFailed(true)}
-          />
-        ) : (
-          <Image
-            source={require('../../../assets/logo.png')}
-            style={styles.logo}
-            resizeMode="contain"
-          />
-        )}
+        <Image
+          source={require('../../../assets/logo.png')}
+          style={styles.logo}
+          resizeMode="contain"
+        />
       </TouchableOpacity>
 
       {/* Navigation Links */}

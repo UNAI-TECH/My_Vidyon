@@ -14,7 +14,17 @@ export default function InstitutionTabs() {
   const isDesktop = width >= 768;
 
   // Role Guard: non-institution users get redirected to their proper dashboard
-  if (role && role !== 'institution' && role !== 'admin' && role !== 'superadmin') {
+  const allowedInstitutionRoles = [
+    'institution',
+    'admin',
+    'superadmin',
+    'admission_officer',
+    'admissions',
+    'reports_manager',
+    'accountant',
+    'finance',
+  ];
+  if (role && !allowedInstitutionRoles.includes(role)) {
     return <Redirect href={`/(root)/${role}` as any} />;
   }
 
@@ -87,6 +97,9 @@ export default function InstitutionTabs() {
       <Tabs.Screen name="communication" options={{ href: null, headerTitle: "" }} />
       <Tabs.Screen name="notifications" options={{ href: null, headerTitle: "" }} />
       <Tabs.Screen name="events" options={{ href: null, headerTitle: "" }} />
+      <Tabs.Screen name="admissions" options={{ href: null, headerTitle: "" }} />
+      <Tabs.Screen name="fees" options={{ href: null, headerTitle: "" }} />
+      <Tabs.Screen name="promotions" options={{ href: null, headerTitle: "" }} />
     </Tabs>
       </View>
     </View>

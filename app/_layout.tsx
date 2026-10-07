@@ -5,6 +5,7 @@ import { LogBox } from 'react-native';
 LogBox.ignoreLogs(['expo-notifications: Android Push notifications', 'remote notifications functionality provided by expo-notifications was removed from Expo Go']);
 import { theme } from '../src/theme';
 import { AuthProvider, useAuth } from '../src/hooks/useAuth';
+import { RBACProvider } from '../src/context/RBACContext';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { WebSocketProvider } from '../src/hooks/useWebSocket';
 import { SearchProvider } from '../src/hooks/useSearch';
@@ -66,23 +67,25 @@ export default function AppLayout() {
       <StatusBar style="dark" />
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <RealtimeObserver>
-            <WebSocketProvider>
-              <ThemedAlertProvider>
-                <SearchProvider>
-                  <Stack
-                  screenOptions={{
-                    headerShown: false,
-                    contentStyle: { backgroundColor: theme.colors.background },
-                  }}
-                >
-                  <Stack.Screen name="(auth)" options={{ animation: 'fade' }} />
-                  <Stack.Screen name="(root)" options={{ animation: 'slide_from_right' }} />
-                </Stack>
-                </SearchProvider>
-              </ThemedAlertProvider>
-            </WebSocketProvider>
-          </RealtimeObserver>
+          <RBACProvider>
+            <RealtimeObserver>
+              <WebSocketProvider>
+                <ThemedAlertProvider>
+                  <SearchProvider>
+                    <Stack
+                      screenOptions={{
+                        headerShown: false,
+                        contentStyle: { backgroundColor: theme.colors.background },
+                      }}
+                    >
+                      <Stack.Screen name="(auth)" options={{ animation: 'fade' }} />
+                      <Stack.Screen name="(root)" options={{ animation: 'slide_from_right' }} />
+                    </Stack>
+                  </SearchProvider>
+                </ThemedAlertProvider>
+              </WebSocketProvider>
+            </RealtimeObserver>
+          </RBACProvider>
         </AuthProvider>
       </QueryClientProvider>
     </SafeAreaProvider>

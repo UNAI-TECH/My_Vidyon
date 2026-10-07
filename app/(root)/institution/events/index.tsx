@@ -48,7 +48,7 @@ export default function InstitutionEvents() {
   // Alert State
   const [alert, setAlert] = useState({ visible: false, title: '', message: '', type: 'info' as 'info' | 'success' | 'error' | 'warning' });
 
-  // Fetch Events
+  // Fetch Events (excluding sponsored ads)
   const { data: events = [], isLoading } = useQuery({
     queryKey: ['academic-events', institutionUuid],
     queryFn: async () => {
@@ -57,10 +57,11 @@ export default function InstitutionEvents() {
         .from('academic_events') as any)
         .select('*')
         .eq('institution_id', institutionUuid)
+        .neq('event_type', 'sponsored')
         .order('event_date', { ascending: true });
       
       if (error) throw error;
-      return (data as any[]) || [];
+      return (data as any[] || []).filter(e => e.event_type !== 'sponsored' && !e.is_admin_added);
     },
     enabled: !!institutionUuid,
   });

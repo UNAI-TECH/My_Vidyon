@@ -35,7 +35,20 @@ export function useInstitutionUsers(institutionId: string | null) {
         .eq('is_active', true)
         .order('full_name');
       if (error) throw error;
-      const targetRoles = ['faculty', 'admin', 'teacher', 'accountant', 'canteen_manager', 'driver'];
+      const targetRoles = [
+        'faculty',
+        'admin',
+        'teacher',
+        'accountant',
+        'finance',
+        'canteen_manager',
+        'driver',
+        'admission_officer',
+        'admissions',
+        'reports_manager',
+        'reports',
+        'analytics',
+      ];
       return (data || []).filter((p: any) => targetRoles.includes(p.role)).map((p: any) => ({
         ...p,
         image_url: p.image_url || p.profile_image_url || p.avatar_url || null,

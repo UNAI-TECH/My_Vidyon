@@ -6,7 +6,7 @@ import { useAuth } from '../../../../src/hooks/useAuth';
 import { useInstitutionUsers } from '../../../../src/hooks/useInstitutionUsers';
 import { 
   GraduationCap, Users, UserMinus, UserCheck, Save, Search, X, Camera, Copy, CheckCircle, Building2, ChevronDown, RefreshCw,
-  Mail, Hash, ChevronRight, Download, Plus, Filter, Edit2, Check
+  Mail, Hash, ChevronRight, Download, Plus, Filter, Edit2, Check, ShieldCheck, KeyRound, Clock, ShieldAlert
 } from 'lucide-react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import * as ImagePicker from 'expo-image-picker';
@@ -19,8 +19,19 @@ import { supabase } from '../../../../src/lib/supabase';
 import { useQuery } from '@tanstack/react-query';
 import * as Clipboard from 'expo-clipboard';
 import { uploadToSupabaseStorage } from '../../../../src/utils/fileUpload';
+import { StakeholderManagementModal } from '../../../../src/components/stakeholder/StakeholderManagementModal';
+import { FormField } from '../../../../src/components/common/FormField';
+import { Select } from '../../../../src/components/common/Select';
+import { Button } from '../../../../src/components/common/Button';
+import { PermissionField } from '../../../../src/components/common/PermissionField';
+import {
+  fetchPasswordResetRequests,
+  approvePasswordResetRequest,
+  rejectPasswordResetRequest,
+  PasswordResetRequest,
+} from '../../../../src/services/passwordResetService';
 
-type UserCategory = 'students' | 'staff' | 'parents' | 'accountants' | 'canteen' | 'drivers';
+type UserCategory = 'students' | 'staff' | 'admissions' | 'accountants' | 'reports' | 'parents' | 'stakeholders' | 'canteen' | 'drivers' | 'password_resets';
 
 export default function UserManagementScreen() {
   const queryClient = useQueryClient();
@@ -28,6 +39,7 @@ export default function UserManagementScreen() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<UserCategory>('students');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isStakeholderModalOpen, setIsStakeholderModalOpen] = useState(false);
   const { students, staff, parents, isLoading, toggleUserStatus, deleteUser, updateUser } = useInstitutionUsers(institutionId);
 
   useEffect(() => {
@@ -184,20 +196,51 @@ export default function UserManagementScreen() {
     enabled: !!institutionId,
   });
 
+  // Fetch Password Reset Requests for this institution
+  const { data: resetRequests = [], isLoading: isLoadingResets } = useQuery<PasswordResetRequest[]>({
+    queryKey: ['inst-password-reset-requests', institutionId],
+    queryFn: () => fetchPasswordResetRequests({ isSuperAdmin: false, institutionId }),
+    enabled: !!institutionId,
+    refetchInterval: 15000,
+  });
+
+  const pendingResetsCount = useMemo(() => {
+    return resetRequests.filter((r) => r.status === 'pending').length;
+  }, [resetRequests]);
+
+  const filteredResetRequests = useMemo(() => {
+    if (!searchQuery.trim()) return resetRequests;
+    const q = searchQuery.toLowerCase().trim();
+    return resetRequests.filter(
+      (r) =>
+        (r.full_name && r.full_name.toLowerCase().includes(q)) ||
+        (r.email && r.email.toLowerCase().includes(q)) ||
+        (r.role && r.role.toLowerCase().includes(q))
+    );
+  }, [resetRequests, searchQuery]);
+
   const tabs: { id: UserCategory, label: string }[] = useMemo(() => {
     const roles = allowedRoles || {};
     const allTabs: { id: UserCategory, label: string }[] = [
       { id: 'students', label: 'Students' },
       { id: 'staff', label: 'Faculty' },
+      { id: 'admissions', label: 'Admissions' },
+      { id: 'accountants', label: 'Fee / Finance' },
+      { id: 'reports', label: 'Reports' },
       { id: 'parents', label: 'Parents' },
+      { id: 'stakeholders', label: 'Stakeholders' },
     ];
     
-    if (roles.finance !== false) allTabs.push({ id: 'accountants', label: 'Finance' });
     if (roles.canteen !== false) allTabs.push({ id: 'canteen', label: 'Canteen' });
     if (roles.transport !== false) allTabs.push({ id: 'drivers', label: 'Transport' });
     
+    allTabs.push({
+      id: 'password_resets',
+      label: `Password Resets${pendingResetsCount > 0 ? ` (${pendingResetsCount})` : ''}`,
+    });
+
     return allTabs;
-  }, [allowedRoles]);
+  }, [allowedRoles, pendingResetsCount]);
 
   const filteredData = useMemo(() => {
     let baseData: any[] = [];
@@ -217,7 +260,13 @@ export default function UserManagementScreen() {
       baseData = parents;
     } else if (activeTab === 'staff') {
       baseData = staff
-        .filter((s: any) => s.role === 'teacher' || s.role === 'faculty')
+        .filter((s: any) => 
+          (s.role === 'teacher' || s.role === 'faculty') &&
+          s.department !== 'Admissions' &&
+          s.department !== 'Admission' &&
+          s.department !== 'Fee Management' &&
+          s.department !== 'Reports'
+        )
         .sort((a: any, b: any) => {
           const deptA = a.department || 'Z_None'; 
           const deptB = b.department || 'Z_None';
@@ -225,8 +274,28 @@ export default function UserManagementScreen() {
           return (a.full_name || '').localeCompare(b.full_name || '');
         });
       if (filterDept) baseData = baseData.filter(u => u.department === filterDept);
+    } else if (activeTab === 'admissions') {
+      baseData = staff.filter((s: any) => 
+        s.department === 'Admissions' || 
+        s.department === 'Admission' || 
+        s.role === 'admission_officer' || 
+        s.role === 'admissions'
+      );
     } else if (activeTab === 'accountants') {
-      baseData = staff.filter((s: any) => s.role === 'accountant');
+      baseData = staff.filter((s: any) => 
+        s.role === 'accountant' || 
+        s.role === 'finance' || 
+        s.department === 'Fee Management' || 
+        s.department === 'Finance'
+      );
+    } else if (activeTab === 'reports') {
+      baseData = staff.filter((s: any) => 
+        s.role === 'reports_manager' || 
+        s.role === 'reports' || 
+        s.role === 'analytics' || 
+        s.department === 'Reports' || 
+        s.department === 'Academic Records'
+      );
     } else if (activeTab === 'canteen') {
       baseData = staff.filter((s: any) => s.role === 'canteen_manager');
     } else if (activeTab === 'drivers') {
@@ -275,6 +344,67 @@ export default function UserManagementScreen() {
             }
           }
         }
+      ]
+    );
+  };
+
+  const [processingResetId, setProcessingResetId] = useState<string | null>(null);
+
+  const handleApproveReset = async (req: PasswordResetRequest) => {
+    Alert.alert(
+      'Approve Password Reset',
+      `Approve password reset for ${req.full_name || req.email}?\n\nTheir password will be reset to default setup mode. On their next login, they will be prompted to set a new password, just like when they log in for the first time.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Approve & Reset',
+          onPress: async () => {
+            setProcessingResetId(req.id);
+            try {
+              const res = await approvePasswordResetRequest(req, {
+                id: (institutionId as string) || undefined,
+              });
+              if (res.success) {
+                showAlert('Reset Approved', res.message, 'success');
+                queryClient.invalidateQueries({ queryKey: ['inst-password-reset-requests', institutionId] });
+              } else {
+                showAlert('Error', res.message, 'error');
+              }
+            } catch (err: any) {
+              showAlert('Error', err.message || 'Failed to approve request', 'error');
+            } finally {
+              setProcessingResetId(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleRejectReset = async (req: PasswordResetRequest) => {
+    Alert.alert(
+      'Reject Request',
+      `Are you sure you want to reject the reset request for ${req.email}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reject',
+          style: 'destructive',
+          onPress: async () => {
+            setProcessingResetId(req.id);
+            try {
+              const res = await rejectPasswordResetRequest(req, {
+                id: (institutionId as string) || undefined,
+              });
+              showAlert('Request Rejected', res.message, 'info');
+              queryClient.invalidateQueries({ queryKey: ['inst-password-reset-requests', institutionId] });
+            } catch (err: any) {
+              showAlert('Error', err.message || 'Failed to reject request', 'error');
+            } finally {
+              setProcessingResetId(null);
+            }
+          },
+        },
       ]
     );
   };
@@ -570,7 +700,136 @@ export default function UserManagementScreen() {
         )} />
       </View>
 
-      {isLoading ? (
+      {activeTab === 'password_resets' ? (
+        <ScrollView contentContainerStyle={{ padding: 16 }}>
+          {isLoadingResets ? (
+            <View style={styles.loader}>
+              <ActivityIndicator size="large" color={theme.colors.primary} />
+            </View>
+          ) : filteredResetRequests.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <KeyRound size={48} color="#CBD5E1" />
+              <Text style={styles.emptyText}>No Password Reset Requests</Text>
+              <Text style={{ fontSize: 13, color: theme.colors.textMuted, textAlign: 'center', marginTop: 4 }}>
+                {searchQuery
+                  ? 'No reset requests match your search criteria.'
+                  : 'Stakeholders or campus users who forget their password and submit a request will appear here.'}
+              </Text>
+            </View>
+          ) : (
+            filteredResetRequests.map((req) => (
+              <View key={req.id} style={{ padding: 16, marginBottom: 12, borderRadius: 12, backgroundColor: 'white', borderWidth: 1, borderColor: '#E2E8F0' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: req.status === 'pending' ? '#FEF3C7' : (req.status === 'approved' ? '#DCFCE7' : '#F1F5F9'), justifyContent: 'center', alignItems: 'center', marginRight: 12 }}>
+                    <KeyRound size={20} color={req.status === 'pending' ? '#D97706' : (req.status === 'approved' ? '#16A34A' : '#64748B')} />
+                  </View>
+
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                      <Text style={{ fontSize: 15, fontWeight: '700', color: theme.colors.text }}>{req.full_name || req.email}</Text>
+                      <Badge variant="default">{req.role?.toUpperCase() || 'USER'}</Badge>
+                      <Badge variant={req.status === 'approved' ? 'success' : (req.status === 'pending' ? 'warning' : 'destructive')}>
+                        {req.status.toUpperCase()}
+                      </Badge>
+                    </View>
+
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 12 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <Mail size={13} color={theme.colors.textMuted} />
+                        <Text style={{ fontSize: 13, color: theme.colors.textMuted }}>{req.email}</Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <Clock size={13} color={theme.colors.textMuted} />
+                        <Text style={{ fontSize: 13, color: theme.colors.textMuted }}>
+                          {new Date(req.created_at).toLocaleDateString()} {new Date(req.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {req.admin_notes ? (
+                      <View style={{ marginTop: 6, padding: 6, backgroundColor: '#F8FAFC', borderRadius: 6 }}>
+                        <Text style={{ fontSize: 12, color: theme.colors.textMuted, fontStyle: 'italic' }}>
+                          Reason: "{req.admin_notes}"
+                        </Text>
+                      </View>
+                    ) : null}
+
+                    {req.status === 'approved' && (
+                      <View style={{ marginTop: 6, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <CheckCircle size={13} color="#16A34A" />
+                        <Text style={{ fontSize: 12, color: '#16A34A', fontWeight: '500' }}>
+                          Reset to Setup Mode • User will re-enter their new password on next login.
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+
+                {/* Actions */}
+                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 12, gap: 8, borderTopWidth: 1, borderTopColor: '#F1F5F9', paddingTop: 10 }}>
+                  {req.status === 'pending' ? (
+                    <>
+                      <TouchableOpacity
+                        style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#10B981', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 }}
+                        onPress={() => handleApproveReset(req)}
+                        disabled={processingResetId === req.id}
+                      >
+                        {processingResetId === req.id ? (
+                          <ActivityIndicator size="small" color="white" />
+                        ) : (
+                          <>
+                            <CheckCircle size={14} color="white" style={{ marginRight: 6 }} />
+                            <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>Approve & Reset</Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#FCA5A5', backgroundColor: '#FEF2F2', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 }}
+                        onPress={() => handleRejectReset(req)}
+                        disabled={processingResetId === req.id}
+                      >
+                        <X size={14} color="#EF4444" style={{ marginRight: 4 }} />
+                        <Text style={{ color: '#EF4444', fontWeight: '600', fontSize: 13 }}>Reject</Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    <TouchableOpacity
+                      style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 }}
+                      onPress={() => handleApproveReset(req)}
+                      disabled={processingResetId === req.id}
+                    >
+                      <KeyRound size={13} color={theme.colors.textMuted} style={{ marginRight: 4 }} />
+                      <Text style={{ color: theme.colors.textMuted, fontSize: 12 }}>Re-Reset</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            ))
+          )}
+        </ScrollView>
+      ) : activeTab === 'stakeholders' ? (
+        <View style={{ flex: 1, padding: 16 }}>
+          <View style={styles.stakeholderIntroCard}>
+            <View style={styles.stakeholderIntroHeader}>
+              <ShieldCheck size={28} color="#D97706" {...({} as any)} />
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={styles.stakeholderIntroTitle}>Institution Stakeholders</Text>
+                <Text style={styles.stakeholderIntroSubtitle}>
+                  Add board members, trustees, or investors with executive view-only access. No password generation needed—they set their own password on first login.
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={styles.openStakeholderBtn}
+              onPress={() => setIsStakeholderModalOpen(true)}
+            >
+              <Plus size={18} color="#1E293B" {...({} as any)} />
+              <Text style={styles.openStakeholderBtnText}>Add / Manage Stakeholders</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : isLoading ? (
         <View style={styles.loader}><ActivityIndicator size="large" color={theme.colors.primary} /></View>
       ) : (
         <FlatList 
@@ -618,29 +877,78 @@ export default function UserManagementScreen() {
               <View style={styles.infoGrid}>
                 <View style={styles.sectionCard}>
                   <View style={styles.sectionHeader}><Users size={18} color={theme.colors.primary} {...({} as any)} /><Text style={styles.sectionTitle}>Personal Info</Text></View>
-                  <View style={styles.inputWrap}><Text style={styles.fieldLabel}>Display Name</Text><TextInput style={styles.modalInput} value={editForm.name} onChangeText={(val) => setEditForm((p: any) => ({ ...p, name: val }))} /></View>
-                  <View style={styles.inputWrap}>
-                    <Text style={styles.fieldLabel}>Email (Static)</Text>
-                    <TouchableOpacity 
-                      style={styles.readOnlyBox} 
-                      onPress={() => handleCopyEmail(editForm.email)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.readOnlyText} numberOfLines={1}>{editForm.email}</Text>
-                      <Copy size={14} color={theme.colors.primary} {...({} as any)} />
-                    </TouchableOpacity>
-                  </View>
-                  <View style={styles.inputWrap}><Text style={styles.fieldLabel}>Phone</Text><TextInput style={styles.modalInput} value={editForm.phone} onChangeText={(val) => setEditForm((p: any) => ({ ...p, phone: val }))} keyboardType="phone-pad" /></View>
+                  <PermissionField
+                    module={activeTab === 'staff' ? 'faculty' : 'students'}
+                    action="edit"
+                    label="Display Name"
+                    required
+                    value={editForm.name}
+                    onChangeText={(val) => setEditForm((p: any) => ({ ...p, name: val }))}
+                    placeholder="Full Name"
+                  />
+                  <FormField
+                    label="Official Email"
+                    value={editForm.email}
+                    readOnly
+                    disabledReason="Managed identity"
+                    rightIcon={
+                      <TouchableOpacity onPress={() => handleCopyEmail(editForm.email)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                        <Copy size={15} color={theme.colors.primary} {...({} as any)} />
+                      </TouchableOpacity>
+                    }
+                  />
+                  <PermissionField
+                    module={activeTab === 'staff' ? 'faculty' : 'students'}
+                    action="edit"
+                    label="Phone Number"
+                    keyboardType="phone-pad"
+                    value={editForm.phone}
+                    onChangeText={(val) => setEditForm((p: any) => ({ ...p, phone: val }))}
+                    placeholder="+91..."
+                  />
                 </View>
 
                 {(activeTab === 'students' || activeTab === 'staff') && (
                   <View style={styles.sectionCard}>
                     <View style={styles.sectionHeader}><GraduationCap size={18} color={theme.colors.secondary} {...({} as any)} /><Text style={styles.sectionTitle}>{activeTab === 'students' ? 'Campus Details' : 'Professional'}</Text></View>
-                    <View style={styles.inputWrap}><Text style={styles.fieldLabel}>Identity ID</Text><View style={styles.readOnlyBox}><Text style={styles.readOnlyText}>{editForm.register_number || editForm.employee_id || editForm.staff_id}</Text></View></View>
+                    <FormField
+                      label={activeTab === 'staff' ? "Faculty / Staff ID" : "Identity / Roll Number"}
+                      value={editForm.register_number || editForm.employee_id || editForm.staff_id || 'N/A'}
+                      readOnly
+                      disabledReason="Immutable system identifier"
+                    />
                     {activeTab === 'students' ? (
-                      <View style={styles.inputWrap}><Text style={styles.fieldLabel}>Class & Section</Text><View style={styles.readOnlyBox}><Text style={styles.readOnlyText}>{editForm.class_name || 'N/A'} - {editForm.section || 'N/A'}</Text></View></View>
+                      <FormField
+                        label="Class & Section"
+                        value={`${editForm.class_name || 'N/A'} - ${editForm.section || 'N/A'}`}
+                        readOnly
+                        disabledReason="Managed in Academic Structure"
+                      />
                     ) : (
-                      <View style={styles.inputWrap}><Text style={styles.fieldLabel}>Department</Text><TextInput style={styles.modalInput} value={editForm.department} onChangeText={(val) => setEditForm((p: any) => ({ ...p, department: val }))} /></View>
+                      <PermissionField
+                        module="faculty"
+                        action="edit"
+                      >
+                        {({ readOnly, disabledReason }) => (
+                          <Select
+                            label="Department"
+                            value={editForm.department}
+                            readOnly={readOnly}
+                            disabledReason={disabledReason}
+                            options={[
+                              { label: 'Science & Technology', value: 'Science' },
+                              { label: 'Mathematics', value: 'Mathematics' },
+                              { label: 'Languages & Literature', value: 'Languages' },
+                              { label: 'Social Studies & Humanities', value: 'Social Studies' },
+                              { label: 'Computer Science', value: 'Computer Science' },
+                              { label: 'Physical Education & Sports', value: 'Physical Education' },
+                              { label: 'Administration & Operations', value: 'Administration' },
+                            ]}
+                            onSelect={(val) => setEditForm((p: any) => ({ ...p, department: val }))}
+                            placeholder="Select Department"
+                          />
+                        )}
+                      </PermissionField>
                     )}
                   </View>
                 )}
@@ -659,10 +967,20 @@ export default function UserManagementScreen() {
             </ScrollView>
 
             <View style={styles.modalFooter}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => setIsModalVisible(false)}><Text style={styles.cancelBtnText}>Cancel</Text></TouchableOpacity>
-              <TouchableOpacity style={[styles.saveChangesBtn, isUpdating && { opacity: 0.7 }]} onPress={handleUpdate} disabled={isUpdating}>
-                {isUpdating ? <ActivityIndicator color="white" /> : <><Save size={18} color="white" {...({} as any)} /><Text style={styles.saveChangesBtnText}>Save Changes</Text></>}
-              </TouchableOpacity>
+              <Button
+                title="Cancel"
+                variant="outline"
+                onPress={() => setIsModalVisible(false)}
+                style={{ flex: 1 }}
+              />
+              <Button
+                title="Save Changes"
+                variant="primary"
+                loading={isUpdating}
+                icon={<Save size={18} color="#1E293B" {...({} as any)} />}
+                onPress={handleUpdate}
+                style={{ flex: 2 }}
+              />
             </View>
           </View>
         </View>
@@ -724,6 +1042,15 @@ export default function UserManagementScreen() {
         onClear={() => setFilterDept(null)}
         onClose={() => setShowDeptModal(false)}
       />
+
+      {institutionId && (
+        <StakeholderManagementModal
+          visible={isStakeholderModalOpen}
+          onClose={() => setIsStakeholderModalOpen(false)}
+          institutionId={institutionId}
+          institutionName="Current Institution"
+        />
+      )}
     </View>
   );
 }
@@ -807,4 +1134,10 @@ const styles = StyleSheet.create({
   cancelBtnText: { fontSize: 15, fontWeight: 'bold', color: theme.colors.textMuted },
   saveChangesBtn: { flex: 2, flexDirection: 'row', backgroundColor: theme.colors.primary, paddingVertical: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: 8 },
   saveChangesBtnText: { color: 'white', fontSize: 15, fontWeight: 'bold' },
+  stakeholderIntroCard: { backgroundColor: 'white', padding: 20, borderRadius: 20, borderWidth: 1, borderColor: '#FDE68A', gap: 16 },
+  stakeholderIntroHeader: { flexDirection: 'row', alignItems: 'center' },
+  stakeholderIntroTitle: { fontSize: 16, fontWeight: 'bold', color: '#1E293B' },
+  stakeholderIntroSubtitle: { fontSize: 12, color: '#64748B', marginTop: 4, lineHeight: 18 },
+  openStakeholderBtn: { backgroundColor: theme.colors.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: 12 },
+  openStakeholderBtnText: { color: '#1E293B', fontWeight: 'bold', fontSize: 14 },
 });

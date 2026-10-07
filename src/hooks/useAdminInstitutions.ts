@@ -7,11 +7,21 @@ export interface Institution {
     name: string;
     type: string;
     status: string;
+    address?: string | null;
+    address_line_1?: string | null;
+    address_line_2?: string | null;
     city: string | null;
     state: string | null;
+    pincode?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
+    map_link?: string | null;
+    has_kg?: boolean | null;
+    academic_stages?: string[] | null;
     logo_url: string | null;
     studentsCount: number;
     staffCount: number;
+    created_at?: string;
 }
 
 export function useAdminInstitutions() {

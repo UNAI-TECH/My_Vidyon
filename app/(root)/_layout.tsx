@@ -80,9 +80,29 @@ export default function RootLayout() {
   }
 
   // Determine role-based initial route so the Stack never defaults blindly to student
-  const initialRoute = (role === 'admin' || role === 'superadmin')
-    ? 'admin'
-    : (role || 'student');
+  let initialRoute = 'student';
+  if (role === 'admin' || role === 'superadmin' || role === 'ad_manager' || role === 'finance_manager') {
+    initialRoute = 'admin';
+  } else if (
+    role === 'institution' ||
+    role === 'admission_officer' ||
+    role === 'admissions' ||
+    role === 'reports_manager' ||
+    role === 'accountant' ||
+    role === 'finance'
+  ) {
+    initialRoute = 'institution';
+  } else if (role === 'institution_stakeholder') {
+    initialRoute = 'stakeholder';
+  } else if (role === 'faculty') {
+    initialRoute = 'faculty';
+  } else if (role === 'student') {
+    initialRoute = 'student';
+  } else if (role === 'parent') {
+    initialRoute = 'parent';
+  } else if (role === 'canteen' || role === 'canteen_manager') {
+    initialRoute = 'canteen';
+  }
 
   return (
     <>
@@ -94,6 +114,7 @@ export default function RootLayout() {
         <Stack.Screen name="accountant" />
         <Stack.Screen name="parent" />
         <Stack.Screen name="canteen" />
+        <Stack.Screen name="stakeholder" />
       </Stack>
 
       <AlertModal 

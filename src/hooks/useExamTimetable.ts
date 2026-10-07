@@ -31,7 +31,7 @@ export function useExamTimetable(options: {
                         .select('id')
                         .eq('institution_id', institutionId)
                         .eq('name', classId);
-                    classIds = classesData?.map(c => c.id) || [];
+                    classIds = (classesData as any[])?.map((c: any) => c.id) || [];
                 }
             }
             

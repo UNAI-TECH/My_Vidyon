@@ -41,20 +41,60 @@ export default function InstitutionDashboard() {
     setContainerWidth(width);
   };
   
-  const shortcuts = [
-    { label: 'Departments', icon: Briefcase, href: '/(root)/institution/departments', color: '#6366F1' },
-    { label: 'Users', icon: Users, href: '/(root)/institution/users', color: '#A855F7' },
-    { label: 'Add User', icon: GraduationCap, href: '/(root)/institution/students/add', color: '#14B8A6' },
-    { label: 'Leave Ops', icon: FileText, href: '/(root)/institution/leaves', color: '#EF4444' },
-    { label: 'Timetable', icon: Clock, href: '/(root)/institution/timetable', color: '#F59E0B' },
-    { label: 'Exams', icon: ClipboardList, href: '/(root)/institution/exams', color: '#F87171' },
-    { label: 'Communication', icon: Bell, href: '/(root)/institution/communication', color: '#F43F5E' },
-    { label: 'Staff Assigning', icon: UserCheck, href: '/(root)/institution/faculty/assign', color: '#8B5CF6' },
-    { label: 'Analytics', icon: TrendingUp, href: '/(root)/institution/analytics', color: '#0EA5E9' },
-    { label: 'Events', icon: Calendar, href: '/(root)/institution/events', color: '#F59E0B' },
-    { label: 'Reports', icon: FileText, href: '/(root)/institution/reports', color: '#6366F1' },
-    { label: 'Settings', icon: Settings, href: '/(root)/institution/settings', color: '#64748B' },
-  ];
+  const shortcuts = React.useMemo(() => {
+    if (role === 'admission_officer' || role === 'admissions') {
+      return [
+        { label: 'Admissions', icon: UserCheck, href: '/(root)/institution/admissions', color: '#0EA5E9' },
+        { label: 'Add Student', icon: GraduationCap, href: '/(root)/institution/students/add', color: '#14B8A6' },
+        { label: 'Promotions', icon: Clock, href: '/(root)/institution/promotions', color: '#F59E0B' },
+        { label: 'Communication', icon: Bell, href: '/(root)/institution/communication', color: '#F43F5E' },
+        { label: 'Events', icon: Calendar, href: '/(root)/institution/events', color: '#8B5CF6' },
+        { label: 'Settings', icon: Settings, href: '/(root)/institution/settings', color: '#64748B' },
+      ];
+    }
+    if (role === 'accountant' || role === 'finance') {
+      return [
+        { label: 'Fee Management', icon: Briefcase, href: '/(root)/institution/fees', color: '#F59E0B' },
+        { label: 'Fee Collection', icon: TrendingUp, href: '/(root)/institution/fees/collection', color: '#10B981' },
+        { label: 'Fee Structures', icon: FileText, href: '/(root)/institution/fees/structures', color: '#6366F1' },
+        { label: 'Concessions', icon: UserCheck, href: '/(root)/institution/fees/concessions', color: '#EC4899' },
+        { label: 'Reports', icon: FileText, href: '/(root)/institution/reports', color: '#3B82F6' },
+        { label: 'Settings', icon: Settings, href: '/(root)/institution/settings', color: '#64748B' },
+      ];
+    }
+    if (role === 'reports_manager') {
+      return [
+        { label: 'Reports', icon: FileText, href: '/(root)/institution/reports', color: '#6366F1' },
+        { label: 'Analytics', icon: TrendingUp, href: '/(root)/institution/analytics', color: '#0EA5E9' },
+        { label: 'Exams & Results', icon: ClipboardList, href: '/(root)/institution/exams', color: '#F87171' },
+        { label: 'Departments', icon: Briefcase, href: '/(root)/institution/departments', color: '#A855F7' },
+        { label: 'Settings', icon: Settings, href: '/(root)/institution/settings', color: '#64748B' },
+      ];
+    }
+    return [
+      { label: 'Admissions', icon: UserCheck, href: '/(root)/institution/admissions', color: '#0EA5E9' },
+      { label: 'Fee Management', icon: Briefcase, href: '/(root)/institution/fees', color: '#F59E0B' },
+      { label: 'Promotions', icon: Clock, href: '/(root)/institution/promotions', color: '#EAB308' },
+      { label: 'Departments', icon: Briefcase, href: '/(root)/institution/departments', color: '#6366F1' },
+      { label: 'Users', icon: Users, href: '/(root)/institution/users', color: '#A855F7' },
+      { label: 'Add User', icon: GraduationCap, href: '/(root)/institution/students/add', color: '#14B8A6' },
+      { label: 'Leave Ops', icon: FileText, href: '/(root)/institution/leaves', color: '#EF4444' },
+      { label: 'Timetable', icon: Clock, href: '/(root)/institution/timetable', color: '#F59E0B' },
+      { label: 'Exams', icon: ClipboardList, href: '/(root)/institution/exams', color: '#F87171' },
+      { label: 'Communication', icon: Bell, href: '/(root)/institution/communication', color: '#F43F5E' },
+      { label: 'Staff Assigning', icon: UserCheck, href: '/(root)/institution/faculty/assign', color: '#8B5CF6' },
+      { label: 'Analytics', icon: TrendingUp, href: '/(root)/institution/analytics', color: '#0EA5E9' },
+      { label: 'Reports', icon: FileText, href: '/(root)/institution/reports', color: '#6366F1' },
+      { label: 'Settings', icon: Settings, href: '/(root)/institution/settings', color: '#64748B' },
+    ];
+  }, [role]);
+
+  const getRoleTitle = () => {
+    if (role === 'admission_officer' || role === 'admissions') return 'Admissions Console';
+    if (role === 'accountant' || role === 'finance') return 'Fee & Finance Console';
+    if (role === 'reports_manager') return 'Reports & Analytics Console';
+    return 'Institution Overview';
+  };
 
   const attendanceRate = stats.totalPeople > 0 
     ? Math.round((stats.presentToday / stats.totalPeople) * 100) 
@@ -71,7 +111,7 @@ export default function InstitutionDashboard() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content} onLayout={onLayout}>
       <PageHeader 
-        title="Institution Overview" 
+        title={getRoleTitle()} 
         subtitle={`Academic Year ${academicYear}`}
         institutionName={institution?.name}
         institutionLogo={institution?.logo_url}

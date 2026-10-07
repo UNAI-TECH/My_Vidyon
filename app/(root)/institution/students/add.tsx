@@ -19,15 +19,17 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { CalendarModal } from '../../../../src/components/common/CalendarPicker';
 import { uploadToSupabaseStorage } from '../../../../src/utils/fileUpload';
 
-type UserRole = 'student' | 'faculty' | 'accountant' | 'canteen_manager' | 'driver' | 'parent';
+type UserRole = 'student' | 'faculty' | 'admission_officer' | 'accountant' | 'reports_manager' | 'canteen_manager' | 'driver' | 'parent';
 
-const ROLES: { id: UserRole; label: string; color: string }[] = [
-  { id: 'student', label: 'Student', color: '#3B82F6' },
-  { id: 'faculty', label: 'Faculty', color: '#A855F7' },
-  { id: 'accountant', label: 'Finance', color: '#F59E0B' },
-  { id: 'canteen_manager', label: 'Canteen', color: '#10B981' },
-  { id: 'driver', label: 'Transport', color: '#EF4444' },
-  { id: 'parent', label: 'Parent', color: '#6366F1' },
+const ROLES: { id: UserRole; label: string; color: string; description?: string }[] = [
+  { id: 'student', label: 'Student', color: '#3B82F6', description: 'Student profile' },
+  { id: 'faculty', label: 'Faculty', color: '#A855F7', description: 'Teaching staff' },
+  { id: 'admission_officer', label: 'Admissions', color: '#0EA5E9', description: 'Admissions in-charge' },
+  { id: 'accountant', label: 'Fee / Finance', color: '#F59E0B', description: 'Fee management & collections' },
+  { id: 'reports_manager', label: 'Reports', color: '#6366F1', description: 'Academic records & reports' },
+  { id: 'canteen_manager', label: 'Canteen', color: '#10B981', description: 'Cafeteria manager' },
+  { id: 'driver', label: 'Transport', color: '#EF4444', description: 'Bus driver' },
+  { id: 'parent', label: 'Parent', color: '#8B5CF6', description: 'Student guardian' },
 ];
 
 // ---- EMAIL GENERATION UTILITY ----
@@ -269,9 +271,23 @@ export default function AddUserScreen() {
     const fullName = `${form.firstName} ${form.lastName}`;
 
     try {
+      let dbRole: string = selectedRole;
+      let dbDept = form.department || null;
+
+      if (selectedRole === 'admission_officer') {
+        dbRole = 'faculty';
+        dbDept = 'Admissions';
+      } else if (selectedRole === 'accountant') {
+        dbRole = 'accountant';
+        dbDept = 'Fee Management';
+      } else if (selectedRole === 'reports_manager') {
+        dbRole = 'analytics';
+        dbDept = 'Reports';
+      }
+
       const body: any = {
         email,
-        role: selectedRole,
+        role: dbRole,
         full_name: fullName,
         institution_id: institutionId,
         phone: form.phone || null,
@@ -300,7 +316,7 @@ export default function AddUserScreen() {
         // parent-specific fields would go here
       } else {
         body.staff_id = form.staffId || `STF-${Date.now().toString(36).toUpperCase()}`;
-        body.department = form.department || null;
+        body.department = dbDept;
       }
 
       if (image) {

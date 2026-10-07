@@ -4,20 +4,26 @@ import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
 import { useAdminInstitutions } from '../../../../src/hooks/useAdminInstitutions';
 import { InstitutionCard } from '../../../../src/components/cards/InstitutionCard';
-import { Search, Plus, Filter, X, GraduationCap, School, BookOpen, Users, MapPin, ChevronRight, Edit2 } from 'lucide-react-native';
+import { Search, Plus, Filter, X, GraduationCap, School, BookOpen, Users, MapPin, ChevronRight, Edit2, ShieldCheck, ArrowUpDown } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../../../src/lib/supabase';
 import { Badge } from '../../../../src/components/common/Badge';
 import { AlertModal } from '../../../../src/components/common/AlertModal';
+import { StakeholderManagementModal } from '../../../../src/components/stakeholder/StakeholderManagementModal';
+import { LocationMapPreview } from '../../../../src/components/common/LocationMapPreview';
+import { Select } from '../../../../src/components/common/Select';
 
 export default function InstitutionsList() {
   const router = useRouter();
   const { institutions, isLoading, toggleStatus, deleteInstitution } = useAdminInstitutions();
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab ] = useState<'active' | 'inactive' | 'deleted'>('active');
+  const [sortBy, setSortBy] = useState<string>('name_asc');
+  const [stageFilter, setStageFilter] = useState<'all' | 'has_kg' | 'primary' | 'secondary'>('all');
 
   const [selectedInst, setSelectedInst] = useState<any>(null);
   const [isDetailVisible, setIsDetailVisible] = useState(false);
+  const [isStakeholderModalVisible, setIsStakeholderModalVisible] = useState(false);
   const [detailData, setDetailData] = useState<{ classes: any[], departments: string[], subjects: any[] }>({
     classes: [],
     departments: [],
@@ -34,12 +40,30 @@ export default function InstitutionsList() {
     buttons?: { text: string; style?: 'primary' | 'secondary' | 'destructive'; onPress: () => void }[];
   }>({ visible: false, title: '', message: '' });
 
-  const filteredInstitutions = institutions.filter(inst => {
-    const matchesSearch = inst.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                         inst.institution_id.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = inst.status === activeTab;
-    return matchesSearch && matchesStatus;
-  });
+  const filteredInstitutions = institutions
+    .filter(inst => {
+      const q = searchTerm.toLowerCase();
+      const matchesSearch = 
+        inst.name.toLowerCase().includes(q) || 
+        inst.institution_id.toLowerCase().includes(q) ||
+        (inst.city && inst.city.toLowerCase().includes(q)) ||
+        (inst.state && inst.state.toLowerCase().includes(q));
+      const matchesStatus = inst.status === activeTab;
+      const matchesStage = 
+        stageFilter === 'all' ? true :
+        stageFilter === 'has_kg' ? !!inst.has_kg :
+        stageFilter === 'primary' ? ((inst.academic_stages as string[])?.includes('primary') ?? true) :
+        stageFilter === 'secondary' ? ((inst.academic_stages as string[])?.includes('secondary') ?? true) : true;
+      return matchesSearch && matchesStatus && matchesStage;
+    })
+    .sort((a, b) => {
+      if (sortBy === 'name_asc') return a.name.localeCompare(b.name);
+      if (sortBy === 'name_desc') return b.name.localeCompare(a.name);
+      if (sortBy === 'students_desc') return (b.studentsCount || 0) - (a.studentsCount || 0);
+      if (sortBy === 'staff_desc') return (b.staffCount || 0) - (a.staffCount || 0);
+      if (sortBy === 'recent') return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+      return 0;
+    });
 
   const handleShowDetail = async (inst: any) => {
     setSelectedInst(inst);
@@ -143,6 +167,62 @@ export default function InstitutionsList() {
           </TouchableOpacity>
         </View>
 
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginVertical: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginRight: 8 }}>
+            <ArrowUpDown size={14} color={theme.colors.textMuted} />
+            <Text style={{ fontSize: 12, fontWeight: '600', color: theme.colors.textMuted }}>Sort:</Text>
+          </View>
+          {[
+            { id: 'name_asc', label: 'Name (A-Z)' },
+            { id: 'students_desc', label: 'Students' },
+            { id: 'staff_desc', label: 'Staff' },
+            { id: 'recent', label: 'Recent' },
+          ].map(s => (
+            <TouchableOpacity
+              key={s.id}
+              style={{
+                paddingHorizontal: 10,
+                paddingVertical: 5,
+                borderRadius: 20,
+                backgroundColor: sortBy === s.id ? theme.colors.primary : '#F1F5F9',
+              }}
+              onPress={() => setSortBy(s.id)}
+            >
+              <Text style={{ fontSize: 11, fontWeight: '600', color: sortBy === s.id ? 'white' : theme.colors.text }}>
+                {s.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginRight: 8 }}>
+            <Filter size={14} color={theme.colors.textMuted} />
+            <Text style={{ fontSize: 12, fontWeight: '600', color: theme.colors.textMuted }}>Stage:</Text>
+          </View>
+          {[
+            { id: 'all', label: 'All Stages' },
+            { id: 'has_kg', label: 'KG / Pre-Primary' },
+            { id: 'primary', label: 'Primary (1-5)' },
+            { id: 'secondary', label: 'High School (9-10)' },
+          ].map(f => (
+            <TouchableOpacity
+              key={f.id}
+              style={{
+                paddingHorizontal: 10,
+                paddingVertical: 5,
+                borderRadius: 20,
+                backgroundColor: stageFilter === f.id ? '#0284C7' : '#F1F5F9',
+              }}
+              onPress={() => setStageFilter(f.id as any)}
+            >
+              <Text style={{ fontSize: 11, fontWeight: '600', color: stageFilter === f.id ? 'white' : theme.colors.text }}>
+                {f.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
         <View style={styles.tabs}>
           {(['active', 'inactive', 'deleted'] as const).map((tab) => (
             <TouchableOpacity 
@@ -207,6 +287,18 @@ export default function InstitutionsList() {
                 <ActivityIndicator size="large" color={theme.colors.primary} style={{ marginTop: 40 }} />
               ) : (
                 <>
+                  <LocationMapPreview
+                    addressLine1={selectedInst?.address_line_1 || selectedInst?.address}
+                    addressLine2={selectedInst?.address_line_2}
+                    city={selectedInst?.city}
+                    state={selectedInst?.state}
+                    pincode={selectedInst?.pincode}
+                    latitude={selectedInst?.latitude}
+                    longitude={selectedInst?.longitude}
+                    mapLink={selectedInst?.map_link}
+                    institutionName={selectedInst?.name}
+                  />
+
                   <View style={styles.detailSection}>
                     <View style={styles.sectionHeader}>
                       <School size={20} color={theme.colors.primary} {...({} as any)} />
@@ -271,6 +363,13 @@ export default function InstitutionsList() {
 
             <View style={styles.modalFooter}>
               <TouchableOpacity 
+                style={styles.stakeholderBtn}
+                onPress={() => setIsStakeholderModalVisible(true)}
+              >
+                <ShieldCheck size={18} color="#D97706" {...({} as any)} />
+                <Text style={styles.stakeholderBtnText}>Manage Stakeholders</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
                 style={styles.editFullBtn}
                 onPress={() => {
                   setIsDetailVisible(false);
@@ -284,6 +383,15 @@ export default function InstitutionsList() {
           </View>
         </View>
       </Modal>
+
+      {selectedInst && (
+        <StakeholderManagementModal
+          visible={isStakeholderModalVisible}
+          onClose={() => setIsStakeholderModalVisible(false)}
+          institutionId={selectedInst.institution_id}
+          institutionName={selectedInst.name}
+        />
+      )}
 
       <AlertModal
         visible={alertConfig.visible}
@@ -385,7 +493,9 @@ const styles = StyleSheet.create({
   subjectItem: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
   subjectName: { fontSize: 14, fontWeight: '500', color: theme.colors.text },
   subjectClass: { fontSize: 12, color: theme.colors.textMuted },
-  modalFooter: { padding: 24, borderTopWidth: 1, borderTopColor: '#F1F5F9' },
-  editFullBtn: { backgroundColor: theme.colors.primary, height: 56, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 },
-  editFullBtnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
+  modalFooter: { padding: 24, borderTopWidth: 1, borderTopColor: '#F1F5F9', gap: 12 },
+  stakeholderBtn: { backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A', height: 50, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
+  stakeholderBtnText: { color: '#92400E', fontWeight: '700', fontSize: 15 },
+  editFullBtn: { backgroundColor: theme.colors.primary, height: 50, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 },
+  editFullBtnText: { color: 'white', fontWeight: 'bold', fontSize: 15 },
 });

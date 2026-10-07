@@ -14,12 +14,29 @@ export const NotificationBell = () => {
   const handlePress = () => {
     if (!role) return;
     
-    // Map roles to folder names if they differ
+    // Map roles to corresponding valid layout folder names
     let routeRole = role;
-    if (role === 'superadmin') routeRole = 'admin';
+    if (
+      role === 'superadmin' || 
+      role === 'ad_manager' || 
+      role === 'finance_manager' || 
+      role === 'admin'
+    ) {
+      routeRole = 'admin';
+    } else if (
+      role === 'institution' || 
+      role === 'institution_stakeholder' || 
+      role === 'admission_officer' || 
+      role === 'admissions' || 
+      role === 'reports_manager'
+    ) {
+      routeRole = 'institution';
+    } else if (role === 'accountant' || role === 'finance') {
+      routeRole = 'accountant';
+    }
     
     router.push({
-        pathname: `/(root)/${routeRole}/notifications` as any
+      pathname: `/(root)/${routeRole}/notifications` as any
     });
   };
 

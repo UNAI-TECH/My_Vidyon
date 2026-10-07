@@ -17,7 +17,8 @@ import {
   FileText,
   MessageSquare,
   CalendarRange,
-  Megaphone
+  Megaphone,
+  KeyRound
 } from 'lucide-react-native';
 import { ShortcutGrid } from '../../../src/components/common/ShortcutGrid';
 import { EventAdCarousel } from '../../../src/components/common/EventAdCarousel';
@@ -36,8 +37,30 @@ const chartConfig = {
 import { useSuperAdminDashboard } from '../../../src/hooks/useSuperAdminDashboard';
 
 export default function AdminDashboard() {
-  const { role, imageUrl } = useAuth();
+  const { role, imageUrl, institutionId, institutionName } = useAuth();
   const { stats, profile, isLoading } = useSuperAdminDashboard();
+
+  const isScoped = !!institutionId && institutionId !== 'global' && role !== 'superadmin';
+
+  const headerTitle = React.useMemo(() => {
+    if (role === 'ad_manager') {
+      return isScoped ? `${institutionName || 'Campus'} Ad Management` : "Ad Manager Operations";
+    }
+    if (role === 'finance_manager') {
+      return isScoped ? `${institutionName || 'Campus'} Financial Console` : "Platform Finance Operations";
+    }
+    return "Super Admin (SaaS)";
+  }, [role, isScoped, institutionName]);
+
+  const headerSubtitle = React.useMemo(() => {
+    if (role === 'ad_manager') {
+      return isScoped ? "Manage campus sponsored campaigns, placements & leads" : "Manage global sponsored campaigns & advertiser leads";
+    }
+    if (role === 'finance_manager') {
+      return isScoped ? "Campus fee accounting & ad revenue allocations" : "Global network revenues, collections & accounts";
+    }
+    return "Global Network Oversight & Onboarding";
+  }, [role, isScoped]);
 
   if (isLoading) return <View style={styles.container}><Text>Loading SaaS Metrics...</Text></View>;
 
@@ -49,9 +72,10 @@ export default function AdminDashboard() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <PageHeader
-        title="Super Admin (SaaS)"
-        subtitle="Global Network Oversight & Onboarding"
-        userRole={role || 'super_admin'}
+        title={headerTitle}
+        subtitle={headerSubtitle}
+        institutionName={isScoped ? institutionName || undefined : undefined}
+        userRole={role || 'superadmin'}
         userAvatar={imageUrl || profile?.image_url || undefined}
         actions={<NotificationBell />}
       />
@@ -63,14 +87,32 @@ export default function AdminDashboard() {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Quick Actions</Text>
-        <ShortcutGrid items={[
-          { label: 'Add Institution', icon: Building2, href: '/(root)/admin/onboarding', color: '#3B82F6' },
-          { label: 'Broadcast', icon: MessageSquare, href: '/(root)/admin/communication', color: '#10B981' },
-          { label: 'View Reports', icon: BarChart3, href: '/(root)/admin/revenue', color: '#F97316' },
-          { label: 'Ad Management', icon: Megaphone, href: '/(root)/admin/ads', color: '#EF4444' },
-          { label: 'Promotions', icon: CalendarRange, href: '/(root)/admin/promotions', color: '#EAB308' },
-          { label: 'Config', icon: Shield, href: '/(root)/admin/settings', color: '#A855F7' },
-        ]} />
+        <ShortcutGrid items={
+          role === 'ad_manager'
+            ? [
+                { label: 'Ad Management', icon: Megaphone, href: '/(root)/admin/ads', color: '#EF4444' },
+                { label: 'Advertiser Leads', icon: Users, href: '/(root)/admin/ads/leads', color: '#3B82F6' },
+                { label: 'Broadcast Comm', icon: MessageSquare, href: '/(root)/admin/communication', color: '#10B981' },
+                { label: 'Config', icon: Shield, href: '/(root)/admin/settings', color: '#A855F7' },
+              ]
+            : role === 'finance_manager'
+            ? [
+                { label: 'Platform Revenue', icon: BarChart3, href: '/(root)/admin/revenue', color: '#F97316' },
+                { label: 'Institutions', icon: Building2, href: '/(root)/admin/institutions', color: '#3B82F6' },
+                { label: 'Broadcast Comm', icon: MessageSquare, href: '/(root)/admin/communication', color: '#10B981' },
+                { label: 'Config', icon: Shield, href: '/(root)/admin/settings', color: '#A855F7' },
+              ]
+            : [
+                { label: 'Add Institution', icon: Building2, href: '/(root)/admin/onboarding', color: '#3B82F6' },
+                { label: 'User Directory', icon: Users, href: '/(root)/admin/users', color: '#6366F1' },
+                { label: 'Password Resets', icon: KeyRound, href: '/(root)/admin/users?tab=reset_requests', color: '#F59E0B' },
+                { label: 'Broadcast', icon: MessageSquare, href: '/(root)/admin/communication', color: '#10B981' },
+                { label: 'View Reports', icon: BarChart3, href: '/(root)/admin/revenue', color: '#F97316' },
+                { label: 'Ad Management', icon: Megaphone, href: '/(root)/admin/ads', color: '#EF4444' },
+                { label: 'Promotions', icon: CalendarRange, href: '/(root)/admin/promotions', color: '#EAB308' },
+                { label: 'Config', icon: Shield, href: '/(root)/admin/settings', color: '#A855F7' },
+              ]
+        } />
       </View>
 
       <View style={styles.statsGrid}>
@@ -166,7 +208,9 @@ export default function AdminDashboard() {
                   <Text style={styles.activityText}>
                     <Text style={{ fontWeight: 'bold' }}>{item.full_name || 'User'}</Text> ({item.role}) joined <Text style={{ color: theme.colors.primary }}>{item.institutions?.name || 'Network'}</Text>
                   </Text>
-                  <Text style={styles.activityTime}>{new Date(item.created_at).toLocaleDateString()} • {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+                  <Text style={styles.activityTime}>
+                    {new Date(item.updated_at || item.created_at || Date.now()).toLocaleDateString()} • {new Date(item.updated_at || item.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </Text>
                 </View>
               </View>
             ))

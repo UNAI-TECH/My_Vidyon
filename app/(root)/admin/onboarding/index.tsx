@@ -20,7 +20,11 @@ import {
   X,
   ChevronDown,
   ChevronUp,
-  Pencil
+  Pencil,
+  ArrowLeft,
+  ArrowRight,
+  Layers,
+  Sparkles
 } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { supabase } from '../../../../src/lib/supabase';
@@ -28,6 +32,11 @@ import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AlertModal } from '../../../../src/components/common/AlertModal';
 import { uploadToSupabaseStorage } from '../../../../src/utils/fileUpload';
+import { StakeholderManagementModal } from '../../../../src/components/stakeholder/StakeholderManagementModal';
+import { FormField } from '../../../../src/components/common/FormField';
+import { Select } from '../../../../src/components/common/Select';
+import { Button } from '../../../../src/components/common/Button';
+import { LocationMapPreview } from '../../../../src/components/common/LocationMapPreview';
 
 // Removed global steps array to make it dynamic inside component
 
@@ -57,8 +66,16 @@ export default function InstitutionOnboarding() {
     name: '',
     type: 'school',
     address: '',
+    address_line_1: '',
+    address_line_2: '',
     city: '',
     state: '',
+    pincode: '',
+    latitude: '',
+    longitude: '',
+    map_link: '',
+    has_kg: false,
+    academic_stages: ['primary', 'middle', 'secondary'] as string[],
     email: '',
     phone: '',
     academic_year: '2025-26',
@@ -68,6 +85,10 @@ export default function InstitutionOnboarding() {
     transport_phone: '',
     allowed_roles: { canteen: true, finance: true, transport: true },
   });
+
+  const [departments, setDepartments] = useState<{ id?: string; name: string; code?: string; description?: string }[]>([]);
+  const [newDeptInput, setNewDeptInput] = useState('');
+  const [newDeptCodeInput, setNewDeptCodeInput] = useState('');
   const [logo, setLogo] = useState<string | null>(null);
   const [pendingLogo, setPendingLogo] = useState<string | null>(null);
   const [showLogoPreview, setShowLogoPreview] = useState(false);
@@ -125,11 +146,14 @@ export default function InstitutionOnboarding() {
     type: 'info'
   });
 
+  const [isStakeholderModalOpen, setIsStakeholderModalOpen] = useState(false);
+  const [createdInstData, setCreatedInstData] = useState<{ id: string; name: string } | null>(null);
+
   const showAlert = (title: string, message: string, type: any = 'info', onClose?: () => void, buttons?: any[]) => {
     setAlert({ visible: true, title, message, type, onClose, buttons });
   };  useFocusEffect(
     useCallback(() => {
-      if (isEditMode && id) {
+      if ((isEditMode || isSecurityMode) && id) {
         fetchInstitutionData();
       } else if (!isEditMode && !isSecurityMode) {
         // Reset all form state for fresh "New Onboarding"
@@ -137,8 +161,16 @@ export default function InstitutionOnboarding() {
           name: '',
           type: 'school',
           address: '',
+          address_line_1: '',
+          address_line_2: '',
           city: '',
           state: '',
+          pincode: '',
+          latitude: '',
+          longitude: '',
+          map_link: '',
+          has_kg: false,
+          academic_stages: ['primary', 'middle', 'secondary'],
           email: '',
           phone: '',
           academic_year: '2025-26',
@@ -148,6 +180,7 @@ export default function InstitutionOnboarding() {
           transport_phone: '',
           allowed_roles: { canteen: true, finance: true, transport: true },
         });
+        setDepartments([]);
         setLogo(null);
         setPendingLogo(null);
         setAdminInfo({ email: '', password: '' });
@@ -165,10 +198,11 @@ export default function InstitutionOnboarding() {
       setLoading(true);
       
       // Parallelize all main data fetches
-      const [instResult, groupsResult, subjectsResult] = await Promise.all([
-        (supabase.from('institutions') as any).select('*').eq('institution_id', id).single(),
-        supabase.from('groups').select('id, name, classes(*)').eq('institution_id', id),
-        supabase.from('subjects').select('*').eq('institution_id', id)
+      const [instResult, groupsResult, subjectsResult, deptsResult] = await Promise.all([
+        (supabase.from('institutions') as any).select('*').or(`institution_id.eq.${id},id.eq.${id}`).maybeSingle(),
+        supabase.from('groups').select('id, name, classes(*)').or(`institution_id.eq.${id},institution_id.eq.${id}`),
+        supabase.from('subjects').select('*').or(`institution_id.eq.${id},institution_id.eq.${id}`),
+        (supabase.from('departments') as any).select('*').or(`institution_id.eq.${id},institution_id.eq.${id}`)
       ]);
 
       if (instResult.error) throw instResult.error;
@@ -178,11 +212,19 @@ export default function InstitutionOnboarding() {
         setBasicInfo({
           name: data.name,
           type: data.type,
-          address: data.address,
-          city: data.city,
-          state: data.state,
-          email: data.email,
-          phone: data.phone,
+          address: data.address || '',
+          address_line_1: data.address_line_1 || data.address || '',
+          address_line_2: data.address_line_2 || '',
+          city: data.city || '',
+          state: data.state || '',
+          pincode: data.pincode || '',
+          latitude: data.latitude != null ? String(data.latitude) : '',
+          longitude: data.longitude != null ? String(data.longitude) : '',
+          map_link: data.map_link || '',
+          has_kg: data.has_kg || false,
+          academic_stages: data.academic_stages || ['primary', 'middle', 'secondary'],
+          email: data.email || '',
+          phone: data.phone || '',
           academic_year: data.current_academic_year || '2025-26',
           school_code: data.institution_id,
           office_phone: data.office_phone || '',
@@ -190,6 +232,19 @@ export default function InstitutionOnboarding() {
           transport_phone: data.transport_phone || '',
           allowed_roles: data.allowed_roles || { canteen: true, finance: true, transport: true },
         });
+
+        // Load departments
+        if (deptsResult?.data && deptsResult.data.length > 0) {
+          setDepartments(deptsResult.data);
+        } else {
+          // Fallback to profiles table
+          const { data: profs } = await (supabase.from('profiles') as any).select('department').eq('institution_id', id).not('department', 'is', null);
+          const uniq = Array.from(new Set((profs as any[])?.map((p: any) => p.department).filter(Boolean)));
+          if (uniq.length > 0) {
+            setDepartments(uniq.map(d => ({ name: d as string })));
+          }
+        }
+
         setLogo(data.logo_url);
         setExistingCreds({
           email: data.admin_email || '',
@@ -307,62 +362,70 @@ export default function InstitutionOnboarding() {
         </View>
       </View>
 
-      <View style={styles.field}>
-        <Text style={styles.label}>Institution Name</Text>
-        <TextInput 
-          style={styles.input} 
-          placeholder="e.g. Little Flowers Public School"
-          value={basicInfo.name}
-          onChangeText={(v) => setBasicInfo({...basicInfo, name: v})}
-        />
-      </View>
+      <FormField
+        label="Institution Name"
+        required
+        placeholder="e.g. Little Flowers Public School"
+        value={basicInfo.name}
+        onChangeText={(v) => setBasicInfo({...basicInfo, name: v})}
+      />
 
       <View style={styles.grid}>
-        <View style={[styles.field, { flex: 1 }]}>
-          <Text style={styles.label}>School Code</Text>
-          <TextInput 
-            style={styles.input} 
+        <View style={{ flex: 1 }}>
+          <FormField
+            label="School Code"
+            required
             placeholder="LFPS001"
             value={basicInfo.school_code}
             onChangeText={(v) => setBasicInfo({...basicInfo, school_code: v.toUpperCase()})}
-            editable={!isEditMode}
+            readOnly={isEditMode}
+            disabledReason={isEditMode ? "Immutable after creation" : undefined}
           />
         </View>
-        <View style={[styles.field, { flex: 1 }]}>
-          <Text style={styles.label}>Academic Year</Text>
-          <TextInput 
-            style={styles.input} 
-            placeholder="2025-26"
+        <View style={{ flex: 1 }}>
+          <Select
+            label="Academic Year"
+            required
             value={basicInfo.academic_year}
-            onChangeText={(v) => setBasicInfo({...basicInfo, academic_year: v})}
+            options={[
+              { label: '2024-25', value: '2024-25' },
+              { label: '2025-26', value: '2025-26' },
+              { label: '2026-27', value: '2026-27' },
+              { label: '2027-28', value: '2027-28' },
+            ]}
+            onSelect={(v) => setBasicInfo({...basicInfo, academic_year: v})}
+            placeholder="Select Year"
           />
         </View>
       </View>
 
-      <View style={styles.field}>
-        <Text style={styles.label}>Address</Text>
-        <TextInput 
-          style={styles.input} 
-          placeholder="Full street address"
-          value={basicInfo.address}
-          onChangeText={(v) => setBasicInfo({...basicInfo, address: v})}
-        />
-      </View>
+      <Text style={[styles.sectionTitle, { marginTop: 16 }]}>Structured Campus Address</Text>
+      <FormField
+        label="Address Line 1"
+        placeholder="Street address, building number"
+        value={basicInfo.address_line_1}
+        onChangeText={(v) => setBasicInfo({...basicInfo, address_line_1: v})}
+      />
+
+      <FormField
+        label="Address Line 2"
+        placeholder="Area, landmark, locality"
+        value={basicInfo.address_line_2}
+        onChangeText={(v) => setBasicInfo({...basicInfo, address_line_2: v})}
+      />
 
       <View style={styles.grid}>
-        <View style={[styles.field, { flex: 1 }]}>
-          <Text style={styles.label}>City</Text>
-          <TextInput 
-            style={styles.input} 
+        <View style={{ flex: 1 }}>
+          <FormField
+            label="City"
             placeholder="City"
             value={basicInfo.city}
             onChangeText={(v) => setBasicInfo({...basicInfo, city: v})}
           />
         </View>
-        <View style={[styles.field, { flex: 1 }]}>
-          <Text style={styles.label}>State</Text>
-          <TextInput 
-            style={styles.input} 
+        <View style={{ flex: 1 }}>
+          <FormField
+            label="State"
             placeholder="State"
             value={basicInfo.state}
             onChangeText={(v) => setBasicInfo({...basicInfo, state: v})}
@@ -370,44 +433,175 @@ export default function InstitutionOnboarding() {
         </View>
       </View>
 
-      <View style={styles.field}>
-        <Text style={styles.label}>Official Email</Text>
-        <TextInput 
-          style={styles.input} 
-          placeholder="contact@school.com"
-          keyboardType="email-address"
-          value={basicInfo.email}
-          onChangeText={(v) => setBasicInfo({...basicInfo, email: v})}
-        />
+      <FormField
+        label="Pincode / Postal Code"
+        placeholder="e.g. 560001"
+        keyboardType="numeric"
+        value={basicInfo.pincode}
+        onChangeText={(v) => setBasicInfo({...basicInfo, pincode: v})}
+      />
+
+      <Text style={[styles.sectionTitle, { marginTop: 16 }]}>Geographic Location & Map</Text>
+      <View style={styles.grid}>
+        <View style={{ flex: 1 }}>
+          <FormField
+            label="Latitude"
+            placeholder="e.g. 12.9716"
+            keyboardType="numeric"
+            value={basicInfo.latitude}
+            onChangeText={(v) => setBasicInfo({...basicInfo, latitude: v})}
+          />
+        </View>
+        <View style={{ flex: 1 }}>
+          <FormField
+            label="Longitude"
+            placeholder="e.g. 77.5946"
+            keyboardType="numeric"
+            value={basicInfo.longitude}
+            onChangeText={(v) => setBasicInfo({...basicInfo, longitude: v})}
+          />
+        </View>
       </View>
+
+      <FormField
+        label="Map URL / Link (Optional)"
+        placeholder="https://maps.google.com/..."
+        value={basicInfo.map_link}
+        onChangeText={(v) => setBasicInfo({...basicInfo, map_link: v})}
+      />
+
+      <LocationMapPreview
+        addressLine1={basicInfo.address_line_1}
+        addressLine2={basicInfo.address_line_2}
+        city={basicInfo.city}
+        state={basicInfo.state}
+        pincode={basicInfo.pincode}
+        latitude={basicInfo.latitude}
+        longitude={basicInfo.longitude}
+        mapLink={basicInfo.map_link}
+        institutionName={basicInfo.name || 'Campus Location'}
+      />
+
+      <Text style={[styles.sectionTitle, { marginTop: 16 }]}>Academic Stages & Kindergarten (KG)</Text>
+      <TouchableOpacity
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          backgroundColor: basicInfo.has_kg ? '#FEF3C7' : '#F8FAFC',
+          padding: 16,
+          borderRadius: 12,
+          borderWidth: 1,
+          borderColor: basicInfo.has_kg ? '#FDE68A' : '#E2E8F0',
+          marginBottom: 12
+        }}
+        onPress={() => {
+          const nextVal = !basicInfo.has_kg;
+          const stages = new Set(basicInfo.academic_stages || []);
+          if (nextVal) stages.add('pre_primary');
+          else stages.delete('pre_primary');
+          setBasicInfo({
+            ...basicInfo,
+            has_kg: nextVal,
+            academic_stages: Array.from(stages)
+          });
+        }}
+      >
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: 15, fontWeight: '700', color: basicInfo.has_kg ? '#92400E' : theme.colors.text }}>
+            Offers Kindergarten (Pre-KG, LKG, UKG)
+          </Text>
+          <Text style={{ fontSize: 12, color: theme.colors.textMuted, marginTop: 2 }}>
+            Enable Kindergarten standards in admissions and academic structure
+          </Text>
+        </View>
+        <View style={{
+          width: 44,
+          height: 24,
+          borderRadius: 12,
+          backgroundColor: basicInfo.has_kg ? theme.colors.primary : '#CBD5E1',
+          padding: 2,
+          justifyContent: 'center',
+          alignItems: basicInfo.has_kg ? 'flex-end' : 'flex-start'
+        }}>
+          <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: 'white' }} />
+        </View>
+      </TouchableOpacity>
+
+      <Text style={[styles.helperText, { marginBottom: 8 }]}>Configured Stages for this Institution:</Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+        {[
+          { id: 'pre_primary', label: 'Pre-Primary (KG)' },
+          { id: 'primary', label: 'Primary (1st-5th)' },
+          { id: 'middle', label: 'Middle (6th-8th)' },
+          { id: 'secondary', label: 'High School (9th-10th)' },
+          { id: 'higher_secondary', label: 'Higher Secondary (11th-12th)' },
+        ].map(stage => {
+          const isSelected = basicInfo.academic_stages?.includes(stage.id);
+          return (
+            <TouchableOpacity
+              key={stage.id}
+              style={{
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                borderRadius: 8,
+                backgroundColor: isSelected ? theme.colors.primary : '#F1F5F9',
+                borderWidth: 1,
+                borderColor: isSelected ? theme.colors.primary : '#E2E8F0'
+              }}
+              onPress={() => {
+                const current = new Set(basicInfo.academic_stages || []);
+                if (current.has(stage.id)) {
+                  current.delete(stage.id);
+                } else {
+                  current.add(stage.id);
+                }
+                const arr = Array.from(current);
+                setBasicInfo({
+                  ...basicInfo,
+                  academic_stages: arr,
+                  has_kg: arr.includes('pre_primary')
+                });
+              }}
+            >
+              <Text style={{ fontSize: 12, fontWeight: '600', color: isSelected ? 'white' : theme.colors.text }}>
+                {stage.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      <FormField
+        label="Official Email"
+        placeholder="contact@school.com"
+        keyboardType="email-address"
+        value={basicInfo.email}
+        onChangeText={(v) => setBasicInfo({...basicInfo, email: v})}
+      />
 
       <Text style={[styles.sectionTitle, { marginTop: 12 }]}>Emergency Contacts</Text>
-      <View style={styles.field}>
-        <Text style={styles.label}>School Office Phone</Text>
-        <TextInput 
-          style={styles.input} 
-          placeholder="+91 00000 00000"
-          keyboardType="phone-pad"
-          value={basicInfo.office_phone}
-          onChangeText={(v) => setBasicInfo({...basicInfo, office_phone: v})}
-        />
-      </View>
+      <FormField
+        label="School Office Phone"
+        placeholder="+91 00000 00000"
+        keyboardType="phone-pad"
+        value={basicInfo.office_phone}
+        onChangeText={(v) => setBasicInfo({...basicInfo, office_phone: v})}
+      />
 
       <View style={styles.grid}>
-        <View style={[styles.field, { flex: 1 }]}>
-          <Text style={styles.label}>Main Guard Deck</Text>
-          <TextInput 
-            style={styles.input} 
+        <View style={{ flex: 1 }}>
+          <FormField
+            label="Main Guard Deck"
             placeholder="+91 00000 00000"
             keyboardType="phone-pad"
             value={basicInfo.guard_phone}
             onChangeText={(v) => setBasicInfo({...basicInfo, guard_phone: v})}
           />
         </View>
-        <View style={[styles.field, { flex: 1 }]}>
-          <Text style={styles.label}>Transport Dept</Text>
-          <TextInput 
-            style={styles.input} 
+        <View style={{ flex: 1 }}>
+          <FormField
+            label="Transport Dept"
             placeholder="+91 00000 00000"
             keyboardType="phone-pad"
             value={basicInfo.transport_phone}
@@ -442,13 +636,13 @@ export default function InstitutionOnboarding() {
       </View>
 
       {isEditMode && (
-        <TouchableOpacity 
-          style={[styles.saveProgressBtn, { marginTop: 24, borderStyle: 'solid' }]} 
+        <Button
+          title="Save Basic Info"
           onPress={() => handleSaveStep(1)}
-          disabled={submitting}
-        >
-          {submitting ? <ActivityIndicator size="small" color={theme.colors.primary} /> : <Text style={styles.saveProgressBtnText}>Save Basic Info</Text>}
-        </TouchableOpacity>
+          loading={submitting}
+          variant="primary"
+          style={{ marginTop: 24 }}
+        />
       )}
     </View>
   );
@@ -573,33 +767,121 @@ export default function InstitutionOnboarding() {
     );
   };
 
-  const applyDefault = () => {
+  // Template 1: Full K-10 School Structure (KG + 1st to 10th)
+  const applyK10Template = () => {
+    const groups: any[] = [];
+    let orderCounter = 1;
+
+    // Pre-Primary (KG)
+    if (basicInfo.has_kg || basicInfo.academic_stages?.includes('pre_primary')) {
+      groups.push({
+        id: 'stage_pre_primary',
+        name: 'Pre-Primary (Kindergarten)',
+        stage: 'pre_primary',
+        classes: [
+          { id: 'c_pkg', name: 'Pre-KG', stage: 'pre_primary', class_order: orderCounter++, is_final_class: false, sections: ['A', 'B'] },
+          { id: 'c_lkg', name: 'LKG', stage: 'pre_primary', class_order: orderCounter++, is_final_class: false, sections: ['A', 'B'] },
+          { id: 'c_ukg', name: 'UKG', stage: 'pre_primary', class_order: orderCounter++, is_final_class: false, sections: ['A', 'B'] },
+        ]
+      });
+    }
+
+    // Primary (1st to 5th)
+    groups.push({
+      id: 'stage_primary',
+      name: 'Primary School (1st - 5th)',
+      stage: 'primary',
+      classes: [
+        { id: 'c1', name: '1st Standard', stage: 'primary', class_order: orderCounter++, is_final_class: false, sections: ['A', 'B', 'C'] },
+        { id: 'c2', name: '2nd Standard', stage: 'primary', class_order: orderCounter++, is_final_class: false, sections: ['A', 'B', 'C'] },
+        { id: 'c3', name: '3rd Standard', stage: 'primary', class_order: orderCounter++, is_final_class: false, sections: ['A', 'B', 'C'] },
+        { id: 'c4', name: '4th Standard', stage: 'primary', class_order: orderCounter++, is_final_class: false, sections: ['A', 'B', 'C'] },
+        { id: 'c5', name: '5th Standard', stage: 'primary', class_order: orderCounter++, is_final_class: false, sections: ['A', 'B', 'C'] },
+      ]
+    });
+
+    // Middle School (6th to 8th)
+    groups.push({
+      id: 'stage_middle',
+      name: 'Middle School (6th - 8th)',
+      stage: 'middle',
+      classes: [
+        { id: 'c6', name: '6th Standard', stage: 'middle', class_order: orderCounter++, is_final_class: false, sections: ['A', 'B', 'C'] },
+        { id: 'c7', name: '7th Standard', stage: 'middle', class_order: orderCounter++, is_final_class: false, sections: ['A', 'B', 'C'] },
+        { id: 'c8', name: '8th Standard', stage: 'middle', class_order: orderCounter++, is_final_class: false, sections: ['A', 'B', 'C'] },
+      ]
+    });
+
+    // High School / Secondary (9th to 10th)
+    groups.push({
+      id: 'stage_secondary',
+      name: 'Secondary / High School (9th - 10th)',
+      stage: 'secondary',
+      classes: [
+        { id: 'c9', name: '9th Standard', stage: 'secondary', class_order: orderCounter++, is_final_class: false, sections: ['A', 'B'] },
+        { id: 'c10', name: '10th Standard', stage: 'secondary', class_order: orderCounter++, is_final_class: true, sections: ['A', 'B'] },
+      ]
+    });
+
+    setStructure(groups);
+  };
+
+  const applyDefault = applyK10Template;
+
+  const applyStandards1To10Template = () => {
+    let orderCounter = 1;
     setStructure([
       {
-        id: 'primary',
-        name: 'Primary',
+        id: 'stage_primary',
+        name: 'Primary School (1st - 5th)',
+        stage: 'primary',
         classes: [
-          { id: 'c1', name: '1st', class_order: 1, is_final_class: false, sections: ['A', 'B', 'C', 'D', 'E'] },
-          { id: 'c2', name: '2nd', class_order: 2, is_final_class: false, sections: ['A', 'B', 'C', 'D', 'E'] },
-          { id: 'c3', name: '3rd', class_order: 3, is_final_class: false, sections: ['A', 'B', 'C', 'D', 'E'] },
-          { id: 'c4', name: '4th', class_order: 4, is_final_class: false, sections: ['A', 'B', 'C', 'D', 'E'] },
-          { id: 'c5', name: '5th', class_order: 5, is_final_class: false, sections: ['A', 'B', 'C', 'D', 'E'] },
+          { id: 'c1', name: '1st Standard', stage: 'primary', class_order: orderCounter++, is_final_class: false, sections: ['A', 'B'] },
+          { id: 'c2', name: '2nd Standard', stage: 'primary', class_order: orderCounter++, is_final_class: false, sections: ['A', 'B'] },
+          { id: 'c3', name: '3rd Standard', stage: 'primary', class_order: orderCounter++, is_final_class: false, sections: ['A', 'B'] },
+          { id: 'c4', name: '4th Standard', stage: 'primary', class_order: orderCounter++, is_final_class: false, sections: ['A', 'B'] },
+          { id: 'c5', name: '5th Standard', stage: 'primary', class_order: orderCounter++, is_final_class: false, sections: ['A', 'B'] },
         ]
       },
       {
-        id: 'secondary',
-        name: 'Secondary',
+        id: 'stage_middle',
+        name: 'Middle School (6th - 8th)',
+        stage: 'middle',
         classes: [
-          { id: 'c6', name: '6th', class_order: 6, is_final_class: false, sections: ['A', 'B', 'C', 'D', 'E'] },
-          { id: 'c7', name: '7th', class_order: 7, is_final_class: false, sections: ['A', 'B', 'C', 'D', 'E'] },
-          { id: 'c8', name: '8th', class_order: 8, is_final_class: false, sections: ['A', 'B', 'C', 'D', 'E'] },
+          { id: 'c6', name: '6th Standard', stage: 'middle', class_order: orderCounter++, is_final_class: false, sections: ['A', 'B'] },
+          { id: 'c7', name: '7th Standard', stage: 'middle', class_order: orderCounter++, is_final_class: false, sections: ['A', 'B'] },
+          { id: 'c8', name: '8th Standard', stage: 'middle', class_order: orderCounter++, is_final_class: false, sections: ['A', 'B'] },
+        ]
+      },
+      {
+        id: 'stage_secondary',
+        name: 'High School (9th - 10th)',
+        stage: 'secondary',
+        classes: [
+          { id: 'c9', name: '9th Standard', stage: 'secondary', class_order: orderCounter++, is_final_class: false, sections: ['A', 'B'] },
+          { id: 'c10', name: '10th Standard', stage: 'secondary', class_order: orderCounter++, is_final_class: true, sections: ['A', 'B'] },
+        ]
+      }
+    ]);
+  };
+
+  const applyKGOnlyTemplate = () => {
+    setStructure([
+      {
+        id: 'stage_pre_primary',
+        name: 'Kindergarten (KG)',
+        stage: 'pre_primary',
+        classes: [
+          { id: 'c_pkg', name: 'Pre-KG', stage: 'pre_primary', class_order: 1, is_final_class: false, sections: ['A', 'B'] },
+          { id: 'c_lkg', name: 'LKG', stage: 'pre_primary', class_order: 2, is_final_class: false, sections: ['A', 'B'] },
+          { id: 'c_ukg', name: 'UKG', stage: 'pre_primary', class_order: 3, is_final_class: true, sections: ['A', 'B'] },
         ]
       }
     ]);
   };
 
   const addGroup = () => {
-    setStructure([...structure, { id: Date.now().toString(), name: '', classes: [] }]);
+    setStructure([...structure, { id: Date.now().toString(), name: '', stage: 'primary', classes: [] }]);
   };
 
   const removeGroup = (groupId: string) => {
@@ -612,9 +894,10 @@ export default function InstitutionOnboarding() {
 
   const addClass = (groupId: string) => {
     const nextOrder = structure.flatMap(g => g.classes).length + 1;
+    const targetGroup = structure.find(g => g.id === groupId);
     setStructure(structure.map(g =>
       g.id === groupId
-        ? { ...g, classes: [...g.classes, { id: Date.now().toString(), name: '', class_order: nextOrder, is_final_class: false, sections: [] }] }
+        ? { ...g, classes: [...g.classes, { id: Date.now().toString(), name: '', stage: targetGroup?.stage || 'primary', class_order: nextOrder, is_final_class: false, sections: ['A'] }] }
         : g
     ));
   };
@@ -625,6 +908,22 @@ export default function InstitutionOnboarding() {
         ? { ...g, classes: g.classes.filter((c: any) => c.id !== classId) }
         : g
     ));
+  };
+
+  const removeClassWithGuard = async (groupId: string, classId: string, className: string) => {
+    if (isEditMode && isValidUUID(classId)) {
+      try {
+        const { error } = await supabase.from('classes').delete().eq('id', classId);
+        if (error) {
+          showAlert('Deletion Prevented', error.message || 'Cannot delete class with active students, faculty, or timetable.', 'error');
+          return;
+        }
+      } catch (err: any) {
+        showAlert('Deletion Prevented', err.message, 'error');
+        return;
+      }
+    }
+    removeClass(groupId, classId);
   };
 
   const updateClass = (groupId: string, classId: string, name: string) => {
@@ -648,6 +947,25 @@ export default function InstitutionOnboarding() {
         }
         : g
     ));
+  };
+
+  const moveSection = (groupId: string, classId: string, sectionIndex: number, direction: 'left' | 'right') => {
+    setStructure(structure.map(g => {
+      if (g.id !== groupId) return g;
+      return {
+        ...g,
+        classes: g.classes.map((c: any) => {
+          if (c.id !== classId) return c;
+          const newSections = [...c.sections];
+          const targetIndex = direction === 'left' ? sectionIndex - 1 : sectionIndex + 1;
+          if (targetIndex < 0 || targetIndex >= newSections.length) return c;
+          const temp = newSections[sectionIndex];
+          newSections[sectionIndex] = newSections[targetIndex];
+          newSections[targetIndex] = temp;
+          return { ...c, sections: newSections };
+        })
+      };
+    }));
   };
 
   const updateClassOrder = (groupId: string, classId: string, orderStr: string) => {
@@ -682,6 +1000,78 @@ export default function InstitutionOnboarding() {
     ));
   };
 
+  const removeSectionWithGuard = async (groupId: string, classId: string, className: string, section: string) => {
+    if (isEditMode && basicInfo.school_code) {
+      try {
+        const { count } = await supabase
+          .from('students')
+          .select('id', { count: 'exact', head: true })
+          .eq('institution_id', basicInfo.school_code)
+          .eq('class_name', className)
+          .eq('section', section);
+
+        if (count && count > 0) {
+          showAlert('Deletion Prevented', `Cannot delete section "${section}" of standard "${className}": ${count} student(s) currently enrolled.`, 'error');
+          return;
+        }
+      } catch (e: any) {
+        console.warn('Section guard check:', e);
+      }
+    }
+    removeSection(groupId, classId, section);
+  };
+
+  // Department Handlers
+  const addDepartment = (name: string, code?: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    if (departments.some(d => d.name.toLowerCase() === trimmed.toLowerCase())) {
+      showAlert('Duplicate Department', `Department "${trimmed}" already exists.`, 'warning');
+      return;
+    }
+    setDepartments([...departments, { name: trimmed, code: code || trimmed.slice(0, 4).toUpperCase() }]);
+  };
+
+  const removeDepartmentWithGuard = async (deptName: string, deptId?: string) => {
+    if (isEditMode && basicInfo.school_code) {
+      try {
+        const { count } = await supabase
+          .from('profiles')
+          .select('id', { count: 'exact', head: true })
+          .eq('institution_id', basicInfo.school_code)
+          .eq('department', deptName);
+
+        if (count && count > 0) {
+          showAlert('Deletion Prevented', `Cannot delete department "${deptName}": ${count} staff/faculty member(s) assigned.`, 'error');
+          return;
+        }
+
+        if (deptId && isValidUUID(deptId)) {
+          await (supabase.from('departments') as any).delete().eq('id', deptId);
+        }
+      } catch (err: any) {
+        console.warn('Dept guard check:', err);
+      }
+    }
+    setDepartments(departments.filter(d => d.name !== deptName));
+  };
+
+  const applyCommonDepartments = () => {
+    const defaults = [
+      { name: 'Mathematics', code: 'MATH' },
+      { name: 'Science', code: 'SCI' },
+      { name: 'English & Literature', code: 'ENG' },
+      { name: 'Regional Languages', code: 'LANG' },
+      { name: 'Social Studies & History', code: 'SOC' },
+      { name: 'Computer Science & IT', code: 'CS' },
+      { name: 'Physical Education & Sports', code: 'PET' },
+      { name: 'School Administration', code: 'ADMIN' },
+    ];
+    const existingNames = new Set(departments.map(d => d.name.toLowerCase()));
+    const toAdd = defaults.filter(d => !existingNames.has(d.name.toLowerCase()));
+    setDepartments([...departments, ...toAdd]);
+  };
+
   const [extraSectionInput, setExtraSectionInput] = useState<Record<string, string>>({});
 
   const renderStructure = () => (
@@ -694,23 +1084,42 @@ export default function InstitutionOnboarding() {
         </TouchableOpacity>
       </View>
 
-      <TouchableOpacity onPress={applyDefault} style={{ backgroundColor: '#F8FAFC', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 24 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <View style={{ flex: 1, marginRight: 8 }}>
-            <Text style={{ fontWeight: '600', fontSize: 14 }}>Quick Setup</Text>
-            <Text style={{ color: theme.colors.textMuted, fontSize: 11 }}>Apply a standard school template</Text>
-          </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#F1F5F9', paddingHorizontal: 8, paddingVertical: 6, borderRadius: 6 }}>
+      {/* Quick Setup Templates */}
+      <View style={{ marginBottom: 20 }}>
+        <Text style={{ fontSize: 13, fontWeight: '700', color: theme.colors.text, marginBottom: 8 }}>
+          Standard Academic Templates:
+        </Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          <TouchableOpacity 
+            onPress={applyK10Template} 
+            style={{ backgroundColor: '#FEF3C7', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: '#FDE68A', flexDirection: 'row', alignItems: 'center', gap: 6 }}
+          >
+            <School size={14} color="#B45309" />
+            <Text style={{ color: '#B45309', fontWeight: '700', fontSize: 12 }}>Full K-10 (KG to 10th)</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            onPress={applyStandards1To10Template} 
+            style={{ backgroundColor: '#F1F5F9', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0', flexDirection: 'row', alignItems: 'center', gap: 6 }}
+          >
             <School size={14} color={theme.colors.text} />
-            <Text style={{ fontWeight: '500', fontSize: 11 }}>Apply</Text>
-          </View>
+            <Text style={{ color: theme.colors.text, fontWeight: '600', fontSize: 12 }}>1st to 10th Standard</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            onPress={applyKGOnlyTemplate} 
+            style={{ backgroundColor: '#F1F5F9', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0', flexDirection: 'row', alignItems: 'center', gap: 6 }}
+          >
+            <School size={14} color={theme.colors.text} />
+            <Text style={{ color: theme.colors.text, fontWeight: '600', fontSize: 12 }}>Kindergarten (KG Only)</Text>
+          </TouchableOpacity>
         </View>
-      </TouchableOpacity>
+      </View>
 
       {structure.length === 0 ? (
         <View style={{ alignItems: 'center', paddingVertical: 40, borderWidth: 2, borderStyle: 'dashed', borderColor: '#E2E8F0', borderRadius: 12 }}>
           <School size={48} color={'#E2E8F0'} style={{ marginBottom: 16 }} />
-          <Text style={{ color: theme.colors.textMuted }}>No structure defined yet.</Text>
+          <Text style={{ color: theme.colors.textMuted }}>No structure defined yet. Apply a template above or add custom groups.</Text>
         </View>
       ) : (
         <View style={{ gap: 24 }}>
@@ -743,7 +1152,7 @@ export default function InstitutionOnboarding() {
                             style={{ flex: 3, backgroundColor: 'white', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10, fontWeight: '500', color: theme.colors.text, borderWidth: 1, borderColor: '#E2E8F0' }}
                             value={classItem.name}
                             onChangeText={(v: string) => updateClass(group.id, classItem.id, v)}
-                            placeholder="Class Name (e.g. Class 1)"
+                            placeholder="Class Name (e.g. 1st Standard)"
                             placeholderTextColor="#94A3B8"
                           />
                           <TextInput
@@ -769,7 +1178,7 @@ export default function InstitutionOnboarding() {
                           </TouchableOpacity>
                         </View>
                       )}
-                      <TouchableOpacity style={{ padding: 8 }} onPress={() => removeClass(group.id, classItem.id)}>
+                      <TouchableOpacity style={{ padding: 8 }} onPress={() => removeClassWithGuard(group.id, classItem.id, classItem.name)}>
                         <Trash2 size={18} color="#EF4444" />
                       </TouchableOpacity>
                     </View>
@@ -793,14 +1202,25 @@ export default function InstitutionOnboarding() {
                         </Text>
                       </TouchableOpacity>
                       
-                      <Text style={{ fontSize: 11, color: theme.colors.textMuted, fontWeight: '600' }}>SECTIONS:</Text>
+                      <Text style={{ fontSize: 11, color: theme.colors.textMuted, fontWeight: '600' }}>SECTIONS (REORDERABLE):</Text>
                     </View>
 
+                    {/* Section Badges with Reorder Controls */}
                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-                      {classItem.sections.map((section: string) => (
-                        <View key={section} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FEF3C7', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}>
-                          <Text style={{ color: '#B45309', fontSize: 12, fontWeight: '600' }}>{section}</Text>
-                          <TouchableOpacity onPress={() => removeSection(group.id, classItem.id, section)}>
+                      {classItem.sections.map((section: string, sIdx: number) => (
+                        <View key={section} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#FEF3C7', paddingHorizontal: 8, paddingVertical: 5, borderRadius: 8 }}>
+                          {sIdx > 0 && (
+                            <TouchableOpacity onPress={() => moveSection(group.id, classItem.id, sIdx, 'left')}>
+                              <ArrowLeft size={12} color="#B45309" />
+                            </TouchableOpacity>
+                          )}
+                          <Text style={{ color: '#B45309', fontSize: 12, fontWeight: '700' }}>{section}</Text>
+                          {sIdx < classItem.sections.length - 1 && (
+                            <TouchableOpacity onPress={() => moveSection(group.id, classItem.id, sIdx, 'right')}>
+                              <ArrowRight size={12} color="#B45309" />
+                            </TouchableOpacity>
+                          )}
+                          <TouchableOpacity onPress={() => removeSectionWithGuard(group.id, classItem.id, classItem.name, section)}>
                             <X size={14} color="#B45309" />
                           </TouchableOpacity>
                         </View>
@@ -848,13 +1268,81 @@ export default function InstitutionOnboarding() {
           ))}
         </View>
       )}
+
+      {/* Academic Departments Configuration Panel */}
+      <View style={{ marginTop: 28, backgroundColor: 'white', borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', padding: 16 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Layers size={20} color={theme.colors.primary} />
+            <Text style={{ fontSize: 16, fontWeight: '700', color: theme.colors.text }}>Academic Departments</Text>
+          </View>
+          <TouchableOpacity 
+            style={{ backgroundColor: '#FEF3C7', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 4 }}
+            onPress={applyCommonDepartments}
+          >
+            <Sparkles size={14} color="#B45309" />
+            <Text style={{ color: '#B45309', fontWeight: '600', fontSize: 11 }}>Add Defaults</Text>
+          </TouchableOpacity>
+        </View>
+
+        <Text style={{ fontSize: 12, color: theme.colors.textMuted, marginBottom: 12 }}>
+          Configure academic departments for faculty assignments and school operations.
+        </Text>
+
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+          <TextInput
+            style={{ flex: 2, backgroundColor: '#F8FAFC', paddingHorizontal: 12, height: 40, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0', fontSize: 13 }}
+            placeholder="Department Name (e.g. Science)"
+            value={newDeptInput}
+            onChangeText={setNewDeptInput}
+          />
+          <TextInput
+            style={{ flex: 1, backgroundColor: '#F8FAFC', paddingHorizontal: 10, height: 40, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0', fontSize: 13 }}
+            placeholder="Code (e.g. SCI)"
+            value={newDeptCodeInput}
+            onChangeText={setNewDeptCodeInput}
+          />
+          <TouchableOpacity
+            style={{ backgroundColor: theme.colors.primary, paddingHorizontal: 14, height: 40, borderRadius: 8, justifyContent: 'center', alignItems: 'center' }}
+            onPress={() => {
+              if (newDeptInput.trim()) {
+                addDepartment(newDeptInput.trim(), newDeptCodeInput.trim());
+                setNewDeptInput('');
+                setNewDeptCodeInput('');
+              }
+            }}
+          >
+            <Plus size={16} color="white" />
+          </TouchableOpacity>
+        </View>
+
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          {departments.length === 0 ? (
+            <Text style={{ fontSize: 12, color: theme.colors.textMuted, fontStyle: 'italic' }}>
+              No departments configured yet. Click "Add Defaults" to populate common departments.
+            </Text>
+          ) : (
+            departments.map((dept, dIdx) => (
+              <View key={dIdx} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#EFF6FF', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: '#DBEAFE' }}>
+                <Text style={{ color: '#1D4ED8', fontSize: 12, fontWeight: '600' }}>
+                  {dept.name} {dept.code ? `[${dept.code}]` : ''}
+                </Text>
+                <TouchableOpacity onPress={() => removeDepartmentWithGuard(dept.name, dept.id)}>
+                  <X size={14} color="#1D4ED8" />
+                </TouchableOpacity>
+              </View>
+            ))
+          )}
+        </View>
+      </View>
+
       {isEditMode && structure.length > 0 && (
         <TouchableOpacity 
           style={[styles.saveProgressBtn, { marginTop: 24, borderStyle: 'solid' }]} 
           onPress={() => handleSaveStep(3)}
           disabled={submitting}
         >
-          {submitting ? <ActivityIndicator size="small" color={theme.colors.primary} /> : <Text style={styles.saveProgressBtnText}>Save Structure</Text>}
+          {submitting ? <ActivityIndicator size="small" color={theme.colors.primary} /> : <Text style={styles.saveProgressBtnText}>Save Structure & Departments</Text>}
         </TouchableOpacity>
       )}
     </View>
@@ -1232,13 +1720,23 @@ export default function InstitutionOnboarding() {
           }
         }
 
+        const fullAddr = [basicInfo.address_line_1, basicInfo.address_line_2, basicInfo.city, basicInfo.state, basicInfo.pincode].filter(Boolean).join(', ');
+
         const { error } = await (supabase.from('institutions') as any).upsert({
           institution_id: basicInfo.school_code,
           name: basicInfo.name,
           type: basicInfo.type,
-          address: basicInfo.address,
+          address: fullAddr || basicInfo.address,
+          address_line_1: basicInfo.address_line_1,
+          address_line_2: basicInfo.address_line_2,
           city: basicInfo.city,
           state: basicInfo.state,
+          pincode: basicInfo.pincode,
+          latitude: basicInfo.latitude ? parseFloat(basicInfo.latitude) : null,
+          longitude: basicInfo.longitude ? parseFloat(basicInfo.longitude) : null,
+          map_link: basicInfo.map_link,
+          has_kg: basicInfo.has_kg,
+          academic_stages: basicInfo.academic_stages,
           email: basicInfo.email,
           phone: basicInfo.phone,
           current_academic_year: basicInfo.academic_year,
@@ -1249,7 +1747,20 @@ export default function InstitutionOnboarding() {
           allowed_roles: basicInfo.allowed_roles,
         }, { onConflict: 'institution_id' });
         if (error) throw error;
-        showAlert('Saved', 'Basic information updated successfully.', 'success');
+
+        try {
+          await (supabase as any).rpc('log_audit', {
+            p_action: 'UPDATE',
+            p_entity_type: 'institution',
+            p_entity_id: basicInfo.school_code,
+            p_institution_id: basicInfo.school_code,
+            p_new_data: { name: basicInfo.name, address: fullAddr, stages: basicInfo.academic_stages }
+          });
+        } catch (e) {
+          console.warn('[Audit Log]:', e);
+        }
+
+        showAlert('Saved', 'Basic information and campus location updated.', 'success');
       } 
       
       else if (stepId === 2) {
@@ -1285,7 +1796,7 @@ export default function InstitutionOnboarding() {
       }
 
       else if (stepId === 3) {
-        // Partial Save: Structure
+        // Partial Save: Structure & Departments
         if (structure.length === 0) return showAlert('Empty', 'Add some structure first.', 'warning');
         
         for (const group of structure) {
@@ -1299,6 +1810,9 @@ export default function InstitutionOnboarding() {
             const classObj: any = {
               group_id: gId,
               name: c.name,
+              class_name: c.name,
+              stage: c.stage || group.stage || 'primary',
+              standard: c.name,
               sections: c.sections,
               class_order: c.class_order || 0,
               is_final_class: c.is_final_class || false,
@@ -1317,8 +1831,46 @@ export default function InstitutionOnboarding() {
             onConflict: 'institution_id,group_id,name,academic_year'
           });
           if (cError) throw cError;
+
+          // Upsert sections table
+          for (const c of group.classes) {
+            if (Array.isArray(c.sections) && c.sections.length > 0) {
+              const secPayload = c.sections.map((secName: string, idx: number) => ({
+                institution_id: basicInfo.school_code,
+                class_id: c.id && isValidUUID(c.id) ? c.id : undefined,
+                standard: c.name,
+                name: secName,
+                order_index: idx + 1
+              }));
+              await (supabase.from('sections') as any).upsert(secPayload, { onConflict: 'institution_id,standard,name' });
+            }
+          }
         }
-        showAlert('Saved', 'Institution structure updated.', 'success');
+
+        // Save Departments
+        if (departments.length > 0) {
+          const deptPayload = departments.map(d => ({
+            institution_id: basicInfo.school_code,
+            name: d.name,
+            code: d.code || '',
+            description: d.description || ''
+          }));
+          await (supabase.from('departments') as any).upsert(deptPayload, { onConflict: 'institution_id,name' });
+        }
+
+        try {
+          await (supabase as any).rpc('log_audit', {
+            p_action: 'UPDATE',
+            p_entity_type: 'structure',
+            p_entity_id: basicInfo.school_code,
+            p_institution_id: basicInfo.school_code,
+            p_new_data: { structureCount: structure.length, deptCount: departments.length }
+          });
+        } catch (e) {
+          console.warn('[Audit error]:', e);
+        }
+
+        showAlert('Saved', 'Institution structure & departments updated.', 'success');
       }
 
       else if (stepId === 4) {
@@ -1383,13 +1935,22 @@ export default function InstitutionOnboarding() {
 
       // 2. Create/Update Institution (Skip in security mode unless it's a new institution)
       if (!isSecurityMode) {
+        const fullAddr = [basicInfo.address_line_1, basicInfo.address_line_2, basicInfo.city, basicInfo.state, basicInfo.pincode].filter(Boolean).join(', ');
         const instData: any = {
           institution_id: basicInfo.school_code,
           name: basicInfo.name,
           type: basicInfo.type,
-          address: basicInfo.address,
+          address: fullAddr || basicInfo.address,
+          address_line_1: basicInfo.address_line_1,
+          address_line_2: basicInfo.address_line_2,
           city: basicInfo.city,
           state: basicInfo.state,
+          pincode: basicInfo.pincode,
+          latitude: basicInfo.latitude ? parseFloat(basicInfo.latitude) : null,
+          longitude: basicInfo.longitude ? parseFloat(basicInfo.longitude) : null,
+          map_link: basicInfo.map_link,
+          has_kg: basicInfo.has_kg,
+          academic_stages: basicInfo.academic_stages,
           email: basicInfo.email,
           phone: basicInfo.phone,
           current_academic_year: basicInfo.academic_year,
@@ -1411,13 +1972,65 @@ export default function InstitutionOnboarding() {
           .upsert([instData], { onConflict: 'institution_id' });
 
         if (instError) throw instError;
+
+        try {
+          await (supabase as any).rpc('log_audit', {
+            p_action: isEditMode ? 'UPDATE' : 'CREATE',
+            p_entity_type: 'institution',
+            p_entity_id: basicInfo.school_code,
+            p_institution_id: basicInfo.school_code,
+            p_new_data: { name: basicInfo.name, address: fullAddr, stages: basicInfo.academic_stages }
+          });
+        } catch (e) {
+          console.warn('[Audit Log]:', e);
+        }
       }
 
       // 3. Provision or Update Admin
+      const targetInstId = basicInfo.school_code || (id as string) || 'global';
       const emailChanged = adminInfo.email !== existingCreds.email;
       const passwordChanged = adminInfo.password !== '';
 
-      if (!isEditMode && adminInfo.email && adminInfo.password) {
+      if (isSecurityMode) {
+        // Direct security reset from SuperAdmin for Institution Admin credentials
+        const { error: adminError } = await supabase.functions.invoke('create-user', {
+          body: {
+            email: adminInfo.email,
+            password: adminInfo.password || `VidyonSetup_${targetInstId}`,
+            reset_password: true,
+            role: 'institution',
+            full_name: `${basicInfo.name || 'Institution'} Admin`,
+            institution_id: targetInstId,
+            staff_id: `ADM-${targetInstId}`
+          }
+        });
+
+        if (adminError) {
+          console.warn('Security credentials update failed:', adminError);
+          setSubmitting(false);
+          let errorMsg = adminError.message || 'Unknown error';
+          return showAlert('Update Failed', `Could not update credentials: ${errorMsg}.`, 'error');
+        }
+
+        // Also update institutions table admin_email and admin_password
+        const updates: any = {};
+        if (adminInfo.email) updates.admin_email = adminInfo.email;
+        if (adminInfo.password) updates.admin_password = adminInfo.password;
+        if (Object.keys(updates).length > 0) {
+          await (supabase.from('institutions') as any)
+            .update(updates)
+            .or(`institution_id.eq.${targetInstId},id.eq.${targetInstId}`);
+        }
+
+        setSubmitting(false);
+        showAlert(
+          'Credentials Updated',
+          'Institution Admin credentials have been reset successfully. On next login, the admin can set their password.',
+          'success',
+          () => router.replace('/admin/institutions')
+        );
+        return;
+      } else if (!isEditMode && adminInfo.email && adminInfo.password) {
         // New Onboarding Provisioning
         const { error: adminError } = await supabase.functions.invoke('create-user', {
           body: {
@@ -1425,8 +2038,8 @@ export default function InstitutionOnboarding() {
             password: adminInfo.password,
             role: 'institution',
             full_name: `${basicInfo.name} Admin`,
-            institution_id: basicInfo.school_code,
-            staff_id: `ADM-${basicInfo.school_code}`
+            institution_id: targetInstId,
+            staff_id: `ADM-${targetInstId}`
           }
         });
         if (adminError) {
@@ -1458,8 +2071,8 @@ export default function InstitutionOnboarding() {
             password: adminInfo.password || undefined, // Only send if changed
             role: 'institution',
             full_name: `${basicInfo.name} Admin`,
-            institution_id: basicInfo.school_code,
-            staff_id: `ADM-${basicInfo.school_code}`
+            institution_id: targetInstId,
+            staff_id: `ADM-${targetInstId}`
           }
         });
         if (adminError) {
@@ -1480,7 +2093,7 @@ export default function InstitutionOnboarding() {
         }
       }
 
-      // 4. Setup Structure (Skip in security mode)
+      // 4. Setup Structure & Departments (Skip in security mode)
       if (!isSecurityMode && structure.length > 0) {
         for (const group of structure) {
           const { data: gData, error: gError } = await (supabase.from('groups') as any)
@@ -1491,11 +2104,14 @@ export default function InstitutionOnboarding() {
           const gId = gData.id;
             
           if (gId) {
-            const classesToUpsert = group.classes.map((c: { id?: string, name: string, sections?: string[], class_order?: number, is_final_class?: boolean }) => {
+            const classesToUpsert = group.classes.map((c: { id?: string, name: string, stage?: string, sections?: string[], class_order?: number, is_final_class?: boolean }) => {
               const className = typeof c === 'string' ? c : c.name;
               const classObj: any = {
                 group_id: gId,
                 name: className,
+                class_name: className,
+                stage: c.stage || group.stage || 'primary',
+                standard: className,
                 sections: c.sections || ['A', 'B'],
                 class_order: c.class_order || 0,
                 is_final_class: c.is_final_class || false,
@@ -1515,8 +2131,33 @@ export default function InstitutionOnboarding() {
                 onConflict: 'institution_id,group_id,name,academic_year' 
               });
               if (cError) throw cError;
+
+              // Upsert sections table
+              for (const c of group.classes) {
+                if (Array.isArray(c.sections) && c.sections.length > 0) {
+                  const secPayload = c.sections.map((secName: string, idx: number) => ({
+                    institution_id: basicInfo.school_code,
+                    class_id: c.id && isValidUUID(c.id) ? c.id : undefined,
+                    standard: c.name,
+                    name: secName,
+                    order_index: idx + 1
+                  }));
+                  await (supabase.from('sections') as any).upsert(secPayload, { onConflict: 'institution_id,standard,name' });
+                }
+              }
             }
           }
+        }
+
+        // Save Departments
+        if (departments.length > 0) {
+          const deptPayload = departments.map(d => ({
+            institution_id: basicInfo.school_code,
+            name: d.name,
+            code: d.code || '',
+            description: d.description || ''
+          }));
+          await (supabase.from('departments') as any).upsert(deptPayload, { onConflict: 'institution_id,name' });
         }
       }
       
@@ -1544,9 +2185,37 @@ export default function InstitutionOnboarding() {
         });
       }
       
-      showAlert('Success', isSecurityMode ? 'Admin credentials updated!' : 'Institution onboarding completed!', 'success', () => {
-        router.replace('/admin/institutions');
-      });
+      if (!isSecurityMode && !isEditMode) {
+        setCreatedInstData({ id: basicInfo.school_code, name: basicInfo.name });
+        showAlert(
+          'Institution Onboarding Complete!',
+          `Institution "${basicInfo.name}" has been successfully created. Would you like to add Stakeholders (view-only board members/trustees) now?`,
+          'success',
+          undefined,
+          [
+            {
+              text: 'Add Stakeholders',
+              style: 'primary',
+              onPress: () => {
+                setAlert(prev => ({ ...prev, visible: false }));
+                setIsStakeholderModalOpen(true);
+              }
+            },
+            {
+              text: 'Go to Institutions',
+              style: 'secondary',
+              onPress: () => {
+                setAlert(prev => ({ ...prev, visible: false }));
+                router.replace('/admin/institutions');
+              }
+            }
+          ]
+        );
+      } else {
+        showAlert('Success', isSecurityMode ? 'Admin credentials updated!' : 'Institution onboarding completed!', 'success', () => {
+          router.replace('/admin/institutions');
+        });
+      }
     } catch (err: any) {
       showAlert('Error', err.message, 'error');
     } finally {
@@ -1659,6 +2328,18 @@ export default function InstitutionOnboarding() {
         }}
         buttons={alert.buttons}
       />
+
+      {createdInstData && (
+        <StakeholderManagementModal
+          visible={isStakeholderModalOpen}
+          onClose={() => {
+            setIsStakeholderModalOpen(false);
+            router.replace('/admin/institutions');
+          }}
+          institutionId={createdInstData.id}
+          institutionName={createdInstData.name}
+        />
+      )}
     </View>
   );
 }

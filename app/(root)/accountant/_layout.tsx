@@ -1,4 +1,4 @@
-import { Tabs } from 'expo-router';
+import { Tabs, Redirect } from 'expo-router';
 import { TouchableOpacity } from 'react-native';
 import { theme } from '../../../src/theme';
 import { LayoutDashboard, Settings, LogOut } from 'lucide-react-native';
@@ -7,8 +7,25 @@ import { HeaderLogo } from '../../../src/components/common/HeaderLogo';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function AccountantTabs() {
-  const { signOut } = useAuth();
+  const { signOut, role } = useAuth();
   const insets = useSafeAreaInsets();
+
+  // Role guard: Redirect non-accountant users away from accountant section
+  if (role && role !== 'accountant' && role !== 'finance') {
+    if (role === 'admin' || role === 'superadmin' || role === 'ad_manager' || role === 'finance_manager') {
+      return <Redirect href="/(root)/admin" />;
+    }
+    if (
+      role === 'institution' || 
+      role === 'institution_stakeholder' || 
+      role === 'admission_officer' || 
+      role === 'admissions' || 
+      role === 'reports_manager'
+    ) {
+      return <Redirect href="/(root)/institution" />;
+    }
+    return <Redirect href={`/(root)/${role}` as any} />;
+  }
 
   return (
     <Tabs

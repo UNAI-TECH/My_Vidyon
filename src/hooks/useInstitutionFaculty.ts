@@ -18,11 +18,11 @@ export function useInstitutionFaculty(institutionId: string | null) {
       if (error) throw error;
 
       const fetchedClasses: any[] = [];
-      groupsData?.forEach(g => {
+      (groupsData as any[])?.forEach((g: any) => {
         if (g.classes) {
           (g.classes as any[]).forEach(c => {
             const sections = Array.isArray(c.sections) ? c.sections : [c.sections];
-            sections.forEach(sec => {
+            sections.forEach((sec: any) => {
               if (sec) {
                 fetchedClasses.push({
                   id: c.id,
@@ -112,7 +112,7 @@ export function useInstitutionFaculty(institutionId: string | null) {
           faculty_profile_id: fid,
           assignment_type: 'subject_staff'
         }));
-        await supabase.from('faculty_subjects').insert(toInsert);
+        await (supabase as any).from('faculty_subjects').insert(toInsert);
       }
       queryClient.invalidateQueries({ queryKey: ['institution-assignments-assign'] });
     } catch (e) {
@@ -126,7 +126,7 @@ export function useInstitutionFaculty(institutionId: string | null) {
     try {
       // 1. Enforce Exclusivity: Check if this teacher is already a class teacher elsewhere
       if (teacherId) {
-        const { data: existingAssignment } = await supabase
+        const { data: existingAssignment } = await (supabase as any)
           .from('faculty_subjects')
           .select('class_id, section')
           .eq('institution_id', institutionId)
@@ -136,7 +136,7 @@ export function useInstitutionFaculty(institutionId: string | null) {
 
         if (existingAssignment && (existingAssignment.class_id !== classId || existingAssignment.section !== section)) {
           // Unassign from previous class in both tables
-          await supabase
+          await (supabase as any)
             .from('faculty_subjects')
             .delete()
             .match({
@@ -145,7 +145,7 @@ export function useInstitutionFaculty(institutionId: string | null) {
               assignment_type: 'class_teacher'
             });
 
-          await supabase
+          await (supabase as any)
             .from('classes')
             .update({ class_teacher_id: null })
             .eq('id', existingAssignment.class_id);
@@ -155,7 +155,7 @@ export function useInstitutionFaculty(institutionId: string | null) {
       }
 
       // 2. Remove existing class teacher for the TARGET class/section
-      await supabase
+      await (supabase as any)
         .from('faculty_subjects')
         .delete()
         .match({
@@ -167,7 +167,7 @@ export function useInstitutionFaculty(institutionId: string | null) {
 
       // 3. Perform new assignment
       if (teacherId) {
-        await supabase.from('faculty_subjects').insert({
+        await (supabase as any).from('faculty_subjects').insert({
           institution_id: institutionId,
           class_id: classId,
           section: section,
@@ -178,7 +178,7 @@ export function useInstitutionFaculty(institutionId: string | null) {
       }
       
       // 4. Sync classes table for the target class
-      await supabase
+      await (supabase as any)
         .from('classes')
         .update({ class_teacher_id: teacherId || null })
         .eq('id', classId);

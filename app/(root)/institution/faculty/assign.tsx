@@ -62,15 +62,15 @@ export default function FacultyAssigningScreen() {
   };
 
   const renderClassCard = (cls: any) => {
-    const classTeacherAssignment = assignments.find(a => 
+    const classTeacherAssignment = (assignments as any[]).find((a: any) => 
       a.class_id === cls.id && a.section === cls.section && a.assignment_type === 'class_teacher'
     );
-    const classTeacher = staff.find(s => s.id === classTeacherAssignment?.faculty_profile_id);
+    const classTeacher = (staff as any[]).find((s: any) => s.id === classTeacherAssignment?.faculty_profile_id);
 
-    const subjectAssignments = assignments.filter(a => 
+    const subjectAssignments = (assignments as any[]).filter((a: any) => 
       a.class_id === cls.id && a.section === cls.section && a.assignment_type === 'subject_staff'
     );
-    const assignedSubjectCount = new Set(subjectAssignments.map(a => a.subject_id)).size;
+    const assignedSubjectCount = new Set(subjectAssignments.map((a: any) => a.subject_id)).size;
 
     return (
       <TouchableOpacity 
@@ -90,7 +90,7 @@ export default function FacultyAssigningScreen() {
           <GraduationCap size={14} color={theme.colors.primary} {...({} as any)} />
           <Text style={styles.teacherLabel}>Class Teacher:</Text>
           <Text style={[styles.teacherName, !classTeacher && styles.unassigned]}>
-            {classTeacher ? classTeacher.full_name : 'Unassigned'}
+            {classTeacher ? (classTeacher as any).full_name : 'Unassigned'}
           </Text>
         </View>
 
@@ -409,7 +409,7 @@ function AssignmentModal({ isOpen, onClose, cls, staff, subjects, assignments, c
                               <TouchableOpacity 
                                 style={styles.unassignMiniBtn}
                                 onPress={() => {
-                                  const newIds = assignedIds.filter(id => id !== a.faculty_profile_id);
+                                  const newIds = assignedIds.filter((id: any) => id !== a.faculty_profile_id);
                                   handleUpdateSubject(sub.id, newIds);
                                 }}
                               >

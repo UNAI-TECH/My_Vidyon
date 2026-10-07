@@ -67,7 +67,7 @@ export function useNotifications() {
   const { data: notifications = [], isLoading: loading } = useQuery({
     queryKey: ['aggregated-notifications', user?.id, effectiveReadAt, Array.from(readEventIds).length],
     queryFn: async () => {
-      if (!institutionUuid || !user?.id) return [];
+      if (!user?.id) return [];
 
       // 1. Fetch Personal Notifications
       const { data: userNotifs, error: notifError } = await supabase
@@ -84,28 +84,32 @@ export function useNotifications() {
         throw notifError;
       }
 
-      // 2. Fetch Academic Events (Broadcast) - Filtered by Institution
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      // 2. Fetch Academic Events (Broadcast) - Filtered by Institution (excluding sponsored ads)
+      let validEvents: any[] = [];
+      if (institutionUuid) {
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-      const { data: events, error: eventError } = await supabase
-        .from('academic_events')
-        .select('*')
-        .eq('institution_id', institutionUuid)
-        .gte('created_at', thirtyDaysAgo.toISOString())
-        .order('created_at', { ascending: false });
+        const { data: events, error: eventError } = await (supabase
+          .from('academic_events') as any)
+          .select('*')
+          .eq('institution_id', institutionUuid)
+          .neq('event_type', 'sponsored')
+          .gte('created_at', thirtyDaysAgo.toISOString())
+          .order('created_at', { ascending: false });
 
-      if (eventError) {
-        console.error('Error fetching academic events:', eventError);
-        // If events table missing, skip
-        if (eventError.code === '42P01') return (userNotifs || []).map(n => transformNotification(n));
+        if (!eventError && events) {
+          validEvents = (events as any[]).filter(
+            (e: any) => e.event_type !== 'sponsored' && !e.is_admin_added
+          );
+        }
       }
 
       // Transform Personal Notifications
       const formattedUserNotifs: NotificationItem[] = (userNotifs as any[] || []).map(n => transformNotification(n));
 
       // Transform Academic Events
-      const formattedEvents: NotificationItem[] = (events as any[] || []).map(e => ({
+      const formattedEvents: NotificationItem[] = validEvents.map((e: any) => ({
         id: `event-${e.id}`, 
         title: `Event: ${e.title}`,
         message: e.description || e.title,
@@ -118,17 +122,57 @@ export function useNotifications() {
         actionUrl: `/events`
       }));
 
+      // 3. Fetch Out-of-Credits Ads (Notify Ad Managers & Admins)
+      let adExhaustedNotifs: NotificationItem[] = [];
+      try {
+        const userRoleLower = (role || '').toLowerCase();
+        if (userRoleLower.includes('ad') || userRoleLower.includes('admin') || userRoleLower.includes('stakeholder') || userRoleLower === 'superadmin' || userRoleLower === 'super_admin') {
+          let adQuery = (supabase.from('academic_events') as any)
+            .select('id, title, paid_amount, remaining_balance, amount_debited, updated_at, created_at')
+            .eq('is_admin_added', true);
+
+          if (institutionUuid) {
+            adQuery = adQuery.or(`institution_id.eq.${institutionUuid},institution_id.is.null`);
+          }
+
+          const { data: allAds } = await adQuery;
+          const depletedAds = (allAds as any[] || []).filter(a => 
+            Number(a.paid_amount) > 0 && 
+            (Number(a.remaining_balance) <= 0 || Number(a.amount_debited) >= Number(a.paid_amount))
+          );
+
+          adExhaustedNotifs = depletedAds.map(a => {
+            const notifKey = `ad-exhausted-${a.id}`;
+            const eventTime = a.updated_at || a.created_at || new Date().toISOString();
+            return {
+              id: notifKey,
+              title: `⚠️ Ad Ran Out of Credits: ${a.title}`,
+              message: `This ad ran out of credits. Its budget of ₹${Number(a.paid_amount).toLocaleString('en-IN')} is exhausted and impressions are paused. Top up budget in Ad Management to resume.`,
+              type: 'warning' as const,
+              date: formatDistanceToNow(new Date(eventTime), { addSuffix: true }),
+              rawDate: eventTime,
+              read: readEventIds.has(notifKey) || (effectiveReadAt ? new Date(eventTime).getTime() <= new Date(effectiveReadAt).getTime() : false),
+              priority: 'high' as const,
+              source: 'system' as const,
+              actionUrl: '/(root)/admin/ads'
+            };
+          });
+        }
+      } catch (err) {
+        console.warn('Error fetching out-of-credit ad notifications:', err);
+      }
+
       // Merge and Sort
-      return [...formattedUserNotifs, ...formattedEvents].sort((a, b) =>
+      return [...formattedUserNotifs, ...formattedEvents, ...adExhaustedNotifs].sort((a, b) =>
         new Date(b.rawDate).getTime() - new Date(a.rawDate).getTime()
       );
     },
-    enabled: !!institutionUuid && !!user?.id
+    enabled: !!user?.id
   });
 
   const markAsRead = async (notificationId: string) => {
-    if (notificationId.startsWith('event-')) {
-      const eventId = notificationId.replace('event-', '');
+    if (notificationId.startsWith('event-') || notificationId.startsWith('ad-exhausted-')) {
+      const eventId = notificationId;
       const newReadIds = new Set(readEventIds).add(eventId);
       queryClient.setQueryData(['notifications-local-read-state', user?.id], (old: any) => ({
         ...(old || {}),

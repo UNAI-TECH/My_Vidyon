@@ -40,6 +40,32 @@ const mimeTypes = {
   '.map': 'application/json'
 };
 
+function checkLiveDevServer(urlStr) {
+  return new Promise((resolve) => {
+    try {
+      const parsed = new URL(urlStr);
+      const req = http.request(
+        {
+          hostname: parsed.hostname,
+          port: parsed.port || 80,
+          path: '/',
+          method: 'GET',
+          timeout: 1200,
+        },
+        () => resolve(true)
+      );
+      req.on('error', () => resolve(false));
+      req.on('timeout', () => {
+        req.destroy();
+        resolve(false);
+      });
+      req.end();
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
 function startServer(distDir) {
   return new Promise((resolve, reject) => {
     const server = http.createServer((req, res) => {
@@ -79,14 +105,34 @@ function startServer(distDir) {
 let mainWindow;
 
 app.whenReady().then(async () => {
-  const distDir = path.join(__dirname, 'dist');
-  const { port } = await startServer(distDir);
+  const explicitArg = process.argv.find(arg => arg.startsWith('--url='));
+  const explicitUrl = explicitArg ? explicitArg.split('=')[1] : (process.env.DEV_SERVER_URL || process.env.ELECTRON_START_URL);
+
+  let targetUrl = null;
+  let isDevMode = false;
+
+  if (explicitUrl) {
+    targetUrl = explicitUrl;
+    isDevMode = true;
+  } else {
+    const is8081Alive = await checkLiveDevServer('http://127.0.0.1:8081');
+    if (is8081Alive) {
+      targetUrl = 'http://localhost:8081';
+      isDevMode = true;
+    }
+  }
+
+  if (!targetUrl) {
+    const distDir = path.join(__dirname, 'dist');
+    const { port } = await startServer(distDir);
+    targetUrl = \`http://127.0.0.1:\${port}\`;
+  }
 
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 850,
-    title: 'MY VIDYON',
-    autoHideMenuBar: true,
+    title: isDevMode ? 'MY VIDYON (Live Dev - Localhost)' : 'MY VIDYON',
+    autoHideMenuBar: !isDevMode,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true
@@ -94,14 +140,27 @@ app.whenReady().then(async () => {
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (!url.startsWith(\`http://127.0.0.1:\${port}\`)) {
-      shell.openExternal(url);
-      return { action: 'deny' };
+    if (url.startsWith(targetUrl) || url.startsWith('http://localhost:8081') || url.startsWith('http://127.0.0.1')) {
+      return { action: 'allow' };
     }
-    return { action: 'allow' };
+    shell.openExternal(url);
+    return { action: 'deny' };
   });
 
-  mainWindow.loadURL(\`http://127.0.0.1:\${port}\`);
+  if (isDevMode) {
+    mainWindow.webContents.on('before-input-event', (event, input) => {
+      if (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i')) {
+        mainWindow.webContents.toggleDevTools();
+        event.preventDefault();
+      }
+      if (input.key === 'F5' || (input.control && input.key.toLowerCase() === 'r')) {
+        mainWindow.webContents.reload();
+        event.preventDefault();
+      }
+    });
+  }
+
+  mainWindow.loadURL(targetUrl);
 });
 
 app.on('window-all-closed', () => {
