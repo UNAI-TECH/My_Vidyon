@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Modal, Image } from 'react-native';
 import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
@@ -14,6 +14,25 @@ import * as XLSX from 'xlsx';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { saveBase64FileToDevice } from '../../../../src/utils/fileUtils';
+import { logAuditEvent } from '../../../../src/utils/auditLogger';
+import { LargeSecureStore } from '../../../../src/lib/storage';
+import { 
+  Building, 
+  Globe, 
+  DollarSign, 
+  TrendingUp, 
+  Filter, 
+  ShieldCheck, 
+  CheckCircle,
+  Sliders,
+  Maximize2,
+  RotateCcw,
+  FileText,
+  Layers,
+  Image as ImageIcon,
+  AlertTriangle,
+  X
+} from 'lucide-react-native';
 
 const TARGET_AUDIENCES = [
   { id: 'all', label: 'All Dashboards (Generic)' },
@@ -29,13 +48,27 @@ const PRICING_TYPES = [
   { id: 'view', label: 'View Ad (PPV)' },
 ];
 
+// Constant Standard Limits Enforced for Every Ad
+export const CONSTANT_TITLE_LIMIT = 60;
+export const CONSTANT_DESC_LIMIT = 180;
+export const CONSTANT_ASPECT_RATIO = '16:9';
+export const CONSTANT_TARGET_RATIO = 16 / 9; // ~1.7778
+export const CONSTANT_MAX_BANNER_SIZE_MB = 5;
+
 export default function AdminAdManagement() {
-  const { user } = useAuth();
+  const { user, role, institutionId, institutionUuid, institutionName } = useAuth();
   const queryClient = useQueryClient();
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [exportingAdId, setExportingAdId] = useState<string | null>(null);
-  
+
+  const isUUID = (str: string | null | undefined): boolean => 
+    !!str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
+  // Check if current user is an institution-scoped ad manager
+  const isScoped = !!institutionId && institutionId !== 'global' && role !== 'superadmin';
+  const [filterInstitutionId, setFilterInstitutionId] = useState<string | null>(null);
+
   // Form State
   const [form, setForm] = useState({
     title: '',
@@ -53,27 +86,61 @@ export default function AdminAdManagement() {
   // Alert State
   const [alert, setAlert] = useState({ visible: false, title: '', message: '', type: 'info' as 'info' | 'success' | 'error' | 'warning' });
 
-  // Fetch All Institutions for targeting
+  // Strict live banner & text validation states
+  const [bannerError, setBannerError] = useState<string | null>(null);
+  const [bannerDimensions, setBannerDimensions] = useState<{ width: number; height: number; ratio: number } | null>(null);
+
+  const isTitleExceeded = form.title.length > CONSTANT_TITLE_LIMIT;
+  const isDescExceeded = form.description.length > CONSTANT_DESC_LIMIT;
+  const isBannerInvalid = !!bannerError;
+  const hasValidationErrors = isTitleExceeded || isDescExceeded || isBannerInvalid;
+
+  // Fetch All Institutions for targeting & revenue distribution
   const { data: institutions = [] } = useQuery({
     queryKey: ['all-institutions'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('institutions')
-        .select('id, name');
+        .select('id, institution_id, name, city');
       if (error) throw error;
       return (data as any[]) || [];
     }
   });
 
-  // Fetch Global/Targeted Ads
+  // Compute current scoped institution UUID (academic_events requires a valid UUID or null)
+  const currentScopedUuid = useMemo(() => {
+    if (!isScoped) return null;
+    if (institutionUuid && isUUID(institutionUuid)) return institutionUuid;
+    if (institutionId && isUUID(institutionId)) return institutionId;
+    const matched = institutions.find((i: any) => i.institution_id === institutionId || i.id === institutionId);
+    return matched?.id || null;
+  }, [isScoped, institutionUuid, institutionId, institutions]);
+
+  // Fetch Global or Scoped Ads based on user role and assignment
   const { data: ads = [], isLoading } = useQuery({
-    queryKey: ['admin-global-ads'],
+    queryKey: ['admin-global-ads', isScoped, institutionId, currentScopedUuid],
     queryFn: async () => {
-      const { data, error } = await (supabase
+      let q = (supabase
         .from('academic_events') as any)
-        .select('*, institutions:institution_id(name)')
-        .eq('is_admin_added', true)
-        .order('created_at', { ascending: false });
+        .select('*, institutions:institution_id(id, institution_id, name)')
+        .eq('is_admin_added', true);
+
+      if (isScoped) {
+        let targetUuid = currentScopedUuid;
+        if (!targetUuid && institutionId) {
+          if (isUUID(institutionId)) {
+            targetUuid = institutionId;
+          } else {
+            const { data } = await (supabase.from('institutions') as any).select('id').eq('institution_id', institutionId).maybeSingle();
+            targetUuid = (data as any)?.id || null;
+          }
+        }
+        if (targetUuid) {
+          q = q.eq('institution_id', targetUuid);
+        }
+      }
+
+      const { data, error } = await q.order('created_at', { ascending: false });
       
       if (error) throw error;
       return (data as any[]) || [];
@@ -87,14 +154,35 @@ export default function AdminAdManagement() {
       const costClick = parseFloat(newAd.cost_per_click) || 2.50;
       const costView = parseFloat(newAd.cost_per_view) || 0.20;
 
-      const { error } = await (supabase
+      // Resolve UUID for academic_events.institution_id (UUID foreign key or null)
+      let finalInstitutionUuid: string | null = null;
+      if (isScoped) {
+        finalInstitutionUuid = currentScopedUuid;
+        if (!finalInstitutionUuid && institutionId) {
+          if (isUUID(institutionId)) {
+            finalInstitutionUuid = institutionId;
+          } else {
+            const { data } = await (supabase.from('institutions') as any).select('id').eq('institution_id', institutionId).maybeSingle();
+            finalInstitutionUuid = (data as any)?.id || null;
+          }
+        }
+      } else if (newAd.institution_id && newAd.institution_id !== 'global') {
+        if (isUUID(newAd.institution_id)) {
+          finalInstitutionUuid = newAd.institution_id;
+        } else {
+          const matched = institutions.find((i: any) => i.institution_id === newAd.institution_id || i.id === newAd.institution_id);
+          finalInstitutionUuid = matched?.id || null;
+        }
+      }
+
+      const { data: inserted, error } = await (supabase
         .from('academic_events') as any)
         .insert([{
           title: newAd.title,
           description: newAd.description,
           hyperlink: newAd.hyperlink,
           banner_url: newAd.banner_url,
-          institution_id: newAd.institution_id,
+          institution_id: finalInstitutionUuid,
           target_audience: newAd.target_audience || 'all',
           ad_pricing_type: newAd.ad_pricing_type || 'both',
           is_admin_added: true,
@@ -109,12 +197,31 @@ export default function AdminAdManagement() {
           views_count: 0,
           visits_count: 0,
           start_date: new Date().toISOString(),
-          end_date: new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000).toISOString(), // Indefinite: 100 years out to satisfy NOT NULL constraints until budget is depleted
+          end_date: new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000).toISOString(),
           event_date: format(new Date(), 'yyyy-MM-dd')
-        }]);
+        }])
+        .select()
+        .single();
+
       if (error) throw error;
+      return { inserted, newAd, assignedInstId: finalInstitutionUuid, paid };
     },
-    onSuccess: () => {
+    onSuccess: async (data: any) => {
+      await logAuditEvent({
+        action: 'CREATE_AD',
+        entityType: 'ad',
+        entityId: data?.inserted?.id || data?.newAd?.title,
+        institutionId: data?.assignedInstId || 'global',
+        actorId: user?.id,
+        actorEmail: user?.email,
+        details: {
+          title: data?.newAd?.title,
+          paid_amount: data?.paid,
+          is_scoped: isScoped,
+          institution_id: data?.assignedInstId,
+        }
+      });
+
       queryClient.invalidateQueries({ queryKey: ['admin-global-ads'] });
       queryClient.invalidateQueries({ queryKey: ['superadmin-revenue'] });
       setIsModalVisible(false);
@@ -136,8 +243,19 @@ export default function AdminAdManagement() {
         .delete()
         .eq('id', id);
       if (error) throw error;
+      return id;
     },
-    onSuccess: () => {
+    onSuccess: async (deletedId: string) => {
+      await logAuditEvent({
+        action: 'DELETE_AD',
+        entityType: 'ad',
+        entityId: deletedId,
+        institutionId: isScoped && (currentScopedUuid || institutionId) ? (currentScopedUuid || institutionId)! : 'global',
+        actorId: user?.id,
+        actorEmail: user?.email,
+        details: { ad_id: deletedId }
+      });
+
       queryClient.invalidateQueries({ queryKey: ['admin-global-ads'] });
       queryClient.invalidateQueries({ queryKey: ['superadmin-revenue'] });
       showAlert('Removed', 'Sponsored content has been withdrawn.', 'success');
@@ -161,6 +279,8 @@ export default function AdminAdManagement() {
       cost_per_click: '2.50',
       cost_per_view: '0.20',
     });
+    setBannerError(null);
+    setBannerDimensions(null);
   };
 
   const showAlert = (title: string, message: string, type: 'info' | 'success' | 'error' | 'warning') => {
@@ -168,6 +288,7 @@ export default function AdminAdManagement() {
   };
 
   const pickImage = async () => {
+    setBannerError(null);
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       showAlert('Permission Denied', 'Gallery access is required to upload banners.', 'warning');
@@ -178,11 +299,59 @@ export default function AdminAdManagement() {
       mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [16, 9],
-      quality: 0.8,
+      quality: 0.85,
     });
 
     if (!result.canceled && result.assets && result.assets.length > 0) {
-      handleUpload(result.assets[0]);
+      const asset = result.assets[0];
+      
+      // 1. File size validation (Strict constant limit 5MB)
+      if (asset.fileSize && asset.fileSize > CONSTANT_MAX_BANNER_SIZE_MB * 1024 * 1024) {
+        const sizeMb = (asset.fileSize / (1024 * 1024)).toFixed(1);
+        const err = `Selected banner (${sizeMb} MB) exceeds maximum allowed size of ${CONSTANT_MAX_BANNER_SIZE_MB} MB. Please compress or choose a smaller image.`;
+        setBannerError(err);
+        showAlert('Banner Too Large', err, 'error');
+        return;
+      }
+
+      // 2. Strict Aspect Ratio Validation (Strict 16:9 check)
+      let imgWidth = asset.width || 0;
+      let imgHeight = asset.height || 0;
+
+      if (!imgWidth || !imgHeight) {
+        try {
+          const dims = await new Promise<{ width: number; height: number }>((resolve) => {
+            if (typeof window !== 'undefined' && (window as any).Image) {
+              const img = new (window as any).Image();
+              img.onload = () => resolve({ width: img.naturalWidth || img.width, height: img.naturalHeight || img.height });
+              img.onerror = () => resolve({ width: 0, height: 0 });
+              img.src = asset.uri;
+            } else {
+              Image.getSize(asset.uri, (w, h) => resolve({ width: w, height: h }), () => resolve({ width: 0, height: 0 }));
+            }
+          });
+          imgWidth = dims.width;
+          imgHeight = dims.height;
+        } catch {
+          // ignore
+        }
+      }
+
+      if (imgWidth > 0 && imgHeight > 0) {
+        const actualRatio = imgWidth / imgHeight;
+        setBannerDimensions({ width: imgWidth, height: imgHeight, ratio: actualRatio });
+
+        // Tolerance check: must be strictly 16:9 (1.7778) within 0.08
+        if (Math.abs(actualRatio - CONSTANT_TARGET_RATIO) > 0.08) {
+          const err = `Invalid Aspect Ratio! Uploaded image is ${actualRatio.toFixed(2)}:1 (${imgWidth}x${imgHeight}px), but strictly 16:9 (1.78:1) landscape format is required. Please upload a 16:9 image.`;
+          setBannerError(err);
+          showAlert('Invalid Aspect Ratio', err, 'error');
+          return;
+        }
+      }
+
+      setBannerError(null);
+      handleUpload(asset);
     }
   };
 
@@ -204,7 +373,7 @@ export default function AdminAdManagement() {
       });
 
       setForm({ ...form, banner_url: publicUrl });
-      showAlert('Uploaded', 'Ad banner ready!', 'success');
+      showAlert('Uploaded', '16:9 Ad banner uploaded & verified successfully!', 'success');
     } catch (err: any) {
       console.error('[Admin Ads Upload Failed]:', err);
       showAlert('Upload Failed', 'Failed to upload banner image. Please try again.', 'error');
@@ -214,10 +383,38 @@ export default function AdminAdManagement() {
   };
 
   const handleCreate = () => {
-    if (!form.title.trim() || !form.hyperlink.trim()) {
+    const trimmedTitle = form.title.trim();
+    const trimmedHyperlink = form.hyperlink.trim();
+    const trimmedDesc = form.description.trim();
+
+    if (!trimmedTitle || !trimmedHyperlink) {
       showAlert('Validation Error', 'Title and Hyperlink are required for sponsored content.', 'warning');
       return;
     }
+
+    if (form.title.length > CONSTANT_TITLE_LIMIT) {
+      showAlert(
+        'Title Limit Exceeded', 
+        `Title is ${form.title.length} characters, which exceeds the constant limit of ${CONSTANT_TITLE_LIMIT} characters. Please shorten it.`, 
+        'error'
+      );
+      return;
+    }
+
+    if (form.description.length > CONSTANT_DESC_LIMIT) {
+      showAlert(
+        'Description Limit Exceeded', 
+        `Description is ${form.description.length} characters, which exceeds the constant limit of ${CONSTANT_DESC_LIMIT} characters. Please shorten it.`, 
+        'error'
+      );
+      return;
+    }
+
+    if (bannerError) {
+      showAlert('Invalid Banner', bannerError, 'error');
+      return;
+    }
+
     createMutation.mutate(form);
   };
 
@@ -282,6 +479,20 @@ export default function AdminAdManagement() {
         fileName,
         dialogTitle: `Download Leads for "${ad.title}"`
       });
+
+      await logAuditEvent({
+        action: 'EXPORT_AD_LEADS',
+        entityType: 'leads',
+        entityId: ad.id,
+        institutionId: ad.institution_id || (isScoped ? institutionId : 'global'),
+        actorId: user?.id,
+        actorEmail: user?.email,
+        details: {
+          ad_id: ad.id,
+          ad_title: ad.title,
+          exported_count: nonAdminLeads.length
+        }
+      });
     } catch (err: any) {
       console.error('[Download Ad Leads Error]:', err);
       showAlert('Export Failed', err.message || 'Failed to download Excel sheet.', 'error');
@@ -290,29 +501,94 @@ export default function AdminAdManagement() {
     }
   };
 
-  const totalSponsorBudget = ads.reduce((acc: number, a: any) => acc + (Number(a.paid_amount) || 0), 0);
-  const totalRevenueEarned = ads.reduce((acc: number, a: any) => acc + (Number(a.amount_debited) || 0), 0);
-  const totalRemainingBudget = ads.reduce((acc: number, a: any) => acc + (Number(a.remaining_balance ?? (a.paid_amount || 0)) || 0), 0);
-  const totalClicks = ads.reduce((acc: number, a: any) => acc + (Number(a.clicks_count || a.visits_count) || 0), 0);
-  const totalViews = ads.reduce((acc: number, a: any) => acc + (Number(a.views_count) || 0), 0);
+  // Filtered ads for global view or scoped view
+  const displayedAds = useMemo(() => {
+    if (isScoped) return ads;
+    if (!filterInstitutionId) return ads;
+    if (filterInstitutionId === 'global') return ads.filter((a: any) => !a.institution_id);
+    return ads.filter((a: any) => a.institution_id === filterInstitutionId);
+  }, [ads, isScoped, filterInstitutionId]);
+
+  // Out-of-credit ads that ran out of money (exhausted budget)
+  const outOfCreditAds = useMemo(() => {
+    return displayedAds.filter((a: any) => 
+      Number(a.paid_amount) > 0 && 
+      (Number(a.remaining_balance) <= 0 || Number(a.amount_debited) >= Number(a.paid_amount))
+    );
+  }, [displayedAds]);
+
+  const totalSponsorBudget = displayedAds.reduce((acc: number, a: any) => acc + (Number(a.paid_amount) || 0), 0);
+  const totalRevenueEarned = displayedAds.reduce((acc: number, a: any) => acc + (Number(a.amount_debited) || 0), 0);
+  const totalRemainingBudget = displayedAds.reduce((acc: number, a: any) => acc + (Number(a.remaining_balance ?? (a.paid_amount || 0)) || 0), 0);
+  const totalClicks = displayedAds.reduce((acc: number, a: any) => acc + (Number(a.clicks_count || a.visits_count) || 0), 0);
+  const totalViews = displayedAds.reduce((acc: number, a: any) => acc + (Number(a.views_count) || 0), 0);
+
+  // Revenue Sharing (30% platform margin, 70% institutional revenue share)
+  const platformRevenueShare = Math.round(totalRevenueEarned * 0.3);
+  const institutionsRevenueShare = Math.round(totalRevenueEarned * 0.7);
+
+  // Institution-wise breakdown for Global Ad Manager
+  const institutionBreakdown = useMemo(() => {
+    if (isScoped) return [];
+    return institutions.map((inst: any) => {
+      const instAds = ads.filter((a: any) => a.institution_id === inst.id || a.institution_id === inst.institution_id);
+      const instEarned = instAds.reduce((acc: number, a: any) => acc + (Number(a.amount_debited) || 0), 0);
+      const instViews = instAds.reduce((acc: number, a: any) => acc + (Number(a.views_count) || 0), 0);
+      const instClicks = instAds.reduce((acc: number, a: any) => acc + (Number(a.clicks_count || a.visits_count) || 0), 0);
+      const instShare = Math.round(instEarned * 0.7);
+      return {
+        id: inst.id,
+        institution_id: inst.institution_id,
+        name: inst.name,
+        city: inst.city,
+        adsCount: instAds.length,
+        earned: instEarned,
+        views: instViews,
+        clicks: instClicks,
+        share: instShare,
+      };
+    }).filter(item => item.adsCount > 0 || item.earned > 0);
+  }, [ads, institutions, isScoped]);
 
   return (
     <View style={styles.container}>
-      <PageHeader title="Ad Management" subtitle="Control global sponsored carousel content" />
+      <PageHeader
+        title={isScoped ? "Campus Ad Management" : "Ad Management"}
+        subtitle={isScoped ? `Managing sponsored campaigns for ${institutionName || institutionId}` : "Control global & campus sponsored carousel content and revenues"}
+      />
       
       <ScrollView contentContainerStyle={styles.scrollContent}>
+        {/* Scoped Campus Badge if scoped */}
+        {isScoped && (
+          <View style={styles.scopedCampusBanner}>
+            <Building size={20} color="#0284C7" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.scopedCampusTitle}>Scoped Campus Authority</Text>
+              <Text style={styles.scopedCampusDesc}>
+                You have permission to create, run, and track ads exclusively for <Text style={{ fontWeight: 'bold' }}>{institutionName || institutionId}</Text>. Financial earnings below represent this campus's revenue.
+              </Text>
+            </View>
+          </View>
+        )}
+
         {/* Sponsor Financial Revenue Card */}
         <View style={styles.revenueCard}>
           <View style={styles.revHeader}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.revTitle}>Sponsor Ad Revenue</Text>
-              <Text style={styles.revSubtitle}>No due dates • Debited by views & clicks until depleted</Text>
+              <Text style={styles.revTitle}>
+                {isScoped ? "Campus Ad Financial Performance" : "Sponsor Ad Revenue & Financial Reports"}
+              </Text>
+              <Text style={styles.revSubtitle}>
+                {isScoped
+                  ? "Calculated from impressions & clicks on your institution's dashboards"
+                  : "Platform-wide debited ad revenue • 70% Institutional Revenue Share"}
+              </Text>
             </View>
           </View>
 
           <View style={styles.revGrid}>
             <View style={styles.revItem}>
-              <Text style={styles.revItemLabel}>Total Paid</Text>
+              <Text style={styles.revItemLabel}>Total Ad Budget</Text>
               <Text style={styles.revItemValue}>₹{totalSponsorBudget.toLocaleString()}</Text>
             </View>
             <View style={styles.revItem}>
@@ -320,7 +596,7 @@ export default function AdminAdManagement() {
               <Text style={[styles.revItemValue, { color: '#10B981' }]}>₹{totalRevenueEarned.toLocaleString()}</Text>
             </View>
             <View style={styles.revItem}>
-              <Text style={styles.revItemLabel}>Remaining</Text>
+              <Text style={styles.revItemLabel}>Remaining Balance</Text>
               <Text style={[styles.revItemValue, { color: '#F59E0B' }]}>₹{totalRemainingBudget.toLocaleString()}</Text>
             </View>
             <View style={styles.revItem}>
@@ -328,11 +604,152 @@ export default function AdminAdManagement() {
               <Text style={styles.revItemValue}>{totalViews} / {totalClicks}</Text>
             </View>
           </View>
+
+          {/* Revenue Share Split (Visible in Global mode or Campus payout) */}
+          <View style={styles.revSplitRow}>
+            <View style={styles.revSplitBox}>
+              <Text style={styles.revSplitLabel}>
+                {isScoped ? "Campus Revenue Share (70%)" : "Total Institutions' Share (70%)"}
+              </Text>
+              <Text style={styles.revSplitValueHighlight}>
+                ₹{institutionsRevenueShare.toLocaleString()}
+              </Text>
+              <Text style={styles.revSplitSub}>Direct campus ad dividend</Text>
+            </View>
+
+            {!isScoped && (
+              <View style={styles.revSplitBox}>
+                <Text style={styles.revSplitLabel}>Platform Share (30%)</Text>
+                <Text style={[styles.revSplitValueHighlight, { color: theme.colors.primary }]}>
+                  ₹{platformRevenueShare.toLocaleString()}
+                </Text>
+                <Text style={styles.revSplitSub}>Infrastructure & ad-serving</Text>
+              </View>
+            )}
+          </View>
         </View>
 
+        {/* Institution-Wise Revenue Breakdown Table (Global Mode Only) */}
+        {!isScoped && institutionBreakdown.length > 0 && (
+          <View style={styles.institutionBreakdownCard}>
+            <View style={styles.breakdownHeader}>
+              <Building size={16} color={theme.colors.primary} />
+              <Text style={styles.breakdownTitle}>Institution Revenue Breakdown</Text>
+            </View>
+            <Text style={styles.breakdownSubtitle}>
+              Revenue generated and dividend share distributed per institution:
+            </Text>
+
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10 }}>
+              <View>
+                <View style={styles.tableHeaderRow}>
+                  <Text style={[styles.tableCol, { width: 180, fontWeight: '700' }]}>Institution</Text>
+                  <Text style={[styles.tableCol, { width: 80, textAlign: 'center', fontWeight: '700' }]}>Ads</Text>
+                  <Text style={[styles.tableCol, { width: 90, textAlign: 'center', fontWeight: '700' }]}>Views</Text>
+                  <Text style={[styles.tableCol, { width: 80, textAlign: 'center', fontWeight: '700' }]}>Clicks</Text>
+                  <Text style={[styles.tableCol, { width: 110, textAlign: 'right', fontWeight: '700' }]}>Gross Debited</Text>
+                  <Text style={[styles.tableCol, { width: 120, textAlign: 'right', fontWeight: '700', color: '#059669' }]}>Campus Share (70%)</Text>
+                </View>
+
+                {institutionBreakdown.map((row: any) => (
+                  <View key={row.id} style={styles.tableDataRow}>
+                    <View style={{ width: 180 }}>
+                      <Text style={styles.instNameText} numberOfLines={1}>{row.name}</Text>
+                      <Text style={styles.instCodeText}>{row.city || 'India'} • {row.institution_id}</Text>
+                    </View>
+                    <Text style={[styles.tableCol, { width: 80, textAlign: 'center' }]}>{row.adsCount}</Text>
+                    <Text style={[styles.tableCol, { width: 90, textAlign: 'center' }]}>{row.views.toLocaleString()}</Text>
+                    <Text style={[styles.tableCol, { width: 80, textAlign: 'center' }]}>{row.clicks.toLocaleString()}</Text>
+                    <Text style={[styles.tableCol, { width: 110, textAlign: 'right', fontWeight: '600' }]}>₹{row.earned.toLocaleString()}</Text>
+                    <Text style={[styles.tableCol, { width: 120, textAlign: 'right', fontWeight: '700', color: '#059669' }]}>₹{row.share.toLocaleString()}</Text>
+                  </View>
+                ))}
+              </View>
+            </ScrollView>
+          </View>
+        )}
+
+        {/* Global Filter Chips Toolbar */}
+        {!isScoped && (
+          <View style={styles.filterBar}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+              <TouchableOpacity
+                style={[styles.filterChip, !filterInstitutionId && styles.filterChipActive]}
+                onPress={() => setFilterInstitutionId(null)}
+              >
+                <Text style={[styles.filterChipText, !filterInstitutionId && styles.filterChipTextActive]}>
+                  All Campaigns ({ads.length})
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.filterChip, filterInstitutionId === 'global' && styles.filterChipActive]}
+                onPress={() => setFilterInstitutionId('global')}
+              >
+                <Globe size={13} color={filterInstitutionId === 'global' ? '#FFF' : '#64748B'} />
+                <Text style={[styles.filterChipText, filterInstitutionId === 'global' && styles.filterChipTextActive]}>
+                  Global Generic ({ads.filter((a: any) => !a.institution_id).length})
+                </Text>
+              </TouchableOpacity>
+
+              {institutions.map((inst: any) => {
+                const count = ads.filter((a: any) => a.institution_id === inst.id || a.institution_id === inst.institution_id).length;
+                if (count === 0) return null;
+                const isSelected = filterInstitutionId === inst.id || filterInstitutionId === inst.institution_id;
+                return (
+                  <TouchableOpacity
+                    key={inst.id}
+                    style={[styles.filterChip, isSelected && styles.filterChipActive]}
+                    onPress={() => setFilterInstitutionId(inst.id)}
+                  >
+                    <Building size={13} color={isSelected ? '#FFF' : '#64748B'} />
+                    <Text style={[styles.filterChipText, isSelected && styles.filterChipTextActive]}>
+                      {inst.name} ({count})
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* Out-of-Credits Notification Banner for Ad Managers */}
+        {outOfCreditAds.length > 0 && (
+          <View style={styles.outOfCreditAlertBanner}>
+            <View style={styles.outOfCreditHeader}>
+              <View style={styles.outOfCreditIconCircle}>
+                <AlertTriangle size={18} color="#DC2626" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.outOfCreditTitle}>
+                  ⚠️ {outOfCreditAds.length} Ad Campaign{outOfCreditAds.length > 1 ? 's' : ''} Ran Out of Credits
+                </Text>
+                <Text style={styles.outOfCreditSubtitle}>
+                  This ad ran out of credits and is currently paused from displaying across user feeds. Top up the budget to resume impressions.
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.outOfCreditList}>
+              {outOfCreditAds.map((ad: any) => (
+                <View key={ad.id} style={styles.outOfCreditItem}>
+                  <Text style={styles.outOfCreditItemTitle} numberOfLines={1}>
+                    • {ad.title}
+                  </Text>
+                  <View style={styles.outOfCreditBadge}>
+                    <Text style={styles.outOfCreditBadgeText}>Ran out of credits</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Campaigns ({ads.length})</Text>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
+          <Text style={styles.sectionTitle}>
+            Campaigns ({displayedAds.length})
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
             <TouchableOpacity 
               style={styles.leadsBtn} 
               onPress={() => router.push('/(root)/admin/ads/leads')}
@@ -348,7 +765,7 @@ export default function AdminAdManagement() {
 
         {isLoading ? (
           <ActivityIndicator style={{ marginTop: 40 }} color={theme.colors.primary} />
-        ) : ads.length === 0 ? (
+        ) : displayedAds.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyText}>No active sponsored campaigns.</Text>
             <TouchableOpacity style={styles.emptyAction} onPress={() => setIsModalVisible(true)}>
@@ -356,7 +773,7 @@ export default function AdminAdManagement() {
             </TouchableOpacity>
           </View>
         ) : (
-          ads.map((ad) => {
+          displayedAds.map((ad: any) => {
             const isExhausted = Number(ad.paid_amount) > 0 && (Number(ad.remaining_balance) <= 0 || (Number(ad.amount_debited) >= Number(ad.paid_amount)));
             const audienceObj = TARGET_AUDIENCES.find(t => t.id === ad.target_audience) || TARGET_AUDIENCES[0];
             
@@ -379,8 +796,8 @@ export default function AdminAdManagement() {
 
                   <View style={styles.adMeta}>
                     {isExhausted ? (
-                      <View style={[styles.sponsoredBadge, { backgroundColor: '#FEF3C7' }]}>
-                        <Text style={[styles.sponsoredText, { color: '#D97706' }]}>BUDGET EXHAUSTED</Text>
+                      <View style={[styles.sponsoredBadge, { backgroundColor: '#FEE2E2', borderColor: '#FCA5A5', borderWidth: 1 }]}>
+                        <Text style={[styles.sponsoredText, { color: '#DC2626', fontWeight: 'bold' }]}>⚠️ OUT OF CREDITS</Text>
                       </View>
                     ) : (
                       <View style={[styles.sponsoredBadge, { backgroundColor: '#F0FDF4' }]}>
@@ -502,23 +919,63 @@ export default function AdminAdManagement() {
                 </Text>
               </View>
 
-              <Text style={styles.label}>CAMPAIGN TITLE</Text>
+              {/* Campaign Title */}
+              <View style={styles.fieldHeaderRow}>
+                <Text style={styles.label}>CAMPAIGN TITLE (MAX {CONSTANT_TITLE_LIMIT} CHARS)</Text>
+                <View style={[styles.limitCounterBadge, isTitleExceeded && styles.limitCounterBadgeError]}>
+                  <Text style={[
+                    styles.limitCounterText,
+                    form.title.length > CONSTANT_TITLE_LIMIT * 0.85 && { color: '#F59E0B' },
+                    isTitleExceeded && styles.limitCounterTextError
+                  ]}>
+                    {form.title.length} / {CONSTANT_TITLE_LIMIT}
+                  </Text>
+                </View>
+              </View>
               <TextInput
-                style={styles.input}
+                style={[styles.input, isTitleExceeded && styles.inputError]}
                 placeholder="e.g. 50% Off Vidyon Pro Coaching"
                 value={form.title}
                 onChangeText={(t) => setForm({ ...form, title: t })}
               />
+              {isTitleExceeded && (
+                <View style={styles.errorAlertBox}>
+                  <AlertTriangle size={14} color="#DC2626" />
+                  <Text style={styles.errorAlertText}>
+                    Exceeding character limit! Title is {form.title.length} characters (Limit: {CONSTANT_TITLE_LIMIT}). Please remove {form.title.length - CONSTANT_TITLE_LIMIT} characters.
+                  </Text>
+                </View>
+              )}
 
-              <Text style={styles.label}>NARRATIVE / DESCRIPTION</Text>
+              {/* Narrative / Description */}
+              <View style={styles.fieldHeaderRow}>
+                <Text style={styles.label}>NARRATIVE / DESCRIPTION (MAX {CONSTANT_DESC_LIMIT} CHARS)</Text>
+                <View style={[styles.limitCounterBadge, isDescExceeded && styles.limitCounterBadgeError]}>
+                  <Text style={[
+                    styles.limitCounterText,
+                    form.description.length > CONSTANT_DESC_LIMIT * 0.85 && { color: '#F59E0B' },
+                    isDescExceeded && styles.limitCounterTextError
+                  ]}>
+                    {form.description.length} / {CONSTANT_DESC_LIMIT}
+                  </Text>
+                </View>
+              </View>
               <TextInput
-                style={[styles.input, styles.textArea]}
+                style={[styles.input, styles.textArea, isDescExceeded && styles.inputError]}
                 placeholder="Write compelling ad copy..."
                 multiline
                 numberOfLines={3}
                 value={form.description}
                 onChangeText={(t) => setForm({ ...form, description: t })}
               />
+              {isDescExceeded && (
+                <View style={styles.errorAlertBox}>
+                  <AlertTriangle size={14} color="#DC2626" />
+                  <Text style={styles.errorAlertText}>
+                    Exceeding character limit! Description is {form.description.length} characters (Limit: {CONSTANT_DESC_LIMIT}). Please remove {form.description.length - CONSTANT_DESC_LIMIT} characters.
+                  </Text>
+                </View>
+              )}
 
               <Text style={styles.label}>TARGET DASHBOARD / AUDIENCE</Text>
               <View style={styles.institutionPickerContainer}>
@@ -556,44 +1013,105 @@ export default function AdminAdManagement() {
                 })}
               </View>
 
-              <Text style={styles.label}>TARGET INSTITUTION (OPTIONAL)</Text>
-              <View style={styles.institutionPickerContainer}>
-                <TouchableOpacity 
-                  style={[styles.pickerItem, !form.institution_id && styles.pickerItemActive]}
-                  onPress={() => setForm({ ...form, institution_id: null })}
-                >
-                  <Text style={[styles.pickerItemText, !form.institution_id && styles.pickerItemTextActive]}>Global (All Schools)</Text>
-                </TouchableOpacity>
-                
-                {institutions.map((inst) => (
+              <Text style={styles.label}>
+                {isScoped ? "TARGET CAMPUS (LOCKED)" : "TARGET INSTITUTION (OPTIONAL)"}
+              </Text>
+              {isScoped ? (
+                <View style={styles.scopedLockedBanner}>
+                  <Building size={16} color="#0284C7" />
+                  <Text style={styles.scopedLockedText}>
+                    Locked to {institutionName || institutionId} (Campus-restricted access)
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.institutionPickerContainer}>
                   <TouchableOpacity 
-                    key={inst.id}
-                    style={[styles.pickerItem, form.institution_id === inst.id && styles.pickerItemActive]}
-                    onPress={() => setForm({ ...form, institution_id: inst.id })}
+                    style={[styles.pickerItem, !form.institution_id && styles.pickerItemActive]}
+                    onPress={() => setForm({ ...form, institution_id: null })}
                   >
-                    <Text style={[styles.pickerItemText, form.institution_id === inst.id && styles.pickerItemTextActive]}>
-                      {inst.name}
-                    </Text>
+                    <Text style={[styles.pickerItemText, !form.institution_id && styles.pickerItemTextActive]}>Global (All Schools)</Text>
                   </TouchableOpacity>
-                ))}
-              </View>
+                  
+                  {institutions.map((inst) => (
+                    <TouchableOpacity 
+                      key={inst.id}
+                      style={[styles.pickerItem, form.institution_id === inst.id && styles.pickerItemActive]}
+                      onPress={() => setForm({ ...form, institution_id: inst.id })}
+                    >
+                      <Text style={[styles.pickerItemText, form.institution_id === inst.id && styles.pickerItemTextActive]}>
+                        {inst.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
 
-              <Text style={styles.label}>CAMPAIGN BANNER (OPTIONAL)</Text>
-              <TouchableOpacity 
-                style={styles.imagePickerBtn} 
-                onPress={pickImage}
-                disabled={isUploading}
-              >
-                {isUploading ? (
-                  <ActivityIndicator color={theme.colors.primary} />
-                ) : form.banner_url ? (
-                  <View style={styles.bannerPreviewContainer}>
-                    <Text style={styles.bannerOkText}>Banner Uploaded (Tap to Change)</Text>
+              <View style={styles.fieldHeaderRow}>
+                <Text style={styles.label}>CAMPAIGN BANNER (REQUIRED 16:9 RATIO)</Text>
+                <View style={[styles.ratioEnforcedTag, bannerError && { backgroundColor: '#FEE2E2', borderColor: '#FCA5A5' }]}>
+                  <Text style={[styles.ratioEnforcedText, bannerError && { color: '#DC2626' }]}>
+                    Constant: 16:9 • Max: 5MB
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.bannerRuleHint}>
+                Standard 16:9 landscape ratio required (e.g. 1920×1080 or 1280×720, max 5MB). Other aspect ratios or oversize images are rejected.
+              </Text>
+
+              {bannerError && (
+                <View style={[styles.errorAlertBox, { marginBottom: 10 }]}>
+                  <AlertTriangle size={15} color="#DC2626" />
+                  <Text style={styles.errorAlertText}>{bannerError}</Text>
+                </View>
+              )}
+
+              {form.banner_url ? (
+                <View style={styles.bannerPreviewBox}>
+                  <Image source={{ uri: form.banner_url }} style={styles.bannerPreviewImg} />
+                  <View style={styles.bannerRatioBadge}>
+                    <Text style={styles.bannerRatioBadgeText}>✓ Strict 16:9 Verified</Text>
                   </View>
-                ) : (
-                  <Text style={styles.imagePickerText}>Select Ad Banner Image</Text>
-                )}
-              </TouchableOpacity>
+                  <View style={styles.bannerActionsOverlay}>
+                    <TouchableOpacity 
+                      style={styles.bannerOverlayBtn}
+                      onPress={pickImage}
+                      disabled={isUploading}
+                    >
+                      <Text style={styles.bannerOverlayBtnText}>Replace</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                      style={[styles.bannerOverlayBtn, { backgroundColor: 'rgba(239,68,68,0.85)' }]}
+                      onPress={() => {
+                        setForm({ ...form, banner_url: '' });
+                        setBannerError(null);
+                        setBannerDimensions(null);
+                      }}
+                    >
+                      <Text style={styles.bannerOverlayBtnText}>Remove</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                <TouchableOpacity 
+                  style={[styles.imagePickerBtn, bannerError && styles.imagePickerBtnError]} 
+                  onPress={pickImage}
+                  disabled={isUploading}
+                >
+                  {isUploading ? (
+                    <ActivityIndicator color={theme.colors.primary} />
+                  ) : (
+                    <View style={{ alignItems: 'center', gap: 6 }}>
+                      <ImageIcon size={26} color={bannerError ? '#DC2626' : theme.colors.textMuted} />
+                      <Text style={[styles.imagePickerText, bannerError && { color: '#DC2626', fontWeight: 'bold' }]}>
+                        {bannerError ? 'Select a Valid 16:9 Image' : 'Select Ad Banner Image'}
+                      </Text>
+                      <Text style={[styles.imagePickerSubtext, bannerError && { color: '#EF4444' }]}>
+                        Locked to strictly 16:9 Landscape ratio • Max 5 MB
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              )}
 
               <Text style={styles.label}>DESTINATION URL (REQUIRED)</Text>
               <TextInput
@@ -647,12 +1165,21 @@ export default function AdminAdManagement() {
               </Text>
 
               <TouchableOpacity 
-                style={[styles.submitBtn, (createMutation.isPending || isUploading) && { opacity: 0.7 }]}
+                style={[
+                  styles.submitBtn, 
+                  hasValidationErrors && styles.submitBtnDisabled,
+                  (createMutation.isPending || isUploading) && { opacity: 0.7 }
+                ]}
                 onPress={handleCreate}
-                disabled={createMutation.isPending || isUploading}
+                disabled={createMutation.isPending || isUploading || hasValidationErrors}
               >
                 {createMutation.isPending ? (
                   <ActivityIndicator color="white" />
+                ) : hasValidationErrors ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <AlertTriangle size={18} color="white" />
+                    <Text style={styles.submitBtnText}>Cannot Launch — Fix Exceeded Limits Above</Text>
+                  </View>
                 ) : (
                   <Text style={styles.submitBtnText}>Launch Sponsored Content</Text>
                 )}
@@ -943,5 +1470,383 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: theme.colors.textMuted,
+  },
+  scopedCampusBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1.5,
+    borderColor: '#BAE6FD',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+  },
+  scopedCampusTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0369A1',
+  },
+  scopedCampusDesc: {
+    fontSize: 12,
+    color: '#0284C7',
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  scopedLockedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+  },
+  scopedLockedText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#0369A1',
+  },
+  revSplitRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 14,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  revSplitBox: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  revSplitLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: theme.colors.textMuted,
+    textTransform: 'uppercase',
+  },
+  revSplitValueHighlight: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#10B981',
+    marginTop: 4,
+  },
+  revSplitSub: {
+    fontSize: 10,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  institutionBreakdownCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  breakdownHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  breakdownTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: theme.colors.text,
+  },
+  breakdownSubtitle: {
+    fontSize: 12,
+    color: theme.colors.textMuted,
+    marginTop: 3,
+  },
+  tableHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  tableDataRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  tableCol: {
+    fontSize: 12,
+    color: theme.colors.text,
+  },
+  instNameText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: theme.colors.text,
+  },
+  instCodeText: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  filterBar: {
+    marginBottom: 16,
+  },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+  },
+  filterChipActive: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  filterChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: theme.colors.textMuted,
+  },
+  filterChipTextActive: {
+    color: '#FFFFFF',
+  },
+  limitsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+  },
+  limitsBtnText: {
+    color: '#4F46E5',
+    fontWeight: 'bold',
+    fontSize: 13,
+  },
+  fieldHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  limitCounterBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  limitCounterText: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  quickLimitEditBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingLeft: 6,
+    borderLeftWidth: 1,
+    borderLeftColor: '#CBD5E1',
+  },
+  limitCounterBadgeError: {
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+  },
+  limitCounterTextError: {
+    color: '#DC2626',
+    fontWeight: 'bold',
+  },
+  inputError: {
+    borderColor: '#EF4444',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1.5,
+  },
+  errorAlertBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FCA5A5',
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 10,
+    marginTop: 6,
+    marginBottom: 8,
+  },
+  errorAlertText: {
+    color: '#DC2626',
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
+    lineHeight: 16,
+  },
+  ratioEnforcedTag: {
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+  },
+  ratioEnforcedText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#4F46E5',
+  },
+  bannerRuleHint: {
+    fontSize: 11,
+    color: '#64748B',
+    marginBottom: 10,
+    lineHeight: 16,
+  },
+  imagePickerBtnError: {
+    borderColor: '#EF4444',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 2,
+    borderStyle: 'dashed',
+  },
+  imagePickerSubtext: {
+    fontSize: 11,
+    color: '#94A3B8',
+  },
+  bannerPreviewBox: {
+    width: '100%',
+    height: 140,
+    borderRadius: 14,
+    overflow: 'hidden',
+    position: 'relative',
+    marginBottom: 10,
+    backgroundColor: '#F1F5F9',
+  },
+  bannerPreviewImg: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  bannerRatioBadge: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  bannerRatioBadgeText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  bannerActionsOverlay: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    flexDirection: 'row',
+    gap: 6,
+  },
+  bannerOverlayBtn: {
+    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  bannerOverlayBtnText: {
+    color: '#FFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  submitBtnDisabled: {
+    backgroundColor: '#EF4444',
+    opacity: 0.9,
+  },
+  outOfCreditAlertBanner: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FCA5A5',
+    borderWidth: 1.5,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+  },
+  outOfCreditHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 10,
+  },
+  outOfCreditIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  outOfCreditTitle: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: '#991B1B',
+  },
+  outOfCreditSubtitle: {
+    fontSize: 12,
+    color: '#7F1D1D',
+    lineHeight: 16,
+    marginTop: 2,
+  },
+  outOfCreditList: {
+    marginTop: 8,
+    gap: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#FECACA',
+    paddingTop: 10,
+  },
+  outOfCreditItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
+  },
+  outOfCreditItemTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#991B1B',
+    flex: 1,
+  },
+  outOfCreditBadge: {
+    backgroundColor: '#EF4444',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  outOfCreditBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
   },
 });

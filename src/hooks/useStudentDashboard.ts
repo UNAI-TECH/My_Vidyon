@@ -250,6 +250,7 @@ export function useStudentDashboard(authUserId?: string, institutionId?: string)
                 .from('academic_events')
                 .select('*', { count: 'exact', head: true })
                 .eq('institution_id', targetUuid)
+                .neq('event_type', 'sponsored')
                 .gte('event_date', now);
             
             if (error) {

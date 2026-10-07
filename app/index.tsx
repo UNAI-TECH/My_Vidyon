@@ -19,7 +19,7 @@ export default function AppEntryPoint() {
     
     if (!loading && session) {
       const targetInst = institutionUuid || institutionId;
-      if (targetInst) {
+      if (targetInst && targetInst !== 'global') {
         (async () => {
           try {
             console.log('[AppIndex] Fetching institution logo for:', targetInst);
@@ -142,12 +142,23 @@ export default function AppEntryPoint() {
   // Normalize role for routing (e.g. canteen_manager -> canteen)
   const normalizedRole = role?.split('_')[0] || role;
 
-  if (role === 'admin' || role === 'superadmin') return <Redirect href="/(root)/admin" />;
-  if (role === 'institution') return <Redirect href="/(root)/institution" />;
+  if (role === 'admin' || role === 'superadmin' || role === 'ad_manager' || role === 'finance_manager') {
+    return <Redirect href="/(root)/admin" />;
+  }
+  if (
+    role === 'institution' ||
+    role === 'admission_officer' ||
+    role === 'admissions' ||
+    role === 'reports_manager' ||
+    role === 'accountant' ||
+    role === 'finance'
+  ) {
+    return <Redirect href="/(root)/institution" />;
+  }
+  if (role === 'institution_stakeholder') return <Redirect href="/(root)/stakeholder" />;
   if (role === 'faculty') return <Redirect href="/(root)/faculty" />;
   if (role === 'student') return <Redirect href="/(root)/student" />;
   if (role === 'parent') return <Redirect href="/(root)/parent" />;
-  if (role === 'accountant') return <Redirect href="/(root)/accountant" />;
   if (normalizedRole === 'canteen') return <Redirect href="/(root)/canteen" />;
   
   // Final fallback to login if something is wrong with the role

@@ -194,7 +194,7 @@ export function useSuperAdminDashboard() {
             const { data } = await supabase
                 .from('profiles')
                 .select('*, institutions(name)')
-                .order('created_at', { ascending: false })
+                .order('updated_at', { ascending: false })
                 .limit(5);
             return data || [];
         },

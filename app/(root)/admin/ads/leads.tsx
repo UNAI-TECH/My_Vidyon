@@ -37,7 +37,7 @@ import * as Sharing from 'expo-sharing';
 import { saveBase64FileToDevice } from '../../../../src/utils/fileUtils';
 
 export default function AdminAdLeadsScreen() {
-  const { user } = useAuth();
+  const { user, role, institutionId, institutionUuid, institutionName } = useAuth();
   const params = useLocalSearchParams<{ adId?: string }>();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
@@ -46,6 +46,12 @@ export default function AdminAdLeadsScreen() {
   const [selectedAction, setSelectedAction] = useState<'all' | 'click' | 'view'>('all');
   const [isExporting, setIsExporting] = useState(false);
 
+  const isUUID = (str: string | null | undefined): boolean => 
+    !!str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
+  // Check if user is an institution-scoped ad manager
+  const isScoped = !!institutionId && institutionId !== 'global' && role !== 'superadmin';
+
   // Sync if route param changes
   React.useEffect(() => {
     if (params.adId) {
@@ -53,14 +59,62 @@ export default function AdminAdLeadsScreen() {
     }
   }, [params.adId]);
 
-  // Fetch leads from ad_leads table
-  const { data: leads = [], isLoading, refetch } = useQuery({
-    queryKey: ['admin-ad-leads'],
+  // Fetch campaigns for this user's scope so every campus campaign is represented
+  const { data: scopedCampaigns = [] } = useQuery({
+    queryKey: ['admin-leads-campaigns', isScoped, institutionId, institutionUuid],
     queryFn: async () => {
-      const { data, error } = await (supabase
+      let q = (supabase.from('academic_events') as any)
+        .select('id, title, institution_id')
+        .eq('is_admin_added', true);
+
+      if (isScoped) {
+        let targetUuid = institutionUuid && isUUID(institutionUuid) ? institutionUuid : null;
+        if (!targetUuid && institutionId) {
+          if (isUUID(institutionId)) {
+            targetUuid = institutionId;
+          } else {
+            const { data: inst } = await (supabase.from('institutions') as any)
+              .select('id')
+              .eq('institution_id', institutionId)
+              .maybeSingle();
+            targetUuid = (inst as any)?.id || null;
+          }
+        }
+        if (targetUuid) {
+          q = q.eq('institution_id', targetUuid);
+        }
+      }
+
+      const { data, error } = await q.order('created_at', { ascending: false });
+      if (error) {
+        console.warn('Failed to fetch campaigns for leads:', error);
+        return [];
+      }
+      return (data as any[]) || [];
+    },
+    enabled: !!user
+  });
+
+  // Fetch leads from ad_leads table (strictly scoped if not global admin)
+  const { data: leads = [], isLoading, refetch } = useQuery({
+    queryKey: ['admin-ad-leads', isScoped, scopedCampaigns.map((c: any) => c.id).join(',')],
+    queryFn: async () => {
+      // If scoped and campus has zero campaigns, return empty
+      if (isScoped && scopedCampaigns.length === 0) {
+        return [];
+      }
+
+      let q = (supabase
         .from('ad_leads') as any)
         .select('*')
         .order('created_at', { ascending: false });
+
+      if (isScoped) {
+        const campaignIdsList = scopedCampaigns.map((c: any) => c.id);
+        q = q.in('ad_id', campaignIdsList);
+      }
+
+      const { data, error } = await q;
 
       if (error) {
         console.warn('Could not fetch ad_leads:', error);
@@ -68,7 +122,7 @@ export default function AdminAdLeadsScreen() {
       }
       return (data as any[]) || [];
     },
-    enabled: !!user
+    enabled: !!user && (!isScoped || scopedCampaigns !== undefined)
   });
 
   // Exclude admin and superadmin roles from ad leads
@@ -82,13 +136,22 @@ export default function AdminAdLeadsScreen() {
   // Extract unique campaigns for specific ad filtering
   const uniqueCampaigns = React.useMemo(() => {
     const map = new Map<string, string>();
-    nonAdminLeads.forEach((l: any) => {
-      if (l.ad_id) {
-        map.set(l.ad_id, l.ad_title || 'Sponsored Campaign');
+    // First include all campaigns that exist in this scope
+    scopedCampaigns.forEach((c: any) => {
+      if (c.id) {
+        map.set(c.id, c.title || 'Sponsored Campaign');
       }
     });
+    // For global admins, also ensure any additional ads with recorded leads are present
+    if (!isScoped) {
+      nonAdminLeads.forEach((l: any) => {
+        if (l.ad_id && !map.has(l.ad_id)) {
+          map.set(l.ad_id, l.ad_title || 'Sponsored Campaign');
+        }
+      });
+    }
     return Array.from(map.entries()).map(([id, title]) => ({ id, title }));
-  }, [nonAdminLeads]);
+  }, [isScoped, scopedCampaigns, nonAdminLeads]);
 
   // Filter leads based on search query, selected campaign/ad, selected role, and action type (click vs view)
   const filteredLeads = nonAdminLeads.filter((lead: any) => {
@@ -200,7 +263,9 @@ export default function AdminAdLeadsScreen() {
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>Ad Leads & User Logs</Text>
-          <Text style={styles.headerSubtitle}>User contact data captured from sponsored ads</Text>
+          <Text style={styles.headerSubtitle}>
+            {isScoped ? `User contact data captured from ${institutionName || 'campus'} ads` : 'User contact data captured from sponsored ads'}
+          </Text>
         </View>
         <TouchableOpacity 
           style={[styles.exportBtn, isExporting && { opacity: 0.6 }]} 
@@ -341,9 +406,13 @@ export default function AdminAdLeadsScreen() {
           ) : (
             <View style={styles.emptyContainer}>
               <Megaphone size={56} color={theme.colors.textMuted} opacity={0.3} />
-              <Text style={styles.emptyTitle}>No leads recorded yet</Text>
+              <Text style={styles.emptyTitle}>
+                {selectedAdId !== 'all' 
+                  ? `No leads yet for "${uniqueCampaigns.find(c => c.id === selectedAdId)?.title || 'this ad'}"` 
+                  : (isScoped ? `No leads recorded for ${institutionName || 'your campus'} ads yet` : 'No leads recorded yet')}
+              </Text>
               <Text style={styles.emptySubtitle}>
-                When users view or click on sponsored ads, their account details and inquiries will be logged automatically here.
+                When students, parents, or faculty view or click on this sponsored campaign, their contact details will be logged automatically here.
               </Text>
             </View>
           )

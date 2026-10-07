@@ -38,7 +38,9 @@ Deno.serve(async (req: Request) => {
         const payload = body;
         const email = (payload.email || "").trim();
         const role = (payload.role || "").trim();
-        const institution_id = (payload.institution_id || "").trim();
+        const rawInstId = (payload.institution_id || "").trim();
+        const isGlobalRole = ['superadmin', 'admin', 'ad_manager', 'finance_manager'].includes(role?.toLowerCase());
+        const institution_id = rawInstId || (isGlobalRole || payload.reset_password ? 'global' : '');
         
         const { 
             password, full_name, 
@@ -47,9 +49,10 @@ Deno.serve(async (req: Request) => {
             register_number, staff_id, phone, date_of_birth, gender, address,
             blood_group, city, zip_code, image_url,
             student_id, student_ids, parent_contact, department, subjects, // optional override
+            reset_password,
         } = payload;
 
-        console.log(`Processing user: ${email || 'N/A'} (Role: ${role || 'N/A'}, InstID: ${institution_id || 'N/A'})`);
+        console.log(`Processing user: ${email || 'N/A'} (Role: ${role || 'N/A'}, InstID: ${institution_id || 'N/A'}, Reset: ${!!reset_password})`);
 
         if (!email || !role || !institution_id) {
             console.error("Validation failed. Missing:", { email: !!email, role: !!role, inst: !!institution_id });
@@ -165,6 +168,27 @@ Deno.serve(async (req: Request) => {
             }
         } else {
             console.log("Existing user found with ID:", userId);
+            
+            // If password or reset_password is provided, update their auth password and set needs_password_setup
+            if (password || reset_password) {
+                console.log(`Resetting auth credentials for user ${userId}...`);
+                const { error: resetAuthErr } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+                    password: finalPassword,
+                    user_metadata: {
+                        role: finalRole,
+                        full_name: full_name || undefined,
+                        institution_id: institution_id,
+                        needs_password_setup: true,
+                        force_password_change: true
+                    }
+                });
+                if (resetAuthErr) {
+                    console.error("Failed to update auth password for existing user:", resetAuthErr);
+                } else {
+                    console.log("Successfully updated auth password for existing user.");
+                }
+            }
+
             // Construct a user object that mimics the auth response enough for the frontend
             authUserDetails = {
                 id: userId,

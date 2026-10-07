@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Users, GraduationCap, Briefcase, Calculator, Coffee, UserCircle } from 'lucide-react-native';
+import { Users, GraduationCap, Briefcase, Calculator, Coffee, UserCircle, ShieldCheck, Megaphone } from 'lucide-react-native';
 import { theme } from '../../theme';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
@@ -20,6 +20,9 @@ interface PageHeaderProps {
 
 const getRoleIcon = (role?: string) => {
   switch(role?.toLowerCase()) {
+    case 'ad_manager': return <Megaphone size={24} color={theme.colors.primary} />;
+    case 'finance_manager': return <Calculator size={24} color={theme.colors.primary} />;
+    case 'superadmin': return <ShieldCheck size={24} color={theme.colors.primary} />;
     case 'student': return <GraduationCap size={24} color={theme.colors.primary} />;
     case 'faculty': 
     case 'teacher':
@@ -30,15 +33,24 @@ const getRoleIcon = (role?: string) => {
     case 'canteen': 
     case 'canteen_manager':
       return <Coffee size={24} color={theme.colors.primary} />;
+    case 'institution_stakeholder':
+    case 'stakeholder':
+      return <ShieldCheck size={24} color={theme.colors.primary} />;
     default: return <UserCircle size={24} color={theme.colors.primary} />;
   }
 };
 
 const getRoleLabel = (role?: string) => {
   if (!role) return 'User';
-  // Standardize labels
-  if (role.toLowerCase() === 'canteen_manager') return 'Canteen';
-  return role.charAt(0).toUpperCase() + role.slice(1);
+  const lower = role.toLowerCase();
+  if (lower === 'ad_manager') return 'Ad Manager';
+  if (lower === 'finance_manager') return 'Finance Manager';
+  if (lower === 'superadmin') return 'Super Admin';
+  if (lower === 'admission_officer' || lower === 'admissions') return 'Admissions';
+  if (lower === 'reports_manager') return 'Reports';
+  if (lower === 'canteen_manager' || lower === 'canteen') return 'Canteen';
+  if (lower === 'institution_stakeholder' || lower === 'stakeholder') return 'Stakeholder';
+  return role.charAt(0).toUpperCase() + role.slice(1).replace(/_/g, ' ');
 };
 
 export const PageHeader = ({ title, subtitle, actions, leftAction, institutionName, institutionLogo, userRole, userAvatar, userSubtitle }: PageHeaderProps) => {
@@ -53,13 +65,38 @@ export const PageHeader = ({ title, subtitle, actions, leftAction, institutionNa
   const displayUserAvatar = (userAvatar?.trim() || authAvatar?.trim()) || undefined;
 
   const handleProfilePress = () => {
-    const activeRole = userRole || authRole;
+    const activeRole = (userRole || authRole || '').toLowerCase();
     if (!activeRole) return;
     
-    // Normalize role for routing
-    const roleSlug = activeRole.toLowerCase().split('_')[0]; // e.g., canteen_manager -> canteen
-    
-    router.push(`/(root)/${roleSlug}/settings`);
+    // Explicit, accurate settings route mappings
+    if (
+      activeRole === 'admin' || 
+      activeRole === 'superadmin' || 
+      activeRole === 'ad_manager' || 
+      activeRole === 'finance_manager'
+    ) {
+      router.push('/(root)/admin/settings');
+    } else if (
+      activeRole === 'institution' || 
+      activeRole === 'institution_stakeholder' || 
+      activeRole === 'admission_officer' || 
+      activeRole === 'admissions' || 
+      activeRole === 'reports_manager'
+    ) {
+      router.push('/(root)/institution/settings');
+    } else if (activeRole === 'faculty' || activeRole === 'teacher' || activeRole === 'staff') {
+      router.push('/(root)/faculty/settings');
+    } else if (activeRole === 'student') {
+      router.push('/(root)/student/settings');
+    } else if (activeRole === 'parent') {
+      router.push('/(root)/parent/settings');
+    } else if (activeRole === 'accountant' || activeRole === 'finance') {
+      router.push('/(root)/accountant/settings');
+    } else if (activeRole === 'canteen' || activeRole === 'canteen_manager') {
+      router.push('/(root)/canteen/settings');
+    } else {
+      router.push('/(root)/admin/settings');
+    }
   };
 
   const [logoFailed, setLogoFailed] = React.useState(false);

@@ -7,7 +7,7 @@ import { LargeSecureStore } from '../lib/storage';
 type AuthContextType = {
   session: Session | null;
   user: User | null;
-  role: 'admin' | 'faculty' | 'student' | 'parent' | 'institution' | 'accountant' | 'canteen' | 'canteen_manager' | 'superadmin' | null;
+  role: 'admin' | 'faculty' | 'student' | 'parent' | 'institution' | 'accountant' | 'canteen' | 'canteen_manager' | 'superadmin' | 'institution_stakeholder' | 'finance' | 'media' | 'analytics' | 'transport_manager' | 'driver' | 'admission_officer' | 'admissions' | 'reports_manager' | 'ad_manager' | 'finance_manager' | null;
   institutionId: string | null;
   institutionUuid: string | null;
   institutionName: string | null;
@@ -207,7 +207,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       // 1. Fetch from profiles first (Primary source for all)
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('role, institution_id, full_name, image_url, profile_image_url, avatar_url, is_active, last_read_events_at')
+        .select('role, institution_id, full_name, email, image_url, profile_image_url, avatar_url, is_active, last_read_events_at, department')
         .eq('id', userId)
         .maybeSingle() as any;
       
@@ -218,17 +218,49 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         if (profile.is_active === false) {
           console.warn('[Auth] User account is disabled. Booting...');
           await signOut();
-          Alert.alert(
-            "Account Disabled", 
-            "Id is disabled by the institute admin. and contact the admin to get enabled.",
-            [{ text: "OK" }]
-          );
+          try {
+            await LargeSecureStore.setItem('vidyon_last_blocked_account', JSON.stringify({
+              email: profile.email || '',
+              institution_id: profile.institution_id || '',
+              full_name: profile.full_name || '',
+            }));
+          } catch (e) {}
+
+          if (Platform.OS === 'web') {
+            if (typeof window !== 'undefined') {
+              const targetEmail = encodeURIComponent(profile.email || '');
+              window.location.href = `/?blocked=true&email=${targetEmail}`;
+            }
+          } else {
+            Alert.alert(
+              "Account Disabled", 
+              "Your account has been disabled by the administrator. Please contact your institution administration to reactivate your account.",
+              [{ text: "OK" }]
+            );
+          }
           return;
         }
 
-        console.log('[Auth] Role found:', profile.role);
-        setRole(profile.role as AuthContextType['role']);
-        currentRoleRef.current = profile.role as AuthContextType['role'];
+        // Determine effective role from role + department specialization
+        let effectiveRole: AuthContextType['role'] = profile.role as AuthContextType['role'];
+        const dept = (profile.department || '').toLowerCase().trim();
+        const rawRole = (profile.role || '').toLowerCase().trim();
+
+        if (dept === 'admissions' || dept === 'admission' || rawRole === 'admissions' || rawRole === 'admission_officer') {
+          effectiveRole = 'admission_officer';
+        } else if (dept === 'fee management' || dept === 'finance' || rawRole === 'accountant' || rawRole === 'finance') {
+          effectiveRole = 'accountant';
+        } else if (dept === 'reports' || dept === 'academic' || rawRole === 'reports_manager' || rawRole === 'analytics') {
+          effectiveRole = 'reports_manager';
+        } else if (dept === 'ad management' || dept === 'ads' || rawRole === 'ad_manager' || rawRole === 'ad_stakeholder') {
+          effectiveRole = 'ad_manager';
+        } else if (dept === 'platform finance' || dept === 'saas finance' || rawRole === 'finance_manager' || rawRole === 'superadmin_finance') {
+          effectiveRole = 'finance_manager';
+        }
+
+        console.log('[Auth] Role found:', profile.role, 'Effective Role:', effectiveRole);
+        setRole(effectiveRole);
+        currentRoleRef.current = effectiveRole;
         setInstitutionId(profile.institution_id);
         setLastReadEventsAt(profile.last_read_events_at);
         
@@ -255,12 +287,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setFullName(name);
         setImageUrl(img);
 
-        if (profile.institution_id) {
-          const { data: instData } = await supabase
+        if (profile.institution_id && profile.institution_id !== 'global') {
+          const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+          let instQuery = supabase
             .from('institutions')
-            .select('id, academic_year, institution_id, name, logo_url, status')
-            .or(`institution_id.eq.${profile.institution_id},id.eq.${profile.institution_id}`)
-            .maybeSingle() as any;
+            .select('id, academic_year, institution_id, name, logo_url, status');
+
+          if (isUUID(profile.institution_id)) {
+            instQuery = instQuery.or(`institution_id.eq.${profile.institution_id},id.eq.${profile.institution_id}`);
+          } else {
+            instQuery = instQuery.eq('institution_id', profile.institution_id);
+          }
+
+          const { data: instData } = await (instQuery as any).maybeSingle();
           
           if (instData) {
             // Enforce institution access: If institution is disabled, boot non-superadmin users

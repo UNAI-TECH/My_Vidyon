@@ -21,8 +21,9 @@ export default function AdminTabs() {
     );
   }
 
-  // Restrict access to admin only - only redirect if role is known and not admin
-  if (role && role !== 'admin' && role !== 'superadmin') {
+  // Restrict access to admin & authorized stakeholders
+  const allowedAdminRoles = ['admin', 'superadmin', 'ad_manager', 'finance_manager'];
+  if (role && !allowedAdminRoles.includes(role)) {
     return <Redirect href={`/(root)/${role}` as any} />;
   }
 
