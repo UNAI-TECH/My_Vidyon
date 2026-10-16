@@ -248,7 +248,7 @@ export default function InstitutionOnboarding() {
         setLogo(data.logo_url);
         setExistingCreds({
           email: data.admin_email || '',
-          password: data.admin_password || ''
+          password: ''
         });
         setAdminInfo({
           email: data.admin_email || '',
@@ -1699,6 +1699,27 @@ export default function InstitutionOnboarding() {
       
       if (stepId === 1) {
         // Partial Save: Basic Info
+        // Duplicate validation (BUG-001 / SA-008): Prevent duplicate institution names on creation
+        if (!isEditMode && basicInfo.name?.trim()) {
+          const { data: existingName } = await (supabase.from('institutions') as any)
+            .select('id, name')
+            .ilike('name', basicInfo.name.trim())
+            .maybeSingle();
+          if (existingName) {
+            setSubmitting(false);
+            return showAlert('Duplicate Institution Name', `An institution with the name "${basicInfo.name.trim()}" already exists. Please choose a distinct institution name.`, 'error');
+          }
+        }
+        if (!isEditMode && basicInfo.school_code?.trim()) {
+          const { data: existingCode } = await (supabase.from('institutions') as any)
+            .select('id, institution_id')
+            .eq('institution_id', basicInfo.school_code.trim())
+            .maybeSingle();
+          if (existingCode) {
+            setSubmitting(false);
+            return showAlert('Duplicate School Code', `School Code "${basicInfo.school_code.trim()}" is already assigned to another institution.`, 'error');
+          }
+        }
         let finalLogoUrl = (logo && logo.startsWith('http') && !logo.includes('127.0.0.1') && !logo.includes('localhost') && !logo.startsWith('blob:')) ? logo : null;
         if (logo && (!logo.startsWith('http') || logo.includes('127.0.0.1') || logo.includes('localhost') || logo.startsWith('blob:'))) {
           const rawExt = logo.split('?')[0].split('.').pop()?.toLowerCase() || 'png';
@@ -1771,7 +1792,7 @@ export default function InstitutionOnboarding() {
         
         const updates: any = {};
         if (adminInfo.email !== existingCreds.email) updates.admin_email = adminInfo.email;
-        if (adminInfo.password !== '') updates.admin_password = adminInfo.password;
+        // admin_password removed per VULN-001: Passwords secured exclusively via Supabase Auth Admin API
 
         if (Object.keys(updates).length > 0) {
           const { error } = await (supabase.from('institutions') as any)
@@ -1935,6 +1956,28 @@ export default function InstitutionOnboarding() {
 
       // 2. Create/Update Institution (Skip in security mode unless it's a new institution)
       if (!isSecurityMode) {
+        // Duplicate validation (BUG-001 / SA-008): Prevent duplicate institution names on new creation
+        if (!isEditMode && basicInfo.name?.trim()) {
+          const { data: existingName } = await (supabase.from('institutions') as any)
+            .select('id, name')
+            .ilike('name', basicInfo.name.trim())
+            .maybeSingle();
+          if (existingName) {
+            setSubmitting(false);
+            return showAlert('Duplicate Institution Name', `An institution with the name "${basicInfo.name.trim()}" already exists. Please choose a distinct institution name.`, 'error');
+          }
+        }
+        if (!isEditMode && basicInfo.school_code?.trim()) {
+          const { data: existingCode } = await (supabase.from('institutions') as any)
+            .select('id, institution_id')
+            .eq('institution_id', basicInfo.school_code.trim())
+            .maybeSingle();
+          if (existingCode) {
+            setSubmitting(false);
+            return showAlert('Duplicate School Code', `School Code "${basicInfo.school_code.trim()}" is already assigned to another institution.`, 'error');
+          }
+        }
+
         const fullAddr = [basicInfo.address_line_1, basicInfo.address_line_2, basicInfo.city, basicInfo.state, basicInfo.pincode].filter(Boolean).join(', ');
         const instData: any = {
           institution_id: basicInfo.school_code,
@@ -1962,9 +2005,8 @@ export default function InstitutionOnboarding() {
           allowed_roles: basicInfo.allowed_roles,
           // Only set status on new creation; omit it entirely on edit to preserve existing value
           ...(isEditMode ? {} : { status: 'active' }),
-          // Include admin credentials during new creation
+          // Include admin email during new creation (admin_password omitted per VULN-001)
           ...(!isEditMode && adminInfo.email ? { admin_email: adminInfo.email } : {}),
-          ...(!isEditMode && adminInfo.password ? { admin_password: adminInfo.password } : {}),
         };
 
         const { error: instError } = await (supabase
@@ -2012,10 +2054,9 @@ export default function InstitutionOnboarding() {
           return showAlert('Update Failed', `Could not update credentials: ${errorMsg}.`, 'error');
         }
 
-        // Also update institutions table admin_email and admin_password
+        // Also update institutions table admin_email
         const updates: any = {};
         if (adminInfo.email) updates.admin_email = adminInfo.email;
-        if (adminInfo.password) updates.admin_password = adminInfo.password;
         if (Object.keys(updates).length > 0) {
           await (supabase.from('institutions') as any)
             .update(updates)
@@ -2084,7 +2125,6 @@ export default function InstitutionOnboarding() {
         // Also update the institution record's admin fields specifically
         const updates: any = {};
         if (emailChanged) updates.admin_email = adminInfo.email;
-        if (passwordChanged) updates.admin_password = adminInfo.password;
 
         if (Object.keys(updates).length > 0) {
           await (supabase.from('institutions') as any)

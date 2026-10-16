@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import * as XLSX from 'xlsx';
 import * as FileSystem from 'expo-file-system';
 const FileSystemLegacy = require('expo-file-system/legacy');
-import { Alert, Linking } from 'react-native';
+import { Alert, Linking, Platform } from 'react-native';
 import { Database } from '../types/supabase';
 
 export type ReportType = 'students' | 'faculty' | 'fees' | 'exams';
@@ -121,56 +121,72 @@ export const exportToExcel = async (data: any[], fileName: string, institutionId
     const wboutArray = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
     const uint8 = new Uint8Array(wboutArray);
 
-    // 1. Save locally temporarily (using Base64 for Expo FileSystem)
+    const cleanFileName = fileName.replace(/[^a-zA-Z0-9]/g, '_');
+
+    // On Web: Trigger instant direct Excel file download in browser via SheetJS (BUG-003 fix)
+    if (Platform.OS === 'web') {
+      try {
+        XLSX.writeFile(wb, `${cleanFileName}.xlsx`);
+      } catch (webErr) {
+        console.warn('XLSX.writeFile failed on web:', webErr);
+      }
+    }
+
+    // 1. Save locally temporarily (using Base64 for Expo FileSystem on native)
     const FS = FileSystem as any;
     const baseDir = FS.cacheDirectory || FS.documentDirectory || "";
     const localUri = `${baseDir}${fileName}.xlsx`;
     
+    if (Platform.OS !== 'web') {
+      try {
+        await FileSystemLegacy.writeAsStringAsync(localUri, wboutBase64, {
+          encoding: 'base64'
+        });
+      } catch (fsErr) {
+        console.warn('Local FS cache write failed, continuing with cloud upload...', fsErr);
+      }
+    }
+
+    // 2. Upload to Supabase Storage using Uint8Array (Optional cloud backup)
+    let publicUrl = '';
     try {
-      await FileSystemLegacy.writeAsStringAsync(localUri, wboutBase64, {
-        encoding: 'base64'
-      });
-    } catch (fsErr) {
-      console.warn('Local FS cache write failed, continuing with cloud upload...', fsErr);
+      const storagePath = `reports/${institutionId}/${cleanFileName}_${Date.now()}.xlsx`;
+      
+      const { error: uploadError } = await supabase.storage
+        .from('reports')
+        .upload(storagePath, uint8, {
+          contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          upsert: true
+        });
+
+      if (!uploadError) {
+        const { data: urlData } = supabase.storage
+          .from('reports')
+          .getPublicUrl(storagePath);
+        publicUrl = urlData.publicUrl;
+
+        await (supabase.from('reports') as any)
+          .insert({
+            institution_id: institutionId,
+            title: fileName.replace(/_/g, ' '),
+            type: category,
+            url: publicUrl,
+            status: 'completed',
+            generated_at: new Date().toISOString()
+          });
+      } else {
+        console.warn('Cloud reports bucket upload warning:', uploadError.message);
+      }
+    } catch (storageErr) {
+      console.warn('Optional cloud storage sync skipped:', storageErr);
     }
 
-    // 2. Upload to Supabase Storage using Uint8Array (Supported natively by Supabase JS)
-    const cleanFileName = fileName.replace(/[^a-zA-Z0-9]/g, '_');
-    const storagePath = `reports/${institutionId}/${cleanFileName}_${Date.now()}.xlsx`;
-    
-    const { error: uploadError } = await supabase.storage
-      .from('reports')
-      .upload(storagePath, uint8, {
-        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        upsert: true
-      });
-
-    if (uploadError) {
-      throw new Error(`Upload Failed: ${uploadError.message}. Ensure the "reports" storage bucket exists and is accessible.`);
+    // 3. Open URL if available on mobile
+    if (Platform.OS !== 'web' && publicUrl) {
+      await Linking.openURL(publicUrl);
     }
 
-    // 3. Get Public URL
-    const { data: { publicUrl } } = supabase.storage
-      .from('reports')
-      .getPublicUrl(storagePath);
-
-    // 4. Record in reports table
-    const { error: dbError } = await (supabase.from('reports') as any)
-      .insert({
-        institution_id: institutionId,
-        title: fileName.replace(/_/g, ' '),
-        type: category,
-        url: publicUrl,
-        status: 'completed',
-        generated_at: new Date().toISOString()
-      });
-
-    if (dbError) console.error('Error logging report history:', dbError);
-
-    // 5. Open URL directly
-    await Linking.openURL(publicUrl);
-
-    return publicUrl;
+    return publicUrl || `${cleanFileName}.xlsx`;
   } catch (error: any) {
     console.error('Report Generation Error:', error);
     Alert.alert(

@@ -1,0 +1,648 @@
+﻿=== FULL SCAN - FINDING REAL USER DATA ===
+
+Total profiles: 271
+
+=== PROFILES BY INSTITUTION_ID ===
+
+Institution: 1526 (2 users)
+Roles: {"institution":1,"student":1}
+  - [institution] ABC Admin | abc@gmail.com | active:true
+  - [student] Anjali Patel | anjali.patel.5tha220605@1526.vidyon.app | active:true
+
+Institution: 12B, BOSE ST (1 users)
+Roles: {"institution":1}
+  - [institution] Story Seed Studio Admin | kamalesh@storyseed.in | active:true
+
+Institution: ABC-SCHOOL (72 users)
+Roles: {"institution":1,"parent":40,"faculty":20,"canteen_manager":5,"accountant":5,"student":1}
+  - [institution] ABC Admin | admin@abc.com | active:true
+  - [parent] Parent 40 | parent40@abc.com | active:true
+  - [faculty] Teacher 1 | faculty1@abc.com | active:true
+  - [faculty] Teacher 2 | faculty2@abc.com | active:true
+  - [faculty] Teacher 3 | faculty3@abc.com | active:true
+  - [faculty] Teacher 4 | faculty4@abc.com | active:true
+  - [faculty] Teacher 5 | faculty5@abc.com | active:true
+  - [faculty] Teacher 6 | faculty6@abc.com | active:true
+  - [faculty] Teacher 7 | faculty7@abc.com | active:true
+  - [faculty] Teacher 8 | faculty8@abc.com | active:true
+  - [faculty] Teacher 9 | faculty9@abc.com | active:true
+  - [faculty] Teacher 10 | faculty10@abc.com | active:true
+  - [faculty] Teacher 11 | faculty11@abc.com | active:true
+  - [faculty] Teacher 12 | faculty12@abc.com | active:true
+  - [faculty] Teacher 13 | faculty13@abc.com | active:true
+  - [faculty] Teacher 14 | faculty14@abc.com | active:true
+  - [faculty] Teacher 15 | faculty15@abc.com | active:true
+  - [faculty] Teacher 16 | faculty16@abc.com | active:true
+  - [faculty] Teacher 17 | faculty17@abc.com | active:true
+  - [faculty] Teacher 18 | faculty18@abc.com | active:true
+  - [faculty] Teacher 19 | faculty19@abc.com | active:true
+  - [faculty] Teacher 20 | faculty20@abc.com | active:true
+  - [parent] Parent 1 | parent1@abc.com | active:true
+  - [parent] Parent 2 | parent2@abc.com | active:true
+  - [parent] Parent 3 | parent3@abc.com | active:true
+  - [parent] Parent 4 | parent4@abc.com | active:true
+  - [parent] Parent 5 | parent5@abc.com | active:true
+  - [parent] Parent 6 | parent6@abc.com | active:true
+  - [parent] Parent 7 | parent7@abc.com | active:true
+  - [parent] Parent 8 | parent8@abc.com | active:true
+  - [parent] Parent 9 | parent9@abc.com | active:true
+  - [parent] Parent 10 | parent10@abc.com | active:true
+  - [parent] Parent 11 | parent11@abc.com | active:true
+  - [parent] Parent 12 | parent12@abc.com | active:true
+  - [parent] Parent 13 | parent13@abc.com | active:true
+  - [parent] Parent 14 | parent14@abc.com | active:true
+  - [parent] Parent 15 | parent15@abc.com | active:true
+  - [parent] Parent 16 | parent16@abc.com | active:true
+  - [parent] Parent 17 | parent17@abc.com | active:true
+  - [parent] Parent 18 | parent18@abc.com | active:true
+  - [parent] Parent 19 | parent19@abc.com | active:true
+  - [parent] Parent 20 | parent20@abc.com | active:true
+  - [parent] Parent 21 | parent21@abc.com | active:true
+  - [parent] Parent 22 | parent22@abc.com | active:true
+  - [parent] Parent 23 | parent23@abc.com | active:true
+  - [parent] Parent 24 | parent24@abc.com | active:true
+  - [parent] Parent 25 | parent25@abc.com | active:true
+  - [parent] Parent 26 | parent26@abc.com | active:true
+  - [parent] Parent 27 | parent27@abc.com | active:true
+  - [parent] Parent 28 | parent28@abc.com | active:true
+  - [parent] Parent 29 | parent29@abc.com | active:true
+  - [parent] Parent 30 | parent30@abc.com | active:true
+  - [parent] Parent 31 | parent31@abc.com | active:true
+  - [parent] Parent 32 | parent32@abc.com | active:true
+  - [parent] Parent 33 | parent33@abc.com | active:true
+  - [parent] Parent 34 | parent34@abc.com | active:true
+  - [parent] Parent 35 | parent35@abc.com | active:true
+  - [parent] Parent 36 | parent36@abc.com | active:true
+  - [parent] Parent 37 | parent37@abc.com | active:true
+  - [parent] Parent 38 | parent38@abc.com | active:true
+  - [parent] Parent 39 | parent39@abc.com | active:true
+  - [canteen_manager] Chef 1 | canteen1@abc.com | active:true
+  - [accountant] Accountant 1 | accountant1@abc.com | active:true
+  - [canteen_manager] Chef 2 | canteen2@abc.com | active:true
+  - [accountant] Accountant 2 | accountant2@abc.com | active:true
+  - [canteen_manager] Chef 3 | canteen3@abc.com | active:true
+  - [accountant] Accountant 3 | accountant3@abc.com | active:true
+  - [canteen_manager] Chef 4 | canteen4@abc.com | active:true
+  - [accountant] Accountant 4 | accountant4@abc.com | active:true
+  - [canteen_manager] Chef 5 | canteen5@abc.com | active:true
+  - [accountant] Accountant 5 | accountant5@abc.com | active:true
+  - [student] Student 52 | student52@abc.com | active:true
+
+Institution: ABC1212 (7 users)
+Roles: {"institution":1,"faculty":2,"parent":1,"student":1,"accountant":1,"canteen_manager":1}
+  - [institution] ABC SCHOOL Admin | admin@abc.edu | active:true
+  - [faculty] Anjali patel | anjali.patel.abc2026tch002@abc1212.vidyon.app | active:true
+  - [parent] Rekha Patel | rekha.patel.abc2026tch002@abc1212.vidyon.app | active:true
+  - [student] Kinya patel | kinya.patel.1sta01@abc1212.vidyon.app | active:true
+  - [accountant] Nehemiah Nesa | nehemiah.nesa.abc2026tch002@abc1212.vidyon.app | active:true
+  - [canteen_manager] Kamalesh boy | kamalesh.boy.abc2026003@abc1212.vidyon.app | active:true
+  - [faculty] Anjali patel | anjali.patel.abc2026tch001@abc1212.vidyon.app | active:false
+
+Institution: ABC2026 (1 users)
+Roles: {"institution":1}
+  - [institution] ABC Schools Admin | admin@abcschools.com | active:true
+
+Institution: CPMHS2026 (6 users)
+Roles: {"institution":1,"faculty":1,"parent":1,"student":3}
+  - [institution] Children's Paradise Matric Hr sec school  Admin | admin@cpmhs.com | active:true
+  - [faculty] John doe | john.doe.tch001@cpmhs2026.vidyon.app | active:true
+  - [parent] Meenakshi M | meenakshi.m.715431@cpmhs2026.vidyon.app | active:true
+  - [student] Magesh S | magesh.s.1sta1@cpmhs2026.vidyon.app | active:true
+  - [student] Kamalesh S | kamalesh.s.1sta152601@cpmhs2026.vidyon.app | active:true
+  - [student] Madhan Kumar | madhan.kumar.1sta152602@cpmhs2026.vidyon.app | active:true
+
+Institution: CPS2026 (6 users)
+Roles: {"institution":1,"faculty":1,"parent":1,"student":2,"accountant":1}
+  - [institution] Chennai Public School Admin | admin@cps.edu | active:true
+  - [faculty] Brain L | brain.l.cps2026001@cps2026.vidyon.app | active:true
+  - [parent] Rebecca  V | rebecca.v.cps2026001@cps2026.vidyon.app | active:true
+  - [student] John Doe | john.doe.ukga01@cps2026.vidyon.app | active:true
+  - [accountant] Chella  Durai | chella.durai.cps2026002@cps2026.vidyon.app | active:true
+  - [student] Lekha  Warriar | lekha.warriar.lkga11@cps2026.vidyon.app | active:true
+
+Institution: fa56fe57-51b4-4df9-b2ed-76a73e740837 (1 users)
+Roles: {"student":1}
+  - [student] Lekha Warriar | lekha.warriar.lkga01@cps2026.vidyon.app | active:true
+
+Institution: global (4 users)
+Roles: {"institution_stakeholder":3,"superadmin":1}
+  - [institution_stakeholder] anjaliiiiii | anjaliiiiii@finance.vidyon.app | active:true
+  - [institution_stakeholder] Test Check | test_check_val@ads.vidyon.app | active:true
+  - [institution_stakeholder] sanjay | sanjay@ads.vidyon.app | active:true
+  - [superadmin] myvidyon | myvidyon@gmail.com | active:true
+
+Institution: KTC2006 (1 users)
+Roles: {"institution":1}
+  - [institution] Konya Tution Centre  Admin | admin@ktc2026.edu | active:true
+
+Institution: KTC2026 (3 users)
+Roles: {"student":1,"faculty":1,"institution":1}
+  - [student] Divani | divaniukg0012006@ktc.edu | active:true
+  - [faculty] Mushkan | mushkan@ktc.edu | active:true
+  - [institution] kinya | kinya@ktc.edu | active:true
+
+Institution: MYVID2026 (1 users)
+Roles: {"admin":1}
+  - [admin] Mike Wilson | mike.w@example.com | active:false
+
+Institution: NAMO2026 (5 users)
+Roles: {"institution":1,"faculty":3,"accountant":1}
+  - [institution] NAMO Groups Admin | admin@namo.com | active:true
+  - [faculty] Anjali Patel | anjali.patel.tch1010@namo2026.vidyon.app | active:true
+  - [accountant] Sanjay Karthikeyan | sanjay.karthikeyan.tch201@namo2026.vidyon.app | active:true
+  - [faculty] Sanjay  Karthi | sanjay.karthi.tch001@namo2026.vidyon.app | active:true
+  - [faculty] test test | test.test.tch002@namo2026.vidyon.app | active:true
+
+Institution: OIS2026 (6 users)
+Roles: {"institution":1,"faculty":1,"parent":1,"student":1,"accountant":1,"canteen_manager":1}
+  - [institution] Orchids Internation School Admin | admin@orchid.com | active:true
+  - [faculty] Faculty 001 | faculty.001.orch001@ois2026.vidyon.app | active:true
+  - [parent] Parent 001 | parent.001.orch001@ois2026.vidyon.app | active:true
+  - [student] Studdent 001 | studdent.001.1ststandarda001@ois2026.vidyon.app | active:true
+  - [accountant] Finance 01 | finance.01.orch002@ois2026.vidyon.app | active:true
+  - [canteen_manager] Canteen 01 | canteen.01.orch003@ois2026.vidyon.app | active:true
+
+Institution: OTS2026 (2 users)
+Roles: {"institution":1,"faculty":1}
+  - [institution] Olive Tree Schools Admin | admin@olive.com | active:true
+  - [faculty] Sanjay Karthikeyan | sanjay.karthikeyan.tch001@ots2026.vidyon.app | active:true
+
+Institution: PG01 (1 users)
+Roles: {"institution":1}
+  - [institution] Pilgrim  Admin | kamalesh@pg.com | active:true
+
+Institution: SBSBHSSBSBHSS (5 users)
+Roles: {"institution":1,"student":1,"faculty":1,"parent":1,"accountant":1}
+  - [institution] Shshs Admin | admin@ktc.edu | active:true
+  - [student] Anjali Patel | anjali.patel.5tha1526@sbsbhssbsbhss.vidyon.app | active:true
+  - [faculty] Kamalesh Selvaraj | kamalesh.selvaraj.101@sbsbhssbsbhss.vidyon.app | active:true
+  - [parent] REKHA Mallaram | rekha.mallaram.798739@sbsbhssbsbhss.vidyon.app | active:true
+  - [accountant] Madhan Kumar | madhan.kumar.102@sbsbhssbsbhss.vidyon.app | active:true
+
+Institution: SKY2026 (13 users)
+Roles: {"institution":1,"student":3,"parent":2,"accountant":2,"institution_stakeholder":4,"faculty":1}
+  - [institution] Sky School Admin | kamalesh@sky.com | active:true
+  - [student] Nehemiah  Nesanathan  | nehemiah.nesanathan.1sta01@sky2026.vidyon.app | active:true
+  - [parent] Sanjay Karthikeyan | sanjay.karthikeyan.861889@sky2026.vidyon.app | active:true
+  - [student] Sanjuu Karthi | sanjuu.karthi.1sta002@sky2026.vidyon.app | active:true
+  - [accountant] Anjali  Patel | anjali.patel.staff002@sky2026.vidyon.app | active:true
+  - [student] Sanjuu Karthiii | sanjuu.karthiii.2nda01@sky2026.vidyon.app | active:true
+  - [institution_stakeholder] Madhan Kumar | madhankumar@gmail.com | active:true
+  - [institution_stakeholder] Sanju Kaarthiii | sanjaykarthikeyan@gmail.com | active:true
+  - [institution_stakeholder] ranjith | ranjith@sky2026.vidyon.app | active:true
+  - [faculty] Madhan Kumar | madhan.kumar.staff001@sky2026.vidyon.app | active:true
+  - [institution_stakeholder] comrade | comrade@sky2026.vidyon.app | active:true
+  - [accountant] Finance 1 | finance.1.tch0011@sky2026.vidyon.app | active:true
+  - [parent] Vetha Gokul | vetha.gokul.614158@sky2026.vidyon.app | active:true
+
+Institution: SPI2407 (4 users)
+Roles: {"institution":1,"student":1,"faculty":2}
+  - [institution] Spider Academy  Admin | admin@spider.com | active:true
+  - [student] Madhan Kumar | madhan.kumar.1sta9342745299@spi2407.vidyon.app | active:true
+  - [faculty] Spidey M | spidey.m.spi2008@spi2407.vidyon.app | active:true
+  - [faculty] Madhu K | madhu.k.staff2001@spi2407.vidyon.app | active:true
+
+Institution: SS1212 (10 users)
+Roles: {"institution":1,"student":3,"faculty":1,"accountant":1,"parent":2,"canteen_manager":1,"driver":1}
+  - [institution] Story seed Studio Admin | kamalesh@sss.edu | active:true
+  - [student] Kamalesh S | kamalesh.s.3rda11@ss1212.vidyon.app | active:true
+  - [faculty] Nehemiah  Nesanathan | nehemiah.nesanathan.tch1423@ss1212.vidyon.app | active:true
+  - [student] Madhan Kumar  | madhan.kumar.1sta14@ss1212.vidyon.app | active:true
+  - [accountant] Kamalesh S | kamalesh.s.tch911@ss1212.vidyon.app | active:true
+  - [student] Nehe Nesa | nehe.nesa.1stb423@ss1212.vidyon.app | active:false
+  - [parent] Kamalesh S | kamalesh.s.024257@ss1212.vidyon.app | active:true
+  - [parent] Kamalesh S | kamalesh.s.728004@ss1212.vidyon.app | active:true
+  - [canteen_manager] Anjali  Patel | anjali.patel.ctn1012@ss1212.vidyon.app | active:true
+  - [driver] Kamalesh Selvaraj | kamalesh.selvaraj.tch64744@ss1212.vidyon.app | active:true
+
+Institution: UC2026 (5 users)
+Roles: {"institution":1,"faculty":1,"accountant":1,"parent":1,"student":1}
+  - [institution] UNAI Schools Admin | admin@unaischools.com | active:true
+  - [faculty] Faculty 1 | faculty.1.staff01@uc2026.vidyon.app | active:true
+  - [accountant] finance 1 | finance.1.tch001@uc2026.vidyon.app | active:true
+  - [parent] parent 1 | parent.1.728839@uc2026.vidyon.app | active:true
+  - [student] Student 1 | student.1.1sta01@uc2026.vidyon.app | active:true
+
+Institution: UNAI2026 (3 users)
+Roles: {"student":1,"institution":1,"faculty":1}
+  - [student] Aanya | aanya@unaitech.in | active:true
+  - [institution] admin | admin@unaitech.in | active:true
+  - [faculty] Madhan | madhan@unaitech.in | active:true
+
+Institution: VEL2026 (12 users)
+Roles: {"institution":2,"faculty":2,"parent":2,"accountant":1,"student":5}
+  - [institution] Velamal Vidyalaya  Admin | admin@vels2026.com | active:true
+  - [faculty] Madhan Kumar | madhan.kumar.038332@vel2026.vidyon.app | active:true
+  - [parent] Kamalesh S | kamalesh.s.333047@vel2026.vidyon.app | active:false
+  - [accountant] Anjali Patel | anjali.patel.vels2026tch002@vel2026.vidyon.app | active:true
+  - [student] Anjali Patel | anjali.patel.9tha01@vel2026.vidyon.app | active:true
+  - [student] Anjali Patel | anjali.patel.9tha02@vel2026.vidyon.app | active:true
+  - [student] Anjali Patel | anjali.patel.9thb01@vel2026.vidyon.app | active:true
+  - [student] Nehemiah  Nesanathan  | nehemiah.nesanathan.9tha01@vel2026.vidyon.app | active:false
+  - [parent] kamalesh s | kamalesh.s.392502@vel2026.vidyon.app | active:true
+  - [institution] Velammal schools Admin | velamal@gmail.com | active:true
+  - [student] Madhan Kumar | madhan.kumar.3rdb11@vel2026.vidyon.app | active:true
+  - [faculty] Neheemiah Nesa | neheemiah.nesa.vel001@vel2026.vidyon.app | active:true
+
+Institution: VV2026 (1 users)
+Roles: {"institution":1}
+  - [institution] Velammal Vidyalaya  Admin | admin@vv.com | active:true
+
+Institution: null (99 users)
+Roles: {"student":99}
+  - [student] Student 1 | student1@abc.com | active:true
+  - [student] Student 2 | student2@abc.com | active:true
+  - [student] Student 3 | student3@abc.com | active:true
+  - [student] Student 4 | student4@abc.com | active:true
+  - [student] Student 5 | student5@abc.com | active:true
+  - [student] Student 6 | student6@abc.com | active:true
+  - [student] Student 7 | student7@abc.com | active:true
+  - [student] Student 8 | student8@abc.com | active:true
+  - [student] Student 9 | student9@abc.com | active:true
+  - [student] Student 10 | student10@abc.com | active:true
+  - [student] Student 11 | student11@abc.com | active:true
+  - [student] Student 12 | student12@abc.com | active:true
+  - [student] Student 13 | student13@abc.com | active:true
+  - [student] Student 14 | student14@abc.com | active:true
+  - [student] Student 15 | student15@abc.com | active:true
+  - [student] Student 16 | student16@abc.com | active:true
+  - [student] Student 17 | student17@abc.com | active:true
+  - [student] Student 18 | student18@abc.com | active:true
+  - [student] Student 19 | student19@abc.com | active:true
+  - [student] Student 20 | student20@abc.com | active:true
+  - [student] Student 21 | student21@abc.com | active:true
+  - [student] Student 22 | student22@abc.com | active:true
+  - [student] Student 23 | student23@abc.com | active:true
+  - [student] Student 24 | student24@abc.com | active:true
+  - [student] Student 25 | student25@abc.com | active:true
+  - [student] Student 26 | student26@abc.com | active:true
+  - [student] Student 27 | student27@abc.com | active:true
+  - [student] Student 28 | student28@abc.com | active:true
+  - [student] Student 29 | student29@abc.com | active:true
+  - [student] Student 30 | student30@abc.com | active:true
+  - [student] Student 31 | student31@abc.com | active:true
+  - [student] Student 32 | student32@abc.com | active:true
+  - [student] Student 33 | student33@abc.com | active:true
+  - [student] Student 34 | student34@abc.com | active:true
+  - [student] Student 35 | student35@abc.com | active:true
+  - [student] Student 36 | student36@abc.com | active:true
+  - [student] Student 37 | student37@abc.com | active:true
+  - [student] Student 38 | student38@abc.com | active:true
+  - [student] Student 39 | student39@abc.com | active:true
+  - [student] Student 40 | student40@abc.com | active:true
+  - [student] Student 41 | student41@abc.com | active:true
+  - [student] Student 42 | student42@abc.com | active:true
+  - [student] Student 43 | student43@abc.com | active:true
+  - [student] Student 44 | student44@abc.com | active:true
+  - [student] Student 45 | student45@abc.com | active:true
+  - [student] Student 46 | student46@abc.com | active:true
+  - [student] Student 47 | student47@abc.com | active:true
+  - [student] Student 48 | student48@abc.com | active:true
+  - [student] Student 49 | student49@abc.com | active:true
+  - [student] Student 50 | student50@abc.com | active:true
+  - [student] Student 51 | student51@abc.com | active:true
+  - [student] Student 53 | student53@abc.com | active:true
+  - [student] Student 54 | student54@abc.com | active:true
+  - [student] Student 55 | student55@abc.com | active:true
+  - [student] Student 56 | student56@abc.com | active:true
+  - [student] Student 57 | student57@abc.com | active:true
+  - [student] Student 58 | student58@abc.com | active:true
+  - [student] Student 59 | student59@abc.com | active:true
+  - [student] Student 60 | student60@abc.com | active:true
+  - [student] Student 61 | student61@abc.com | active:true
+  - [student] Student 62 | student62@abc.com | active:true
+  - [student] Student 63 | student63@abc.com | active:true
+  - [student] Student 64 | student64@abc.com | active:true
+  - [student] Student 65 | student65@abc.com | active:true
+  - [student] Student 66 | student66@abc.com | active:true
+  - [student] Student 67 | student67@abc.com | active:true
+  - [student] Student 68 | student68@abc.com | active:true
+  - [student] Student 69 | student69@abc.com | active:true
+  - [student] Student 70 | student70@abc.com | active:true
+  - [student] Student 71 | student71@abc.com | active:true
+  - [student] Student 72 | student72@abc.com | active:true
+  - [student] Student 73 | student73@abc.com | active:true
+  - [student] Student 74 | student74@abc.com | active:true
+  - [student] Student 75 | student75@abc.com | active:true
+  - [student] Student 76 | student76@abc.com | active:true
+  - [student] Student 77 | student77@abc.com | active:true
+  - [student] Student 78 | student78@abc.com | active:true
+  - [student] Student 79 | student79@abc.com | active:true
+  - [student] Student 80 | student80@abc.com | active:true
+  - [student] Student 81 | student81@abc.com | active:true
+  - [student] Student 82 | student82@abc.com | active:true
+  - [student] Student 83 | student83@abc.com | active:true
+  - [student] Student 84 | student84@abc.com | active:true
+  - [student] Student 85 | student85@abc.com | active:true
+  - [student] Student 86 | student86@abc.com | active:true
+  - [student] Student 87 | student87@abc.com | active:true
+  - [student] Student 88 | student88@abc.com | active:true
+  - [student] Student 89 | student89@abc.com | active:true
+  - [student] Student 90 | student90@abc.com | active:true
+  - [student] Student 91 | student91@abc.com | active:true
+  - [student] Student 92 | student92@abc.com | active:true
+  - [student] Student 93 | student93@abc.com | active:true
+  - [student] Student 94 | student94@abc.com | active:true
+  - [student] Student 95 | student95@abc.com | active:true
+  - [student] Student 96 | student96@abc.com | active:true
+  - [student] Student 97 | student97@abc.com | active:true
+  - [student] Student 98 | student98@abc.com | active:true
+  - [student] Student 99 | student99@abc.com | active:true
+  - [student] Student 100 | student100@abc.com | active:true
+
+=== PROFILES WITH institution_id='OIS2026': 6 ===
+[
+  {
+    "id": "78ee25a7-44a1-4f17-b917-84ed135a341b",
+    "full_name": "Orchids Internation School Admin",
+    "email": "admin@orchid.com",
+    "role": "institution",
+    "institution_id": "OIS2026",
+    "is_active": true,
+    "status": "active",
+    "updated_at": "2026-10-09T09:26:33.191+00:00",
+    "academic_year": "2025-26"
+  },
+  {
+    "id": "97855b2b-9c78-4e9a-823f-5815953db199",
+    "full_name": "Faculty 001",
+    "email": "faculty.001.orch001@ois2026.vidyon.app",
+    "role": "faculty",
+    "institution_id": "OIS2026",
+    "is_active": true,
+    "status": "active",
+    "updated_at": "2026-10-09T09:30:57.378+00:00",
+    "academic_year": "2025-26"
+  },
+  {
+    "id": "817ebbb3-d089-4321-8cfa-001c1d80701e",
+    "full_name": "Parent 001",
+    "email": "parent.001.orch001@ois2026.vidyon.app",
+    "role": "parent",
+    "institution_id": "OIS2026",
+    "is_active": true,
+    "status": "active",
+    "updated_at": "2026-10-09T09:32:58.279+00:00",
+    "academic_year": "2025-26"
+  },
+  {
+    "id": "b68b727a-2ef3-4844-ad6b-9d203f7b543b",
+    "full_name": "Studdent 001",
+    "email": "studdent.001.1ststandarda001@ois2026.vidyon.app",
+    "role": "student",
+    "institution_id": "OIS2026",
+    "is_active": true,
+    "status": "active",
+    "updated_at": "2026-10-09T09:35:38.442+00:00",
+    "academic_year": "2025-26"
+  },
+  {
+    "id": "6f7d84e7-8544-46d8-8e6e-3f1cf49e8db6",
+    "full_name": "Finance 01",
+    "email": "finance.01.orch002@ois2026.vidyon.app",
+    "role": "accountant",
+    "institution_id": "OIS2026",
+    "is_active": true,
+    "status": "active",
+    "updated_at": "2026-10-09T09:36:22.6+00:00",
+    "academic_year": "2025-26"
+  },
+  {
+    "id": "82274f76-bc1f-45f1-b494-86bf7ce733e2",
+    "full_name": "Canteen 01",
+    "email": "canteen.01.orch003@ois2026.vidyon.app",
+    "role": "canteen_manager",
+    "institution_id": "OIS2026",
+    "is_active": true,
+    "status": "active",
+    "updated_at": "2026-10-09T09:36:57.553+00:00",
+    "academic_year": "2025-26"
+  }
+]
+
+=== PROFILES WITH institution_id='5418b4e7-8689-46e9-8d7a-9a1b54005d1b': 0 ===
+[]
+
+=== MOST POPULATED INSTITUTION: ABC-SCHOOL (72 users) ===
+Institution details: null
+
+Attendance records (20): [
+  {
+    "id": "febe9bf6-6f1a-4f97-ba97-1113e7958907",
+    "student_id": "e1dd70d3-ee3b-4a67-ad2b-6a417fd814ee",
+    "attendance_date": "2026-03-09",
+    "status": "present",
+    "canteen_permission": "true",
+    "academic_year": null,
+    "entry_allowed": true
+  },
+  {
+    "id": "bacbe81c-bd44-4a07-a8d3-4bba9cc0c9ae",
+    "student_id": "f74d9ddf-7427-49b0-bf0c-8cfd5bab1281",
+    "attendance_date": "2026-03-09",
+    "status": "present",
+    "canteen_permission": "true",
+    "academic_year": null,
+    "entry_allowed": true
+  },
+  {
+    "id": "77d6de97-a64b-4594-9337-97a54998b720",
+    "student_id": "5d1c619b-6569-4091-ae14-dd1ae123254a",
+    "attendance_date": "2026-03-09",
+    "status": "present",
+    "canteen_permission": "true",
+    "academic_year": null,
+    "entry_allowed": true
+  },
+  {
+    "id": "ef9b64a4-16b1-4315-8ba5-4d7742fd3528",
+    "student_id": "5681c544-bcb5-40fc-a60d-f60e3e49c6f8",
+    "attendance_date": "2026-03-09",
+    "status": "present",
+    "canteen_permission": "true",
+    "academic_year": null,
+    "entry_allowed": true
+  },
+  {
+    "id": "77521253-c82a-463b-b9ec-c1b1f1c57f4f",
+    "student_id": "e02d4f74-c5b5-4325-b1bd-0ee9552324ac",
+    "attendance_date": "2026-03-09",
+    "status": "present",
+    "canteen_permission": "true",
+    "academic_year": null,
+    "entry_allowed": true
+  }
+]
+
+Fee payments (0): null
+
+Leave requests (0): undefined
+
+Exam schedules (0): null
+
+Assignments (0): null
+
+=== STAFF ATTENDANCE (recent 10) ===
+null
+
+=== FEE STRUCTURES ===
+[
+  {
+    "id": "c75a2fa4-ddec-4e5a-b4e7-9435515f922b",
+    "institution_id": "SS1212",
+    "name": "Annual Fee",
+    "amount": 16000,
+    "academic_year": null,
+    "created_at": "2026-03-24T13:21:42.579534+00:00",
+    "description": "[{\"title\":\"Tuition Fee\",\"amount\":15000},{\"title\":\"Lab miscellaneous \",\"amount\":1000}]",
+    "due_date": "2026-12-12T00:00:00+00:00",
+    "class_name": "3rd",
+    "term_id": null,
+    "version_number": 1,
+    "is_active": true,
+    "category": "tuition"
+  },
+  {
+    "id": "0f65e8f4-524b-4569-b8c5-f63c09057e17",
+    "institution_id": "SS1212",
+    "name": "Annual Fee",
+    "amount": 16000,
+    "academic_year": "2026-27",
+    "created_at": "2026-03-25T10:12:52.465939+00:00",
+    "description": "[{\"title\":\"Tuition Fee\",\"amount\":15000},{\"title\":\"Lab miscellaneous \",\"amount\":1000}]",
+    "due_date": null,
+    "class_name": "3rd",
+    "term_id": null,
+    "version_number": 1,
+    "is_active": true,
+    "category": "tuition"
+  },
+  {
+    "id": "fe417130-8e4f-4e78-ac97-80ce58cdd9fd",
+    "institution_id": "CPS2026",
+    "name": "Annual Fee 2026",
+    "amount": 35000,
+    "academic_year": null,
+    "created_at": "2026-04-01T11:44:17.662321+00:00",
+    "description": "[{\"title\":\"Tuition Fee\",\"amount\":35000}]",
+    "due_date": "2026-04-04T00:00:00+00:00",
+    "class_name": "UKG",
+    "term_id": null,
+    "version_number": 1,
+    "is_active": true,
+    "category": "tuition"
+  },
+  {
+    "id": "c35f523a-ae51-43e8-aa30-b30e66c088e4",
+    "institution_id": "CPS2026",
+    "name": "Annual Fee 2026",
+    "amount": 25000,
+    "academic_year": null,
+    "created_at": "2026-04-02T05:02:33.97957+00:00",
+    "description": "[{\"title\":\"Tuition Fee\",\"amount\":25000}]",
+    "due_date": "2026-04-01T00:00:00+00:00",
+    "class_name": "LKG",
+    "term_id": null,
+    "version_number": 1,
+    "is_active": true,
+    "category": "tuition"
+  },
+  {
+    "id": "233edcc9-c28d-4c81-be1e-aff32eccabb4",
+    "institution_id": "CPS2026",
+    "name": "Quick Bill: Miscellaneous Fees",
+    "amount": 0,
+    "academic_year": null,
+    "created_at": "2026-04-02T05:26:53.355541+00:00",
+    "description": "[{\"title\":\"Miscellaneous Fees\",\"amount\":0}]",
+    "due_date": "2026-04-02T00:00:00+00:00",
+    "class_name": "Ad-hoc",
+    "term_id": null,
+    "version_number": 1,
+    "is_active": true,
+    "category": "tuition"
+  },
+  {
+    "id": "9623dc2b-4d24-4182-8000-9447e00baf23",
+    "institution_id": "VEL2026",
+    "name": "Annual fee 2026",
+    "amount": 35000,
+    "academic_year": null,
+    "created_at": "2026-04-04T05:56:27.443205+00:00",
+    "description": "[{\"title\":\"Overall fee\",\"amount\":35000}]",
+    "due_date": "2026-04-04T00:00:00+00:00",
+    "class_name": "9th",
+    "term_id": null,
+    "version_number": 1,
+    "is_active": true,
+    "category": "tuition"
+  },
+  {
+    "id": "427ff646-85d7-46f6-b448-53cd6c767d83",
+    "institution_id": "VEL2026",
+    "name": "Test",
+    "amount": 37500,
+    "academic_year": null,
+    "created_at": "2026-04-04T05:58:17.352278+00:00",
+    "description": "[{\"title\":\"Tuition Fee\",\"amount\":35000},{\"title\":\"Table\",\"amount\":2500}]",
+    "due_date": "2026-05-04T00:00:00+00:00",
+    "class_name": "9th",
+    "term_id": null,
+    "version_number": 1,
+    "is_active": true,
+    "category": "tuition"
+  },
+  {
+    "id": "6817c491-0a79-49fc-93fb-77fba1033ba2",
+    "institution_id": "VEL2026",
+    "name": "Quick Bill: Miscellaneous Fees",
+    "amount": 0,
+    "academic_year": null,
+    "created_at": "2026-04-04T05:59:50.336254+00:00",
+    "description": "[{\"title\":\"Miscellaneous Fees\",\"amount\":0}]",
+    "due_date": "2026-04-04T00:00:00+00:00",
+    "class_name": "Ad-hoc",
+    "term_id": null,
+    "version_number": 1,
+    "is_active": true,
+    "category": "tuition"
+  },
+  {
+    "id": "9a46dd30-16ad-498f-a515-f513368f779f",
+    "institution_id": "ABC1212",
+    "name": "ANNUAL FEE",
+    "amount": 15200,
+    "academic_year": null,
+    "created_at": "2026-04-13T06:49:03.428517+00:00",
+    "description": "[{\"title\":\"Tuition Fee\",\"amount\":15000},{\"title\":\"test\",\"amount\":200}]",
+    "due_date": "2026-04-15T00:00:00+00:00",
+    "class_name": "1st",
+    "term_id": null,
+    "version_number": 1,
+    "is_active": true,
+    "category": "tuition"
+  },
+  {
+    "id": "0d1ba111-8491-4c77-b482-495da1c99150",
+    "institution_id": "ABC1212",
+    "name": "Quick Bill: Miscellaneous Fees",
+    "amount": 0,
+    "academic_year": null,
+    "created_at": "2026-04-13T06:56:09.659162+00:00",
+    "description": "[{\"title\":\"Miscellaneous Fees\",\"amount\":0}]",
+    "due_date": "2026-04-13T00:00:00+00:00",
+    "class_name": "Ad-hoc",
+    "term_id": null,
+    "version_number": 1,
+    "is_active": true,
+    "category": "tuition"
+  }
+]
+
+=== CLASSES (first 20) ===
+null
+
+=== LEAVE REQUESTS (recent 20) ===
+null
+
+=== SCAN COMPLETE ===

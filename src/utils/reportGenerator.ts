@@ -1,6 +1,37 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import { Platform } from 'react-native';
 import { resolveImageToBase64 } from './fileUpload';
+
+const deliverReportHtml = async (htmlContent: string, defaultFileName: string = 'Financial_Report') => {
+    if (Platform.OS === 'web') {
+        try {
+            await Print.printAsync({ html: htmlContent });
+            return;
+        } catch (webPrintErr) {
+            console.warn('[ReportGenerator] Print.printAsync fallback to direct download:', webPrintErr);
+            if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+                const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${defaultFileName}_${Date.now()}.html`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                return;
+            }
+        }
+    }
+
+    const { uri } = await Print.printToFileAsync({ html: htmlContent });
+    if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri);
+    } else {
+        await Print.printAsync({ html: htmlContent });
+    }
+};
 
 export const generateFinancialReport = async (stats: any, institutionName?: string, logoUrl?: string) => {
     const resolvedLogo = await resolveImageToBase64(logoUrl);
@@ -91,12 +122,7 @@ export const generateFinancialReport = async (stats: any, institutionName?: stri
     `;
 
     try {
-        const { uri } = await Print.printToFileAsync({ html: htmlContent });
-        if (!(await Sharing.isAvailableAsync())) {
-            alert('Sharing is not available on your device');
-            return;
-        }
-        await Sharing.shareAsync(uri);
+        await deliverReportHtml(htmlContent, 'Financial_Report');
     } catch (error) {
         console.error('Error generating report:', error);
         alert('Failed to generate report');
@@ -223,12 +249,7 @@ export const generateDailyCollectionReport = async (institutionId: string, insti
           </html>
         `;
 
-        const { uri } = await Print.printToFileAsync({ html: htmlContent });
-        if (!(await Sharing.isAvailableAsync())) {
-            alert('Sharing is not available on your device');
-            return;
-        }
-        await Sharing.shareAsync(uri);
+        await deliverReportHtml(htmlContent, 'Daily_Collection_Report');
     } catch (error) {
         console.error('Error generating report:', error);
         alert('Failed to generate daily collection report');
