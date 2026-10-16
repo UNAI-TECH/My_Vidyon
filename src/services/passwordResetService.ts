@@ -294,16 +294,8 @@ export async function approvePasswordResetRequest(
     console.warn('[PasswordResetService] Edge function call failed:', err);
   }
 
-  // 2. If this is an institution admin, also update the institutions table admin_password
-  if (request.role === 'institution' && request.institution_id) {
-    try {
-      await (supabase.from('institutions') as any)
-        .update({ admin_password: tempPassword })
-        .eq('institution_id', request.institution_id);
-    } catch (e) {
-      console.warn('[PasswordResetService] Failed updating institutions table admin_password:', e);
-    }
-  }
+  // 2. Cleartext admin_password write removed (remediated per VULN-001/SEC-001 security policy).
+  // Credentials are authenticated and secured exclusively via Supabase Auth Admin API.
 
   // 3. Update DB request record
   try {
@@ -343,7 +335,7 @@ export async function approvePasswordResetRequest(
     console.warn('[PasswordResetService] Error updating local store:', e);
   }
 
-  // 5. Audit log
+  // 5. Audit log (sanitized: no cleartext credentials logged per VULN-001)
   await logAuditEvent({
     action: 'RESET_PASSWORD_APPROVE',
     entityType: 'user_security',
@@ -354,7 +346,7 @@ export async function approvePasswordResetRequest(
     details: {
       requester_email: targetEmail,
       role: request.role,
-      reset_to: tempPassword
+      temp_credential_provisioned: true
     }
   });
 

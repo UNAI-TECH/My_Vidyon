@@ -376,7 +376,7 @@ Deno.serve(async (req: Request) => {
             if (finalRole === 'institution') {
                 await supabaseAdmin
                     .from('institutions')
-                    .update({ admin_email: email.toLowerCase(), admin_password: finalPassword })
+                    .update({ admin_email: email.toLowerCase() })
                     .eq('institution_id', institution_id);
             }
         }

@@ -60,7 +60,6 @@ export interface Database {
           status: string
           created_at: string
           admin_email: string
-          admin_password: string
           current_academic_year: string
           academic_year_start: string
           academic_year_end: string
@@ -83,7 +82,6 @@ export interface Database {
           status?: string | null
           created_at?: string | null
           admin_email?: string | null
-          admin_password?: string | null
           current_academic_year?: string | null
           academic_year_start?: string | null
           academic_year_end?: string | null
@@ -106,7 +104,6 @@ export interface Database {
           status?: string | null
           created_at?: string | null
           admin_email?: string | null
-          admin_password?: string | null
           current_academic_year?: string | null
           academic_year_start?: string | null
           academic_year_end?: string | null
