@@ -54,7 +54,7 @@ export default function InstitutionDashboard() {
     }
     if (role === 'accountant' || role === 'finance') {
       return [
-        { label: 'Fee Management', icon: Briefcase, href: '/(root)/institution/fees', color: '#F59E0B' },
+        ...(((institution as any)?.allowed_roles?.finance !== false) ? [{ label: 'Fee Management', icon: Briefcase, href: '/(root)/institution/fees', color: '#F59E0B' }] : []),
         { label: 'Fee Collection', icon: TrendingUp, href: '/(root)/institution/fees/collection', color: '#10B981' },
         { label: 'Fee Structures', icon: FileText, href: '/(root)/institution/fees/structures', color: '#6366F1' },
         { label: 'Concessions', icon: UserCheck, href: '/(root)/institution/fees/concessions', color: '#EC4899' },

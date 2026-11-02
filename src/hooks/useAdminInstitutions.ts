@@ -18,6 +18,11 @@ export interface Institution {
     map_link?: string | null;
     has_kg?: boolean | null;
     academic_stages?: string[] | null;
+    institution_category?: 'school' | 'college' | string | null;
+    ownership_type?: 'private' | 'public' | string | null;
+    board_or_university?: string | null;
+    master_catalog_id?: string | null;
+    timetable_template_id?: string | null;
     logo_url: string | null;
     studentsCount: number;
     staffCount: number;

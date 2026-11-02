@@ -1,45 +1,84 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator } from 'react-native';
 import { theme } from '../../../src/theme';
-import { Bell, Send, Users, Smartphone } from 'lucide-react-native';
+import { Bell, Send, Users, School, Copy, RefreshCw, Trash2, CheckCircle, ShieldAlert, Globe } from 'lucide-react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../src/lib/supabase';
 import { useAuth } from '../../../src/hooks/useAuth';
-import { School, ChevronDown, Check, X } from 'lucide-react-native';
 import { AlertModal } from '../../../src/components/common/AlertModal';
-import { Modal, FlatList } from 'react-native';
+import { Select } from '../../../src/components/common/Select';
+import { DataTable } from '../../../src/components/common/DataTable';
+import { ActionDropdown, ActionDropdownItem } from '../../../src/components/common/ActionDropdown';
+import { Badge } from '../../../src/components/common/Badge';
 
 interface Institution {
   id: string; 
-  institution_id: string; // The Slug (TEXT) used for announcements
+  institution_id: string;
   name: string;
+  city?: string;
 }
 
+const MESSAGE_TEMPLATES = [
+  {
+    id: 'custom',
+    label: 'Custom Announcement (Draft from scratch)',
+    content: '',
+  },
+  {
+    id: 'maintenance',
+    label: '🛠️ Scheduled System Maintenance Alert',
+    content: 'Important Notice: The Vidyon platform will undergo scheduled core infrastructure upgrades tonight from 12:00 AM to 02:00 AM IST. Portal access may experience intermittent pauses during this window.',
+  },
+  {
+    id: 'exam',
+    label: 'Examination Schedule Publication',
+    content: 'Academic Advisory: The comprehensive semester examination timetables and hall ticket guidelines have been officially released. Please review your portal calendar for detailed subject dates.',
+  },
+  {
+    id: 'fees',
+    label: 'Term Fee Payment Reminder',
+    content: 'Accounts Notification: Please be advised that the upcoming academic term fee cycle settlement deadline is approaching. Ensure pending dues are settled via the secure online portal before the cutoff date.',
+  },
+  {
+    id: 'holiday',
+    label: 'Public Holiday / Campus Closure Notice',
+    content: 'Campus Advisory: Please take note that all regular academic lectures, practical laboratories, and administrative offices will remain suspended tomorrow in observation of the official holiday.',
+  },
+  {
+    id: 'advisory',
+    label: 'Emergency / Weather Advisory',
+    content: 'Urgent Advisory: Due to adverse meteorological conditions, physical campus sessions will transition to asynchronous online learning modules for today. Stay safe and monitor notifications.',
+  },
+];
+
 export default function CommunicationHub() {
-  const { institutionId, user } = useAuth();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [message, setMessage] = React.useState('');
-  const [audience, setAudience] = React.useState<'all' | 'institution'>('all');
-  const [targetRole, setTargetRole] = React.useState<'all' | 'student' | 'faculty' | 'staff'>('all');
-  const [selectedInstitutionId, setSelectedInstitutionId] = React.useState<string | null>(null);
-  const [isSending, setIsSending] = React.useState(false);
-  const [showInstitutionSelector, setShowInstitutionSelector] = React.useState(false);
+  const [message, setMessage] = useState('');
+  const [selectedTemplate, setSelectedTemplate] = useState('custom');
+  const [audience, setAudience] = useState<'all' | 'institution'>('all');
+  const [targetRole, setTargetRole] = useState<'all' | 'student' | 'faculty' | 'staff'>('all');
+  const [selectedInstitutionId, setSelectedInstitutionId] = useState<string | null>(null);
+  const [isSending, setIsSending] = useState(false);
   
   // Alert State
-  const [alert, setAlert] = React.useState({ visible: false, title: '', message: '', type: 'info' as any });
+  const [alert, setAlert] = useState<{ visible: boolean; title: string; message: string; type: any }>({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info',
+  });
 
   const { data: institutions = [] } = useQuery<Institution[]>({
-    queryKey: ['institutions-active-v5'], // New key to clear any UUID cache
+    queryKey: ['institutions-active-v5'],
     queryFn: async () => {
       const { data } = await supabase
         .from('institutions')
-        .select('id, institution_id, name')
+        .select('id, institution_id, name, city')
         .eq('status', 'active');
       return (data as Institution[]) || [];
     },
-    staleTime: 0,
-    gcTime: 0, // Ensure no old data is kept
-    refetchOnMount: 'always'
+    staleTime: 60000,
   });
 
   const { data: history = [], isLoading } = useQuery({
@@ -49,27 +88,40 @@ export default function CommunicationHub() {
         .from('announcements')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(10);
+        .limit(20);
       return data || [];
-    }
+    },
   });
+
+  const handleSelectTemplate = (templateId: string) => {
+    setSelectedTemplate(templateId);
+    const tmpl = MESSAGE_TEMPLATES.find(t => t.id === templateId);
+    if (tmpl && tmpl.content) {
+      setMessage(tmpl.content);
+    }
+  };
 
   const onBlast = async () => {
     if (!message.trim() || !user) return;
+    if (audience === 'institution' && !selectedInstitutionId) {
+      showAlert('Selection Required', 'Please select a target campus for this institution announcement.', 'warning');
+      return;
+    }
+
     setIsSending(true);
     try {
       const payload: any = {
-        title: audience === 'all' ? 'System Announcement' : `Institution Announcement`,
-        content: message,
+        title: audience === 'all' ? 'System Announcement' : `Campus Announcement`,
+        content: message.trim(),
         type: targetRole,
-        category: targetRole, // We use category as the target role
-        created_by: user.id
+        category: targetRole,
+        created_by: user.id,
       };
 
       if (audience === 'institution' && selectedInstitutionId) {
         payload.institution_id = selectedInstitutionId;
       } else {
-        payload.institution_id = null; // System-wide
+        payload.institution_id = null;
       }
 
       const { error } = await supabase
@@ -77,7 +129,7 @@ export default function CommunicationHub() {
         .insert(payload);
       
       if (!error) {
-        // Now also send to notifications table for each student/staff if targeted
+        // Send notifications
         try {
           let userIds: string[] = [];
           
@@ -91,7 +143,6 @@ export default function CommunicationHub() {
           }
 
           if (targetRole === 'all' || targetRole === 'faculty' || targetRole === 'staff') {
-            // Fetch profiles with matching role
             const query = supabase.from('profiles').select('id');
             if (targetRole !== 'all') query.eq('role', targetRole);
             if (audience === 'institution' && selectedInstitutionId) {
@@ -101,7 +152,6 @@ export default function CommunicationHub() {
             if (data) userIds.push(...data.map(p => p.id).filter(Boolean));
           }
 
-          // Unique IDs only
           userIds = [...new Set(userIds)];
 
           if (userIds.length > 0) {
@@ -111,10 +161,9 @@ export default function CommunicationHub() {
               message: payload.content,
               type: 'announcement',
               read: false,
-              institution_id: payload.institution_id
+              institution_id: payload.institution_id,
             }));
 
-            // Chunk inserts if too many
             const chunkSize = 100;
             for (let i = 0; i < notifications.length; i += chunkSize) {
               await supabase.from('notifications').insert(notifications.slice(i, i + chunkSize) as any);
@@ -125,10 +174,8 @@ export default function CommunicationHub() {
         }
 
         setMessage('');
-        setSelectedInstitutionId(null);
-        setAudience('all');
-        setTargetRole('all');
-        showAlert('Success', 'Announcement blasted successfully!', 'success');
+        setSelectedTemplate('custom');
+        showAlert('Announcement Dispatched', 'Broadcast notification dispatched across mobile apps and web dashboards.', 'success');
         queryClient.invalidateQueries({ queryKey: ['announcements'] });
       } else {
         showAlert('Error', error.message, 'error');
@@ -140,74 +187,101 @@ export default function CommunicationHub() {
     }
   };
 
+  const handleDeleteAnnouncement = async (id: string) => {
+    try {
+      const { error } = await supabase.from('announcements').delete().eq('id', id);
+      if (error) throw error;
+      showAlert('Deleted', 'Announcement removed from history.', 'info');
+      queryClient.invalidateQueries({ queryKey: ['announcements'] });
+    } catch (e: any) {
+      showAlert('Error', e.message || 'Failed to delete announcement', 'error');
+    }
+  };
+
   const showAlert = (title: string, message: string, type: any) => {
     setAlert({ visible: true, title, message, type });
   };
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Communication Hub</Text>
+      <Text style={styles.title}>Communication & Broadcast Hub</Text>
 
       <View style={styles.broadcastCard}>
         <View style={styles.cardHeader}>
-          <Bell size={24} color={theme.colors.primary} {...({} as any)} />
-          <Text style={styles.cardHeaderTitle}>New Announcement</Text>
-        </View>
-        
-        <Text style={styles.label}>Audience</Text>
-        <View style={styles.audienceSelectors}>
-          <TouchableOpacity 
-            style={[styles.audienceBtn, audience === 'all' && styles.activeAudience]}
-            onPress={() => setAudience('all')}
-          >
-            <Users size={18} color={audience === 'all' ? "white" : theme.colors.textMuted} {...({} as any)} />
-            <Text style={audience === 'all' ? styles.audienceTextActive : styles.audienceText}>All Institutions</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.audienceBtn, audience === 'institution' && styles.activeAudience]}
-            onPress={() => setAudience('institution')}
-          >
-            <School size={18} color={audience === 'institution' ? "white" : theme.colors.textMuted} {...({} as any)} />
-            <Text style={audience === 'institution' ? styles.audienceTextActive : styles.audienceText}>Specific Inst.</Text>
-          </TouchableOpacity>
-        </View>
-
-        <Text style={styles.label}>Target Role</Text>
-        <View style={styles.audienceSelectors}>
-          {(['all', 'student', 'faculty', 'staff'] as const).map((role) => (
-            <TouchableOpacity 
-              key={role}
-              style={[styles.audienceBtn, targetRole === role && styles.activeAudience, { flex: role === 'all' ? 0.7 : 1 }]}
-              onPress={() => setTargetRole(role)}
-            >
-              <Text style={targetRole === role ? styles.audienceTextActive : styles.audienceText}>
-                {role.charAt(0).toUpperCase() + role.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {audience === 'institution' && (
-          <View style={{ marginBottom: 24 }}>
-            <Text style={styles.label}>Select Institution</Text>
-            <TouchableOpacity 
-              style={styles.institutionPicker}
-              onPress={() => setShowInstitutionSelector(true)}
-            >
-              <Text style={selectedInstitutionId ? styles.pickerText : styles.pickerPlaceholder}>
-                {institutions.find(i => i.institution_id === selectedInstitutionId)?.name || 'Choose an institution...'}
-              </Text>
-              <ChevronDown size={20} color={theme.colors.textMuted} />
-            </TouchableOpacity>
+          <View style={styles.cardIconCircle}>
+            <Bell size={22} color={theme.colors.primary} />
           </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.cardHeaderTitle}>Compose New Broadcast</Text>
+            <Text style={styles.cardHeaderSub}>Dispatch real-time push notifications & banner alerts</Text>
+          </View>
+        </View>
+
+        {/* Audience Selector Dropdown */}
+        <Select
+          label="Audience Scope *"
+          value={audience}
+          options={[
+            { label: 'All Institutions (Platform-Wide Global Broadcast)', value: 'all', subLabel: 'Sends to all campuses on Vidyon' },
+            { label: 'Specific Institution / Campus Only', value: 'institution', subLabel: 'Target a single campus tenant' },
+          ]}
+          onSelect={(val) => {
+            setAudience(val as 'all' | 'institution');
+            if (val === 'all') setSelectedInstitutionId(null);
+          }}
+          searchable={false}
+        />
+
+        {/* Specific Institution Dropdown if selected */}
+        {audience === 'institution' && (
+          <Select
+            label="Target Campus / Institution *"
+            placeholder="Search and select campus..."
+            value={selectedInstitutionId || ''}
+            options={institutions.map(inst => ({
+              label: inst.name,
+              value: inst.institution_id || inst.id,
+              subLabel: `${inst.institution_id} • ${inst.city || 'India'}`,
+            }))}
+            onSelect={(val) => setSelectedInstitutionId(val)}
+            searchable={true}
+          />
         )}
 
-        <Text style={styles.label}>Message Body</Text>
+        {/* Target Role Dropdown */}
+        <Select
+          label="Target User Role *"
+          value={targetRole}
+          options={[
+            { label: 'All Roles (Students, Parents, Faculty, Staff)', value: 'all' },
+            { label: 'Students Only', value: 'student' },
+            { label: 'Faculty / Teachers Only', value: 'faculty' },
+            { label: 'Administrative Staff Only', value: 'staff' },
+          ]}
+          onSelect={(val) => setTargetRole(val as any)}
+          searchable={false}
+        />
+
+        {/* Template Preset Dropdown */}
+        <Select
+          label="Message Template Preset"
+          placeholder="Choose standard template..."
+          value={selectedTemplate}
+          options={MESSAGE_TEMPLATES.map(t => ({
+            label: t.label,
+            value: t.id,
+          }))}
+          onSelect={handleSelectTemplate}
+          searchable={false}
+        />
+
+        <Text style={styles.label}>Broadcast Message Body *</Text>
         <TextInput
           style={styles.messageBox}
-          placeholder="Type your announcement here..."
+          placeholder="Type your official announcement here..."
           placeholderTextColor={theme.colors.textMuted}
           multiline
+          numberOfLines={4}
           value={message}
           onChangeText={setMessage}
         />
@@ -220,72 +294,112 @@ export default function CommunicationHub() {
           {isSending ? (
             <ActivityIndicator color="white" />
           ) : (
-            <Send size={20} color="white" {...({} as any)} />
+            <Send size={18} color="white" />
           )}
-          <Text style={styles.sendBtnText}>{isSending ? 'Sending...' : 'Blast Announcement'}</Text>
+          <Text style={styles.sendBtnText}>{isSending ? 'Dispatching...' : 'Blast Broadcast Alert'}</Text>
         </TouchableOpacity>
       </View>
 
-      <Text style={styles.sectionTitle}>Recent Broadcasts</Text>
-      {isLoading ? (
-        <ActivityIndicator color={theme.colors.primary} />
-      ) : (
-        history.map((item: any) => (
-          <View key={item.id} style={styles.historyCard}>
-            <Text style={styles.historyTitle}>{item.content}</Text>
-            <Text style={styles.historyMeta}>
-              Sent {new Date(item.created_at).toLocaleDateString()} • {item.title || 'Audience'}
-            </Text>
-          </View>
-        ))
-      )}
+      {/* Broadcast History Table */}
+      <View style={{ marginTop: 32, marginBottom: 40 }}>
+        <Text style={styles.sectionTitle}>Broadcast History & Activity</Text>
 
-      {/* Institution Selector Modal */}
-      <Modal
-        visible={showInstitutionSelector}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowInstitutionSelector(false)}
-      >
-        <TouchableOpacity 
-          style={styles.modalOverlay} 
-          activeOpacity={1} 
-          onPress={() => setShowInstitutionSelector(false)}
-        >
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Institution</Text>
-              <TouchableOpacity onPress={() => setShowInstitutionSelector(false)}>
-                <X size={24} color={theme.colors.text} />
-              </TouchableOpacity>
-            </View>
-
-            <FlatList
-              data={institutions}
-              keyExtractor={(item) => item.institution_id}
-              renderItem={({ item }) => (
-                <TouchableOpacity 
-                  style={styles.instItem}
-                  onPress={() => {
-                    setSelectedInstitutionId(item.institution_id);
-                    setShowInstitutionSelector(false);
-                  }}
-                >
-                  <Text style={styles.instName}>{item.name}</Text>
-                  {selectedInstitutionId === item.institution_id && (
-                    <Check size={20} color={theme.colors.primary} />
-                  )}
-                </TouchableOpacity>
-              )}
-              ListEmptyComponent={
-                <Text style={{ textAlign: 'center', marginTop: 20, color: theme.colors.textMuted }}>
-                  No active institutions found.
+        <DataTable<any>
+          columns={[
+            {
+              key: 'content',
+              title: 'Announcement Content',
+              width: '40%',
+              render: (item) => (
+                <View>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#0F172A' }} numberOfLines={2}>
+                    {item.content}
+                  </Text>
+                  <Text style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>
+                    {item.title || 'Announcement'}
+                  </Text>
+                </View>
+              ),
+            },
+            {
+              key: 'type',
+              title: 'Target Role',
+              width: '18%',
+              render: (item) => (
+                <Badge variant={item.type === 'student' ? 'default' : item.type === 'faculty' ? 'success' : 'info'}>
+                  {(item.type || 'ALL').toUpperCase()}
+                </Badge>
+              ),
+            },
+            {
+              key: 'institution_id',
+              title: 'Scope',
+              width: '18%',
+              render: (item) => (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  {!item.institution_id && <Globe size={13} color="#059669" />}
+                  <Text style={{ fontSize: 12, color: item.institution_id ? '#0284C7' : '#059669', fontWeight: '600' }}>
+                    {item.institution_id ? `Inst: ${item.institution_id}` : 'Platform-Wide'}
+                  </Text>
+                </View>
+              ),
+            },
+            {
+              key: 'created_at',
+              title: 'Sent Date',
+              width: '14%',
+              render: (item) => (
+                <Text style={{ fontSize: 11, color: '#64748B' }}>
+                  {item.created_at ? new Date(item.created_at).toLocaleDateString() : 'N/A'}
                 </Text>
-              }
-            />
-          </View>
-        </TouchableOpacity>
-      </Modal>
+              ),
+            },
+            {
+              key: 'actions',
+              title: 'Actions',
+              width: '10%',
+              align: 'right',
+              render: (item) => {
+                const actions: ActionDropdownItem[] = [
+                  {
+                    id: 'copy',
+                    label: 'Use This Message',
+                    subLabel: 'Load content into compose box',
+                    icon: <Copy size={14} color="#3B82F6" />,
+                    onPress: () => {
+                      setMessage(item.content);
+                      if (item.type) setTargetRole(item.type);
+                      if (item.institution_id) {
+                        setAudience('institution');
+                        setSelectedInstitutionId(item.institution_id);
+                      } else {
+                        setAudience('all');
+                      }
+                      showAlert('Loaded', 'Content copied into compose editor above.', 'info');
+                    },
+                  },
+                  {
+                    id: 'delete',
+                    label: 'Delete Broadcast',
+                    subLabel: 'Remove from history',
+                    icon: <Trash2 size={14} color="#DC2626" />,
+                    variant: 'destructive',
+                    onPress: () => handleDeleteAnnouncement(item.id),
+                  },
+                ];
+                return <ActionDropdown items={actions} size="sm" />;
+              },
+            },
+          ]}
+          data={history}
+          keyExtractor={(item) => item.id}
+          searchable={false}
+          pageSize={8}
+          loading={isLoading}
+          emptyTitle="No Broadcasts Found"
+          emptyDescription="Announcements blasted across campus will appear here."
+        />
+      </View>
 
       <AlertModal
         visible={alert.visible}
@@ -300,31 +414,53 @@ export default function CommunicationHub() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
-  content: { padding: 20, paddingTop: 40 },
-  title: { fontSize: 24, fontWeight: 'bold', color: theme.colors.text, marginBottom: 24 },
-  broadcastCard: { padding: 24, borderRadius: 32, backgroundColor: theme.colors.glass, borderWidth: 1, borderColor: theme.colors.glassBorder },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 24 },
+  content: { padding: 20, paddingTop: 32 },
+  title: { fontSize: 24, fontWeight: 'bold', color: theme.colors.text, marginBottom: 20 },
+  broadcastCard: {
+    padding: 24,
+    borderRadius: 24,
+    backgroundColor: theme.colors.glass,
+    borderWidth: 1,
+    borderColor: theme.colors.glassBorder,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 20 },
+  cardIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#EEF2FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   cardHeaderTitle: { fontSize: 18, fontWeight: '700', color: theme.colors.text },
-  label: { fontSize: 13, fontWeight: '600', color: theme.colors.textMuted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 },
-  audienceSelectors: { flexDirection: 'row', gap: 12, marginBottom: 24 },
-  audienceBtn: { flex: 1, flexDirection: 'row', height: 44, borderRadius: 12, borderWidth: 1, borderColor: theme.colors.glassBorder, justifyContent: 'center', alignItems: 'center', gap: 8 },
-  activeAudience: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
-  audienceText: { color: theme.colors.textMuted, fontSize: 14, fontWeight: '600' },
-  audienceTextActive: { color: 'white', fontSize: 14, fontWeight: '600' },
-  messageBox: { height: 120, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: theme.colors.glassBorder, padding: 16, color: theme.colors.text, textAlignVertical: 'top' },
-  sendBtn: { height: 56, backgroundColor: theme.colors.primary, borderRadius: 16, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 24, gap: 10 },
-  sendBtnText: { color: 'white', fontSize: 16, fontWeight: '700' },
-  sectionTitle: { fontSize: 18, fontWeight: '600', color: theme.colors.text, marginTop: 32, marginBottom: 16 },
-  historyCard: { padding: 16, borderRadius: 20, backgroundColor: theme.colors.glass, borderWidth: 1, borderColor: theme.colors.glassBorder, marginBottom: 12 },
-  historyTitle: { fontSize: 15, fontWeight: '600', color: theme.colors.text },
-  historyMeta: { fontSize: 12, color: theme.colors.textMuted, marginTop: 4 },
-  institutionPicker: { height: 52, borderRadius: 16, borderWidth: 1, borderColor: theme.colors.glassBorder, backgroundColor: 'rgba(255,255,255,0.05)', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16 },
-  pickerText: { color: theme.colors.text, fontSize: 14, fontWeight: '500' },
-  pickerPlaceholder: { color: theme.colors.textMuted, fontSize: 14 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: 'white', borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, maxHeight: '80%' },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  modalTitle: { fontSize: 20, fontWeight: 'bold', color: theme.colors.text },
-  instItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
-  instName: { fontSize: 16, color: theme.colors.text },
+  cardHeaderSub: { fontSize: 12, color: theme.colors.textMuted, marginTop: 2 },
+  label: { fontSize: 13, fontWeight: '600', color: theme.colors.text, marginBottom: 8, marginTop: 4 },
+  messageBox: {
+    minHeight: 110,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    borderWidth: 1,
+    borderColor: theme.colors.glassBorder,
+    padding: 14,
+    color: theme.colors.text,
+    textAlignVertical: 'top',
+    fontSize: 14,
+  },
+  sendBtn: {
+    height: 48,
+    backgroundColor: theme.colors.primary,
+    borderRadius: 14,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 20,
+    gap: 8,
+  },
+  sendBtnText: { color: 'white', fontSize: 15, fontWeight: '700' },
+  sectionTitle: { fontSize: 18, fontWeight: '700', color: theme.colors.text, marginBottom: 14 },
 });

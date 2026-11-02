@@ -52,20 +52,31 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [lastReadEventsAt, setLastReadEventsAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   // Track the currently resolved user ID and role so we can detect same-user
+  // Track the currently resolved user ID and role so we can detect same-user
   // focus-restore events vs genuine account switches.
   const currentUserIdRef = useRef<string | null>(null);
   const currentRoleRef = useRef<AuthContextType['role']>(null);
+  const isManualSignOutRef = useRef(false);
 
   const signOut = async () => {
+    isManualSignOutRef.current = true;
     // 1. Manually wipe the token from device storage to force local logout.
-    // We intentionally bypass supabase.auth.signOut() here because GoTrue
-    // has a tendency to send POST /logout and destroy the refresh_token globally,
-    // which breaks our completely seamless Quick Login feature.
+    // We use scope: 'local' so GoTrue cancels local timers without destroying
+    // the refresh_token globally, preserving Quick Login.
     try {
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.localStorage.removeItem('sb-ccyqzcaghwaggtmkmigi-auth-token');
+      }
       const { LargeSecureStore } = require('../lib/storage');
       await LargeSecureStore.removeItem('sb-ccyqzcaghwaggtmkmigi-auth-token');
     } catch(e) {
       console.error('[Auth] Failed to wipe device token', e);
+    }
+
+    try {
+      await supabase.auth.signOut({ scope: 'local' });
+    } catch (e) {
+      // Ignore background errors
     }
     
     // 2. Clear out React state to securely kick the user up to the login screen
@@ -162,15 +173,27 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         }
 
         if (session) {
+          isManualSignOutRef.current = false;
           setSession(session);
           setUser(session.user);
 
           // Determine if this is a same-user focus-restore / token-refresh
-          // vs a genuine new login (different user or first-time).
+          // vs a genuine new login / account switch.
           const isSameUser = currentUserIdRef.current === session.user.id;
-          const hasExistingSession = currentUserIdRef.current !== null;
+          const isAccountSwitch = currentUserIdRef.current !== null && !isSameUser;
 
-          if (isSameUser || event === 'TOKEN_REFRESHED' || hasExistingSession) {
+          if (isAccountSwitch) {
+            console.log(`[Auth] Account switch detected from ${currentUserIdRef.current} to ${session.user.id} — clearing stale profile state`);
+            setFullName(null);
+            setImageUrl(null);
+            setInstitutionId(null);
+            setInstitutionUuid(null);
+            setInstitutionName(null);
+            setInstitutionLogo(null);
+            setRole(null);
+            currentUserIdRef.current = session.user.id;
+            await fetchRole(session.user.id);
+          } else if (isSameUser || event === 'TOKEN_REFRESHED') {
             // Already logged in! Focus-restore, Alt+Tab, or token refresh:
             // Silently sync role in background. NEVER set loading=true,
             // which would unmount the navigation stack and kick the user!
@@ -178,14 +201,31 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             await fetchRole(session.user.id);
             currentUserIdRef.current = session.user.id;
           } else {
-            // Genuine new login or first-time load
+            // Genuine first-time login
             console.log('[Auth] New SIGNED_IN — full role load');
             setLoading(true);
-            await fetchRole(session.user.id);
             currentUserIdRef.current = session.user.id;
+            await fetchRole(session.user.id);
             setLoading(false);
           }
         } else {
+          // If session is null (e.g. from background tab switch or focus refresh hiccup),
+          // verify whether this was an explicit user logout vs an automatic event.
+          if (!isManualSignOutRef.current && currentUserIdRef.current) {
+            console.log('[Auth] Detected unexpected background auth event. Verifying active session...');
+            try {
+              const { data: checkData } = await supabase.auth.getSession();
+              if (checkData?.session) {
+                console.log('[Auth] Preserved active session across tab switch');
+                setSession(checkData.session);
+                setUser(checkData.session.user);
+                return;
+              }
+            } catch (recoveryErr) {
+              console.warn('[Auth] Session check failed:', recoveryErr);
+            }
+          }
+
           setSession(null);
           setUser(null);
           setRole(null);

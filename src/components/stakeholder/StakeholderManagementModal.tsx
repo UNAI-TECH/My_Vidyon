@@ -32,6 +32,8 @@ import {
   AlertCircle,
 } from 'lucide-react-native';
 
+import { Select } from '../common/Select';
+
 export interface StakeholderManagementModalProps {
   visible: boolean;
   onClose: () => void;
@@ -69,6 +71,8 @@ export const StakeholderManagementModal: React.FC<StakeholderManagementModalProp
   const [showAddForm, setShowAddForm] = useState(false);
   const [email, setEmail] = useState('');
   const [fullName, setFullName] = useState('');
+  const [stakeholderRole, setStakeholderRole] = useState('institution_stakeholder');
+  const [stakeholderDept, setStakeholderDept] = useState('Board of Trustees');
   const [canExport, setCanExport] = useState(true);
 
   // 1. Fetch linked stakeholders for this institution
@@ -422,21 +426,54 @@ export const StakeholderManagementModal: React.FC<StakeholderManagementModalProp
                   />
                 </View>
 
-                {/* Export Permission Toggle */}
-                <View style={styles.switchRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.switchLabel}>Allow Report Export</Text>
-                    <Text style={styles.switchSubtext}>
-                      Allows downloading executive reports and summaries.
-                    </Text>
-                  </View>
-                  <Switch
-                    value={canExport}
-                    onValueChange={setCanExport}
-                    trackColor={{ false: '#CBD5E1', true: '#FDE68A' }}
-                    thumbColor={canExport ? theme.colors.primary : '#F1F5F9'}
+                {/* Role Dropdown */}
+                <View style={{ marginTop: 12 }}>
+                  <Select
+                    label="Stakeholder Role *"
+                    value={stakeholderRole}
+                    options={[
+                      { label: 'Institution Stakeholder (Board / Trustee)', value: 'institution_stakeholder' },
+                      { label: 'Ad & Outreach Manager', value: 'ad_manager' },
+                      { label: 'Finance & Accounts Oversight', value: 'finance_manager' },
+                    ]}
+                    onSelect={(val) => setStakeholderRole(val)}
+                    searchable={false}
                   />
                 </View>
+
+                {/* Department Dropdown */}
+                <Select
+                  label="Department / Oversight Committee *"
+                  value={stakeholderDept}
+                  options={[
+                    { label: 'Board of Trustees & Governance', value: 'Board of Trustees' },
+                    { label: 'Finance & Audit Committee', value: 'Audit Committee' },
+                    { label: 'Academic & Curriculum Advisory', value: 'Academic Advisory' },
+                    { label: 'Operations & Facilities', value: 'Operations' },
+                  ]}
+                  onSelect={(val) => setStakeholderDept(val)}
+                  searchable={false}
+                />
+
+                {/* Export Permission Dropdown */}
+                <Select
+                  label="Export & Reporting Permissions *"
+                  value={canExport ? 'enabled' : 'disabled'}
+                  options={[
+                    {
+                      label: 'Allow Report & Excel Exports (Full Oversight)',
+                      value: 'enabled',
+                      subLabel: 'Permitted to download student, staff and fee reports',
+                    },
+                    {
+                      label: 'View-Only (No Report Exports)',
+                      value: 'disabled',
+                      subLabel: 'Dashboard view only; raw data export is restricted',
+                    },
+                  ]}
+                  onSelect={(val) => setCanExport(val === 'enabled')}
+                  searchable={false}
+                />
 
                 {/* First-time login note */}
                 <View style={styles.passwordNote}>

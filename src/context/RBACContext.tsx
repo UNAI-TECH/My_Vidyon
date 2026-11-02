@@ -73,12 +73,14 @@ export const RBACProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       const { data, error } = await supabase
         .from('feature_flags')
-        .select('key, is_enabled');
+        .select('*');
 
       if (!error && data) {
         const flags: Record<string, boolean> = {};
         data.forEach((row: any) => {
-          flags[row.key] = Boolean(row.is_enabled);
+          const k = row.flag_key || row.key;
+          const val = row.enabled !== undefined ? row.enabled : row.is_enabled;
+          if (k) flags[k] = Boolean(val);
         });
         setFeatureFlags(prev => ({ ...prev, ...flags }));
       }

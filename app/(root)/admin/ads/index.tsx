@@ -31,8 +31,13 @@ import {
   Layers,
   Image as ImageIcon,
   AlertTriangle,
-  X
+  X,
+  Users,
+  Trash2,
+  FileSpreadsheet
 } from 'lucide-react-native';
+import { Select } from '../../../../src/components/common/Select';
+import { ActionDropdown, ActionDropdownItem } from '../../../../src/components/common/ActionDropdown';
 
 const TARGET_AUDIENCES = [
   { id: 'all', label: 'All Dashboards (Generic)' },
@@ -669,47 +674,25 @@ export default function AdminAdManagement() {
           </View>
         )}
 
-        {/* Global Filter Chips Toolbar */}
+        {/* Global Filter Toolbar */}
         {!isScoped && (
-          <View style={styles.filterBar}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-              <TouchableOpacity
-                style={[styles.filterChip, !filterInstitutionId && styles.filterChipActive]}
-                onPress={() => setFilterInstitutionId(null)}
-              >
-                <Text style={[styles.filterChipText, !filterInstitutionId && styles.filterChipTextActive]}>
-                  All Campaigns ({ads.length})
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.filterChip, filterInstitutionId === 'global' && styles.filterChipActive]}
-                onPress={() => setFilterInstitutionId('global')}
-              >
-                <Globe size={13} color={filterInstitutionId === 'global' ? '#FFF' : '#64748B'} />
-                <Text style={[styles.filterChipText, filterInstitutionId === 'global' && styles.filterChipTextActive]}>
-                  Global Generic ({ads.filter((a: any) => !a.institution_id).length})
-                </Text>
-              </TouchableOpacity>
-
-              {institutions.map((inst: any) => {
-                const count = ads.filter((a: any) => a.institution_id === inst.id || a.institution_id === inst.institution_id).length;
-                if (count === 0) return null;
-                const isSelected = filterInstitutionId === inst.id || filterInstitutionId === inst.institution_id;
-                return (
-                  <TouchableOpacity
-                    key={inst.id}
-                    style={[styles.filterChip, isSelected && styles.filterChipActive]}
-                    onPress={() => setFilterInstitutionId(inst.id)}
-                  >
-                    <Building size={13} color={isSelected ? '#FFF' : '#64748B'} />
-                    <Text style={[styles.filterChipText, isSelected && styles.filterChipTextActive]}>
-                      {inst.name} ({count})
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
+          <View style={{ marginBottom: 12 }}>
+            <Select
+              placeholder="Filter campaigns by institution or scope..."
+              value={filterInstitutionId || 'all'}
+              options={[
+                { label: `All Campaigns (${ads.length})`, value: 'all' },
+                { label: `Global Generic (${ads.filter((a: any) => !a.institution_id).length})`, value: 'global' },
+                ...institutions.map((inst: any) => ({
+                  label: `${inst.name} (${ads.filter((a: any) => a.institution_id === inst.id || a.institution_id === inst.institution_id).length})`,
+                  value: inst.id,
+                  subLabel: inst.city || 'India',
+                })),
+              ]}
+              onSelect={(val) => setFilterInstitutionId(val === 'all' ? null : val)}
+              searchable={true}
+              containerStyle={{ marginBottom: 4 }}
+            />
           </View>
         )}
 
@@ -789,9 +772,44 @@ export default function AdminAdManagement() {
                 <View style={styles.adInfo}>
                   <View style={styles.adHeaderRow}>
                     <Text style={styles.adTitle} numberOfLines={1}>{ad.title}</Text>
-                    <TouchableOpacity onPress={() => deleteMutation.mutate(ad.id)}>
-                      <Text style={styles.deleteBtnText}>Delete</Text>
-                    </TouchableOpacity>
+                    <ActionDropdown
+                      items={[
+                        {
+                          id: 'view_leads',
+                          label: 'View User Leads',
+                          subLabel: 'Inspect user clicks & verified phone leads',
+                          icon: <Users size={15} color="#3B82F6" />,
+                          onPress: () => router.push({
+                            pathname: '/(root)/admin/ads/leads',
+                            params: { adId: ad.id },
+                          }),
+                        },
+                        {
+                          id: 'export_xlsx',
+                          label: 'Export Leads XLSX',
+                          subLabel: 'Download roster to Excel sheet',
+                          icon: <FileSpreadsheet size={15} color="#10B981" />,
+                          variant: 'success',
+                          onPress: () => handleDownloadAdLeads(ad),
+                        },
+                        {
+                          id: 'delete_campaign',
+                          label: 'Delete Campaign',
+                          subLabel: 'Permanently remove sponsored campaign',
+                          icon: <Trash2 size={15} color="#DC2626" />,
+                          variant: 'destructive',
+                          onPress: () => {
+                            showAlert(
+                              'Delete Campaign',
+                              `Are you sure you want to permanently delete "${ad.title}"?`,
+                              'warning'
+                            );
+                            deleteMutation.mutate(ad.id);
+                          },
+                        },
+                      ]}
+                      size="sm"
+                    />
                   </View>
 
                   <View style={styles.adMeta}>
@@ -862,31 +880,6 @@ export default function AdminAdManagement() {
                   <Text style={styles.adDesc} numberOfLines={2}>{ad.description}</Text>
                   <View style={styles.linkRow}>
                     <Text style={styles.linkText} numberOfLines={1}>{ad.hyperlink}</Text>
-                  </View>
-
-                  {/* Specific Campaign Leads Actions (Text only) */}
-                  <View style={styles.cardActionsRow}>
-                    <TouchableOpacity 
-                      style={styles.actionBtnLeads}
-                      onPress={() => router.push({
-                        pathname: '/(root)/admin/ads/leads',
-                        params: { adId: ad.id }
-                      })}
-                    >
-                      <Text style={styles.actionBtnLeadsText}>View Leads</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity 
-                      style={styles.actionBtnDownload}
-                      disabled={exportingAdId === ad.id}
-                      onPress={() => handleDownloadAdLeads(ad)}
-                    >
-                      {exportingAdId === ad.id ? (
-                        <ActivityIndicator size="small" color="#059669" />
-                      ) : (
-                        <Text style={styles.actionBtnDownloadText}>Export XLSX</Text>
-                      )}
-                    </TouchableOpacity>
                   </View>
                 </View>
               </View>
@@ -977,45 +970,28 @@ export default function AdminAdManagement() {
                 </View>
               )}
 
-              <Text style={styles.label}>TARGET DASHBOARD / AUDIENCE</Text>
-              <View style={styles.institutionPickerContainer}>
-                {TARGET_AUDIENCES.map((aud) => {
-                  const isActive = form.target_audience === aud.id;
-                  return (
-                    <TouchableOpacity 
-                      key={aud.id}
-                      style={[styles.pickerItem, isActive && styles.pickerItemActive]}
-                      onPress={() => setForm({ ...form, target_audience: aud.id as any })}
-                    >
-                      <Text style={[styles.pickerItemText, isActive && styles.pickerItemTextActive]}>
-                        {aud.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+              <Select
+                label="Target Dashboard / Audience *"
+                value={form.target_audience}
+                options={TARGET_AUDIENCES.map(aud => ({
+                  label: aud.label,
+                  value: aud.id,
+                }))}
+                onSelect={(val) => setForm({ ...form, target_audience: val as any })}
+                searchable={false}
+              />
 
-              <Text style={styles.label}>AD PRICING MODEL</Text>
-              <View style={styles.institutionPickerContainer}>
-                {PRICING_TYPES.map((pt) => {
-                  const isActive = form.ad_pricing_type === pt.id;
-                  return (
-                    <TouchableOpacity 
-                      key={pt.id}
-                      style={[styles.pickerItem, isActive && styles.pickerItemActive]}
-                      onPress={() => setForm({ ...form, ad_pricing_type: pt.id as any })}
-                    >
-                      <Text style={[styles.pickerItemText, isActive && styles.pickerItemTextActive]}>
-                        {pt.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+              <Select
+                label="Ad Pricing Model *"
+                value={form.ad_pricing_type}
+                options={PRICING_TYPES.map(pt => ({
+                  label: pt.label,
+                  value: pt.id,
+                }))}
+                onSelect={(val) => setForm({ ...form, ad_pricing_type: val as any })}
+                searchable={false}
+              />
 
-              <Text style={styles.label}>
-                {isScoped ? "TARGET CAMPUS (LOCKED)" : "TARGET INSTITUTION (OPTIONAL)"}
-              </Text>
               {isScoped ? (
                 <View style={styles.scopedLockedBanner}>
                   <Building size={16} color="#0284C7" />
@@ -1024,26 +1000,21 @@ export default function AdminAdManagement() {
                   </Text>
                 </View>
               ) : (
-                <View style={styles.institutionPickerContainer}>
-                  <TouchableOpacity 
-                    style={[styles.pickerItem, !form.institution_id && styles.pickerItemActive]}
-                    onPress={() => setForm({ ...form, institution_id: null })}
-                  >
-                    <Text style={[styles.pickerItemText, !form.institution_id && styles.pickerItemTextActive]}>Global (All Schools)</Text>
-                  </TouchableOpacity>
-                  
-                  {institutions.map((inst) => (
-                    <TouchableOpacity 
-                      key={inst.id}
-                      style={[styles.pickerItem, form.institution_id === inst.id && styles.pickerItemActive]}
-                      onPress={() => setForm({ ...form, institution_id: inst.id })}
-                    >
-                      <Text style={[styles.pickerItemText, form.institution_id === inst.id && styles.pickerItemTextActive]}>
-                        {inst.name}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+                <Select
+                  label="Target Campus / Scope"
+                  placeholder="Select campus (optional)..."
+                  value={form.institution_id || 'global'}
+                  options={[
+                    { label: 'Global (All Institutions)', value: 'global' },
+                    ...institutions.map(inst => ({
+                      label: inst.name,
+                      value: inst.id,
+                      subLabel: `${inst.institution_id} • ${inst.city || 'India'}`,
+                    })),
+                  ]}
+                  onSelect={(val) => setForm({ ...form, institution_id: val === 'global' ? null : val })}
+                  searchable={true}
+                />
               )}
 
               <View style={styles.fieldHeaderRow}>
@@ -1123,7 +1094,22 @@ export default function AdminAdManagement() {
                 onChangeText={(t) => setForm({ ...form, hyperlink: t })}
               />
 
-              <Text style={styles.label}>SPONSOR PAID AMOUNT / BUDGET (₹)</Text>
+              <Select
+                label="Budget Tier Preset"
+                placeholder="Choose standard budget..."
+                value={form.paid_amount}
+                options={[
+                  { label: 'Starter — ₹2,000 (Approx 10k views / 800 clicks)', value: '2000' },
+                  { label: 'Popular — ₹5,000 (Approx 25k views / 2,000 clicks)', value: '5000' },
+                  { label: 'Growth — ₹10,000 (Approx 50k views / 4,000 clicks)', value: '10000' },
+                  { label: 'Campus Blitz — ₹25,000 (Approx 125k views / 10,000 clicks)', value: '25000' },
+                  { label: 'Enterprise — ₹50,000 (Approx 250k views / 20,000 clicks)', value: '50000' },
+                ]}
+                onSelect={(val) => setForm({ ...form, paid_amount: val })}
+                searchable={false}
+              />
+
+              <Text style={styles.label}>CUSTOM BUDGET AMOUNT (₹)</Text>
               <TextInput
                 style={styles.input}
                 placeholder="e.g. 5000"
@@ -1134,7 +1120,18 @@ export default function AdminAdManagement() {
 
               {form.ad_pricing_type !== 'click' && (
                 <>
-                  <Text style={styles.label}>PRICE PER VIEW / IMPRESSION (₹)</Text>
+                  <Select
+                    label="Cost Per View (CPV) Preset"
+                    value={form.cost_per_view}
+                    options={[
+                      { label: 'Economy — ₹0.10 / impression', value: '0.10' },
+                      { label: 'Standard — ₹0.20 / impression', value: '0.20' },
+                      { label: 'Priority High-Density — ₹0.50 / impression', value: '0.50' },
+                    ]}
+                    onSelect={(val) => setForm({ ...form, cost_per_view: val })}
+                    searchable={false}
+                  />
+                  <Text style={styles.label}>CUSTOM PRICE PER VIEW (₹)</Text>
                   <TextInput
                     style={styles.input}
                     placeholder="e.g. 0.20"
@@ -1147,7 +1144,18 @@ export default function AdminAdManagement() {
 
               {form.ad_pricing_type !== 'view' && (
                 <>
-                  <Text style={styles.label}>PRICE PER CLICK / VISIT (₹)</Text>
+                  <Select
+                    label="Cost Per Click (CPC) Preset"
+                    value={form.cost_per_click}
+                    options={[
+                      { label: 'Economy — ₹1.50 / click', value: '1.50' },
+                      { label: 'Standard — ₹2.50 / click', value: '2.50' },
+                      { label: 'High Priority — ₹5.00 / click', value: '5.00' },
+                    ]}
+                    onSelect={(val) => setForm({ ...form, cost_per_click: val })}
+                    searchable={false}
+                  />
+                  <Text style={styles.label}>CUSTOM PRICE PER CLICK (₹)</Text>
                   <TextInput
                     style={styles.input}
                     placeholder="e.g. 2.50"

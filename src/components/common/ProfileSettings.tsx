@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Image } from 'react-native';
 import { useAuth } from '../../hooks/useAuth';
+import { useAccountSwitcher } from '../../context/AccountSwitcherContext';
 import { supabase } from '../../lib/supabase';
 import { useQuery } from '@tanstack/react-query';
 import { theme } from '../../theme';
@@ -17,11 +18,13 @@ import {
   Users,
   Briefcase,
   Store,
-  Info
+  Info,
+  UserCheck
 } from 'lucide-react-native';
 
 export const ProfileSettings = () => {
   const { user, signOut, role, institutionId, fullName: authFullName, imageUrl: authImageUrl } = useAuth();
+  const { openAccountSwitcher } = useAccountSwitcher();
 
   // Fetch Full Profile Details
   const { data: profile, isLoading: isProfileLoading } = useQuery({
@@ -31,15 +34,16 @@ export const ProfileSettings = () => {
         .from('profiles')
         .select('*')
         .eq('id', user?.id as string)
-        .single();
+        .maybeSingle();
       if (error) throw error;
       return data as any;
     },
     enabled: !!user?.id,
+    staleTime: 5 * 60 * 1000,
   });
 
   // Fetch Role-Specific Details
-  const { data: roleData, isLoading: isRoleLoading } = useQuery({
+  const { data: roleData } = useQuery({
     queryKey: ['user-role-data', user?.id, role],
     queryFn: async () => {
       if (!user?.id) return null;
@@ -48,20 +52,16 @@ export const ProfileSettings = () => {
         const { data } = await supabase
           .from('students')
           .select('*')
-          .eq('user_id', user.id)
+          .or(`user_id.eq.${user.id},profile_id.eq.${user.id}`)
           .maybeSingle();
         return data;
       }
 
       if (role === 'faculty') {
-        // Faculty data is primarily in profiles (department etc), 
-        // but we might want to check if there's a specific faculty table if needed.
-        // For now, profiles has everything for faculty.
         return profile;
       }
 
       if (role === 'parent') {
-        // Parent might have linked children
         const { data: children } = await supabase
           .from('students')
           .select('name, register_number, class_name, section')
@@ -72,27 +72,34 @@ export const ProfileSettings = () => {
       return null;
     },
     enabled: !!user?.id && !!profile,
+    staleTime: 5 * 60 * 1000,
   });
 
   // Fetch Institution Details
-  const { data: institution, isLoading: isInstLoading } = useQuery({
+  const { data: institution } = useQuery({
     queryKey: ['user-institution', institutionId],
     queryFn: async () => {
-      if (!institutionId) return null;
-      const { data, error } = await supabase
-        .from('institutions')
-        .select('*')
-        .eq('institution_id', institutionId)
-        .single();
-      if (error) throw error;
+      if (!institutionId || institutionId === 'global') return null;
+      const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+      let query = supabase.from('institutions').select('*');
+      if (isUUID(institutionId)) {
+        query = query.eq('id', institutionId);
+      } else {
+        query = query.eq('institution_id', institutionId);
+      }
+      const { data, error } = await (query as any).maybeSingle();
+      if (error) console.warn('[ProfileSettings] Inst fetch:', error);
       return data as any;
     },
-    enabled: !!institutionId,
+    enabled: !!institutionId && institutionId !== 'global',
+    staleTime: 5 * 60 * 1000,
+    retry: false,
   });
 
-  const isLoading = isProfileLoading || isRoleLoading || isInstLoading;
+  // Only block screen if there is zero identity data available
+  const isInitialLoading = isProfileLoading && !profile && !authFullName;
 
-  if (isLoading) {
+  if (isInitialLoading) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color={theme.colors.primary} />
@@ -220,6 +227,16 @@ export const ProfileSettings = () => {
         </Text>
       </View>
 
+      {/* Switch Account (without logging out) */}
+      <TouchableOpacity 
+        style={styles.switchAccountButton} 
+        onPress={openAccountSwitcher}
+        activeOpacity={0.8}
+      >
+        <UserCheck size={19} color={theme.colors.primary} style={{ marginRight: 8 }} {...({} as any)} />
+        <Text style={styles.switchAccountText}>Switch Account</Text>
+      </TouchableOpacity>
+
       {/* Sign Out */}
       <TouchableOpacity style={styles.signOutButton} onPress={signOut}>
         <LogOut size={20} color="#EF4444" style={{ marginRight: 8 }} {...({} as any)} />
@@ -284,6 +301,18 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.primary + '20'
   },
   noticeText: { flex: 1, fontSize: 12, color: theme.colors.textMuted, lineHeight: 18 },
+  switchAccountButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FAB75A15',
+    padding: 16,
+    borderRadius: 20,
+    marginTop: 8,
+    borderWidth: 1.5,
+    borderColor: theme.colors.primary,
+  },
+  switchAccountText: { color: theme.colors.primary, fontWeight: '700', fontSize: 16 },
   signOutButton: { 
     flexDirection: 'row', 
     alignItems: 'center', 

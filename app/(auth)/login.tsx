@@ -157,19 +157,27 @@ export default function LoginScreen() {
 
     // 2. Direct database fallback (query profiles & institutions)
     try {
-      const { data: prof } = await (supabase.from('profiles') as any)
-        .select('institution_id, full_name, is_active')
-        .or(`email.eq.${identifier},id.eq.${identifier}`)
-        .maybeSingle();
+      const isIdentifierUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier);
+      let profQuery = (supabase.from('profiles') as any).select('institution_id, full_name, is_active');
+      if (isIdentifierUUID) {
+        profQuery = profQuery.or(`email.eq.${identifier},id.eq.${identifier}`);
+      } else {
+        profQuery = profQuery.eq('email', identifier);
+      }
+      const { data: prof } = await profQuery.maybeSingle();
 
       if (prof && prof.is_active === false) {
         let instName = 'the administrator';
         let instPhone = 'N/A';
         if (prof.institution_id && prof.institution_id !== 'global') {
-          const { data: inst } = await (supabase.from('institutions') as any)
-            .select('name, phone, office_phone')
-            .or(`id.eq.${prof.institution_id},institution_id.eq.${prof.institution_id}`)
-            .maybeSingle();
+          const isInstUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(prof.institution_id);
+          let instQuery = (supabase.from('institutions') as any).select('name, phone, office_phone');
+          if (isInstUUID) {
+            instQuery = instQuery.or(`id.eq.${prof.institution_id},institution_id.eq.${prof.institution_id}`);
+          } else {
+            instQuery = instQuery.eq('institution_id', prof.institution_id);
+          }
+          const { data: inst } = await instQuery.maybeSingle();
           if (inst) {
             instName = inst.name || instName;
             instPhone = inst.office_phone || inst.phone || instPhone;
@@ -229,15 +237,26 @@ export default function LoginScreen() {
   };
 
   // Step 1: Look up the email
-  const handleEmailContinue = async () => {
-    const trimmedEmail = email.trim().toLowerCase();
+  const handleEmailContinue = async (emailOverride?: string, customError?: string | null) => {
+    const rawEmail = typeof emailOverride === 'string' ? emailOverride : email;
+    const trimmedEmail = rawEmail.trim().toLowerCase();
     if (!trimmedEmail) {
       setError('Please enter your email address');
       return;
     }
     
+    if (typeof emailOverride === 'string') {
+      setEmail(trimmedEmail);
+    }
+    
     setLoading(true);
-    setError(null);
+    if (customError !== undefined) {
+      setError(customError);
+    } else if (error && error.includes('Session expired')) {
+      setError(error);
+    } else {
+      setError(null);
+    }
     
     try {
       // Look up user in profiles table
@@ -775,10 +794,10 @@ export default function LoginScreen() {
           }
 
           // Check if this saved account was recently blocked
-          const isBlocked = await checkBlockedStatus(account.id);
+          const isBlocked = await checkBlockedStatus(account.id || account.email);
           if (!isBlocked) {
-            setError('Session expired. Please log in with your password.');
             setEmail(account.email);
+            await handleEmailContinue(account.email, 'Session expired. Please log in with your password.');
           }
         });
       }
@@ -958,14 +977,14 @@ export default function LoginScreen() {
                   onChangeText={(t) => { setEmail(t); setError(null); }}
                   autoCapitalize="none"
                   keyboardType="email-address"
-                  onSubmitEditing={handleEmailContinue}
+                  onSubmitEditing={() => handleEmailContinue()}
                   returnKeyType="next"
                 />
               </View>
 
               <TouchableOpacity 
                 style={styles.loginBtn} 
-                onPress={handleEmailContinue}
+                onPress={() => handleEmailContinue()}
                 disabled={loading}
               >
                 {loading ? (
@@ -1428,6 +1447,8 @@ const styles = StyleSheet.create({
   },
   content: {
     width: '100%',
+    maxWidth: 440,
+    alignSelf: 'center',
     alignItems: 'center',
   },
   logoContainer: { 
@@ -1491,11 +1512,17 @@ const styles = StyleSheet.create({
     fontWeight: 'bold' 
   },
   errorText: { 
-    color: '#ef4444', 
+    color: '#DC2626', 
     marginBottom: 20, 
     textAlign: 'center',
     fontSize: 14,
     fontWeight: '500',
+    backgroundColor: '#FEE2E2',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    width: '100%',
+    overflow: 'hidden',
   },
   hintText: {
     color: theme.colors.textMuted,

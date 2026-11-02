@@ -9,6 +9,44 @@ export type Json =
 export interface Database {
   public: {
     Tables: {
+      onboarding_drafts: {
+        Row: {
+          id: string
+          user_id: string
+          institution_name: string
+          institution_code: string | null
+          institution_category: string
+          step: number
+          draft_data: Json
+          logo_url: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id?: string
+          institution_name?: string
+          institution_code?: string | null
+          institution_category?: string
+          step?: number
+          draft_data?: Json
+          logo_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          institution_name?: string
+          institution_code?: string | null
+          institution_category?: string
+          step?: number
+          draft_data?: Json
+          logo_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
       bus_routes: {
         Row: {
           id: string // Note: This is a Primary Key.<pk/>

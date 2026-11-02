@@ -77,6 +77,42 @@ export const AlertModal = ({
     return message;
   }, [message, type, title]);
 
+  const renderMessageContent = () => {
+    const lines = (displayMessage || '').split('\n');
+    const introLines: string[] = [];
+    const bulletItems: string[] = [];
+
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      if (trimmed.startsWith('•') || trimmed.startsWith('-')) {
+        bulletItems.push(trimmed.replace(/^[•\-]\s*/, ''));
+      } else {
+        introLines.push(trimmed);
+      }
+    });
+
+    if (bulletItems.length === 0) {
+      return <Text style={styles.message}>{displayMessage}</Text>;
+    }
+
+    return (
+      <View style={styles.messageWrapper}>
+        {introLines.length > 0 && (
+          <Text style={styles.introText}>{introLines.join(' ')}</Text>
+        )}
+        <View style={styles.bulletListContainer}>
+          {bulletItems.map((item, idx) => (
+            <View key={idx} style={styles.bulletItemRow}>
+              <View style={styles.bulletDot} />
+              <Text style={styles.bulletItemText}>{item}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+    );
+  };
+
   return (
     <Modal visible={visible} transparent animationType="fade">
       <View style={styles.overlay}>
@@ -85,7 +121,7 @@ export const AlertModal = ({
             {getIcon()}
           </View>
           <Text style={styles.title}>{title}</Text>
-          <Text style={styles.message}>{displayMessage}</Text>
+          {renderMessageContent()}
           
           <View style={styles.actions}>
             {buttons ? (
@@ -124,91 +160,128 @@ export const AlertModal = ({
 const styles = StyleSheet.create({
   overlay: { 
     flex: 1, 
-    backgroundColor: 'rgba(15, 23, 42, 0.7)', 
+    backgroundColor: 'rgba(15, 23, 42, 0.6)', 
     justifyContent: 'center', 
     alignItems: 'center', 
-    padding: 24 
+    padding: 20 
   },
   card: { 
     backgroundColor: 'white', 
-    borderRadius: 32, 
-    padding: 32, 
+    borderRadius: 20, 
+    padding: 22, 
     width: '100%', 
-    maxWidth: 340, 
+    maxWidth: 390, 
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.1,
-    shadowRadius: 20,
-    elevation: 10,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 8,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
+    borderColor: '#E2E8F0',
   },
   iconContainer: { 
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20 
+    marginBottom: 10 
   },
   title: { 
-    fontSize: 22, 
-    fontWeight: '800', 
-    color: theme.colors.text, 
-    marginBottom: 12, 
+    fontSize: 17, 
+    fontWeight: '700', 
+    color: '#0F172A', 
+    marginBottom: 6, 
     textAlign: 'center',
-    letterSpacing: -0.5
+    letterSpacing: -0.3
   },
   message: { 
-    fontSize: 16, 
-    color: theme.colors.textMuted, 
+    fontSize: 13.5, 
+    color: '#475569', 
     textAlign: 'center', 
-    marginBottom: 32, 
-    lineHeight: 24 
+    marginBottom: 20, 
+    lineHeight: 20 
+  },
+  messageWrapper: {
+    width: '100%',
+    marginBottom: 18,
+  },
+  introText: {
+    fontSize: 13,
+    color: '#64748B',
+    textAlign: 'center',
+    marginBottom: 10,
+    lineHeight: 18,
+  },
+  bulletListContainer: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 6,
+  },
+  bulletItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  bulletDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: theme.colors.primary,
+  },
+  bulletItemText: {
+    fontSize: 12.5,
+    fontWeight: '500',
+    color: '#334155',
+    flex: 1,
   },
   actions: { 
     width: '100%', 
     flexDirection: 'row',
     flexWrap: 'wrap-reverse', 
     justifyContent: 'center',
-    gap: 12 
+    gap: 10 
   },
   btn: { 
-    height: 52, 
-    borderRadius: 18, 
+    height: 42, 
+    borderRadius: 10, 
     justifyContent: 'center', 
     alignItems: 'center', 
-    paddingHorizontal: 20,
+    paddingHorizontal: 18,
     minWidth: '45%'
   },
   primaryBtn: { 
     backgroundColor: theme.colors.primary,
     flex: 1,
     shadowColor: theme.colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
   },
   secondaryBtn: { 
     backgroundColor: '#F8FAFC', 
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#E2E8F0', 
     flex: 1 
   },
   destructiveBtn: { 
     backgroundColor: '#EF4444', 
     flex: 1,
     shadowColor: '#EF4444',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
   },
   btnText: { 
-    fontSize: 16, 
-    fontWeight: '700',
+    fontSize: 14, 
+    fontWeight: '600',
     textAlign: 'center'
   },
 });

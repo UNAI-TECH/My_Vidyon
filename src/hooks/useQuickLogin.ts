@@ -35,7 +35,66 @@ export function useQuickLogin() {
       if (stored) {
         const parsed = JSON.parse(stored) as SavedAccount[];
         // Filter out old-format accounts that don't have tokens
-        const valid = parsed.filter(a => a.access_token && a.refresh_token);
+        let valid = parsed.filter(a => a.access_token && a.refresh_token);
+        
+        // Sanitize & resolve real profile photos / institution logos for each account
+        const ids = valid.map(a => a.id).filter(Boolean);
+        if (ids.length > 0) {
+          try {
+            const [profilesRes, studentsRes, instsRes] = await Promise.all([
+              supabase
+                .from('profiles')
+                .select('id, image_url, avatar_url, profile_image_url')
+                .in('id', ids),
+              supabase
+                .from('students')
+                .select('id, email, profile_id, user_id, image_url')
+                .in('profile_id', ids),
+              supabase
+                .from('institutions')
+                .select('id, institution_id, logo_url'),
+            ]);
+
+            const dbProfiles = (profilesRes.data || []) as any[];
+            const dbStudents = (studentsRes.data || []) as any[];
+            const dbInstitutions = (instsRes.data || []) as any[];
+
+            let hasChange = false;
+            valid = valid.map(acc => {
+              const p = dbProfiles.find((dp: any) => dp.id === acc.id);
+              let trueImg = p?.image_url || p?.avatar_url || p?.profile_image_url || null;
+
+              // Check student table if profile didn't have an image
+              if (!trueImg) {
+                const s = dbStudents.find((ds: any) => ds.profile_id === acc.id || ds.user_id === acc.id || ds.email === acc.email);
+                if (s?.image_url) {
+                  trueImg = s.image_url;
+                }
+              }
+
+              // Fallback to institution logo for institution / school admin accounts
+              if (!trueImg && (acc.role === 'institution' || acc.role === 'admin') && acc.institution_id && acc.institution_id !== 'global') {
+                const inst = dbInstitutions.find((di: any) => di.id === acc.institution_id || di.institution_id === acc.institution_id);
+                if (inst?.logo_url) {
+                  trueImg = inst.logo_url;
+                }
+              }
+
+              if (acc.image_url !== trueImg) {
+                hasChange = true;
+                return { ...acc, image_url: trueImg };
+              }
+              return acc;
+            });
+
+            if (hasChange) {
+              await LargeSecureStore.setItem(STORAGE_KEY, JSON.stringify(valid));
+            }
+          } catch (syncErr) {
+            // Ignore offline/network issues
+          }
+        }
+
         if (valid.length !== parsed.length) {
           await LargeSecureStore.setItem(STORAGE_KEY, JSON.stringify(valid));
         }

@@ -4,7 +4,7 @@
 // with search, clear, disabled/read-only styling, and modal selection.
 // ============================================================
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -50,6 +50,7 @@ export interface SelectProps {
   showClear?: boolean;
   onClear?: () => void;
   searchable?: boolean;
+  sortOptions?: boolean;
   containerStyle?: ViewStyle;
   triggerStyle?: ViewStyle;
   labelStyle?: TextStyle;
@@ -71,6 +72,7 @@ export const Select: React.FC<SelectProps> = ({
   showClear = false,
   onClear,
   searchable = true,
+  sortOptions = true,
   containerStyle,
   triggerStyle,
   labelStyle,
@@ -78,6 +80,10 @@ export const Select: React.FC<SelectProps> = ({
 }) => {
   const [modalVisible, setModalVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const [isNavigatingWithArrows, setIsNavigatingWithArrows] = useState(false);
+  const searchInputRef = useRef<TextInput>(null);
 
   const isInactive = readOnly || disabled;
 
@@ -86,16 +92,151 @@ export const Select: React.FC<SelectProps> = ({
     return options.find(opt => opt.value === value || opt.label === value);
   }, [options, value]);
 
-  // Filtered options based on search query
+  // Filtered and A-Z sorted options
   const filteredOptions = useMemo(() => {
-    if (!searchQuery.trim()) return options;
+    let list = [...options];
+
+    if (sortOptions) {
+      list.sort((a, b) => {
+        // Keep 'All ...' or empty values at the top
+        const aVal = String(a.value).toLowerCase();
+        const bVal = String(b.value).toLowerCase();
+        if (aVal === 'all' || aVal === '') return -1;
+        if (bVal === 'all' || bVal === '') return 1;
+
+        // Keep '+ Add' or '+ Register' or '__custom__' at the bottom
+        const aIsSpecialEnd = aVal.startsWith('__') || a.label.startsWith('+');
+        const bIsSpecialEnd = bVal.startsWith('__') || b.label.startsWith('+');
+        if (aIsSpecialEnd && !bIsSpecialEnd) return 1;
+        if (!aIsSpecialEnd && bIsSpecialEnd) return -1;
+
+        // A-Z ascending order (natural alphanumeric)
+        return a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: 'base' });
+      });
+    }
+
+    if (!searchQuery.trim()) return list;
     const query = searchQuery.toLowerCase().trim();
-    return options.filter(
+    return list.filter(
       opt =>
         opt.label.toLowerCase().includes(query) ||
         (opt.subLabel && opt.subLabel.toLowerCase().includes(query))
     );
-  }, [options, searchQuery]);
+  }, [options, searchQuery, sortOptions]);
+
+  // Auto-focus search input whenever modal opens
+  useEffect(() => {
+    if (modalVisible) {
+      setHighlightedIndex(filteredOptions.length > 0 ? 0 : -1);
+      setIsNavigatingWithArrows(false);
+      if (searchable) {
+        const timer = setTimeout(() => {
+          searchInputRef.current?.focus();
+        }, 50);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [modalVisible, searchable]);
+
+  // Reset highlight to top recommendation whenever search query changes
+  useEffect(() => {
+    if (modalVisible) {
+      setHighlightedIndex(filteredOptions.length > 0 ? 0 : -1);
+      setIsNavigatingWithArrows(false);
+    }
+  }, [searchQuery, filteredOptions.length]);
+
+  // Smooth scroll highlighted option into view on Web
+  useEffect(() => {
+    if (Platform.OS === 'web' && modalVisible && highlightedIndex >= 0) {
+      const el = document.getElementById(`select-opt-${highlightedIndex}`);
+      if (el) {
+        el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+    }
+  }, [highlightedIndex, modalVisible]);
+
+  // Global key navigation: ArrowUp, ArrowDown, Enter, Space, and type-ahead
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !modalVisible) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setModalVisible(false);
+        return;
+      }
+
+      // 1. ArrowDown navigation
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setIsNavigatingWithArrows(true);
+        setHighlightedIndex(prev => {
+          if (filteredOptions.length === 0) return -1;
+          const next = prev + 1;
+          return next < filteredOptions.length ? next : 0;
+        });
+        return;
+      }
+
+      // 2. ArrowUp navigation
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setIsNavigatingWithArrows(true);
+        setHighlightedIndex(prev => {
+          if (filteredOptions.length === 0) return -1;
+          const next = prev - 1;
+          return next >= 0 ? next : filteredOptions.length - 1;
+        });
+        return;
+      }
+
+      // 3. Enter key: selects highlighted option or top recommended match
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (highlightedIndex >= 0 && highlightedIndex < filteredOptions.length) {
+          handleSelect(filteredOptions[highlightedIndex]);
+        } else if (filteredOptions.length > 0) {
+          handleSelect(filteredOptions[0]);
+        }
+        return;
+      }
+
+      // 4. Space key: selects highlighted option when arrow-navigating or when input not focused
+      const activeEl = document.activeElement;
+      const isInputActive = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA');
+
+      if (e.key === ' ' || e.key === 'Spacebar') {
+        if (isNavigatingWithArrows || !isInputActive) {
+          if (highlightedIndex >= 0 && highlightedIndex < filteredOptions.length) {
+            e.preventDefault();
+            handleSelect(filteredOptions[highlightedIndex]);
+            return;
+          }
+        }
+      }
+
+      // 5. Global type-ahead when search input not active
+      if (!isInputActive && searchable) {
+        if (e.key === 'Backspace') {
+          e.preventDefault();
+          setSearchQuery(prev => prev.slice(0, -1));
+          searchInputRef.current?.focus();
+        } else if (e.key.length === 1) {
+          e.preventDefault();
+          setSearchQuery(prev => prev + e.key);
+          searchInputRef.current?.focus();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown, true);
+    };
+  }, [modalVisible, searchable, filteredOptions, highlightedIndex, isNavigatingWithArrows]);
 
   const handleOpen = () => {
     if (isInactive) return;
@@ -207,14 +348,25 @@ export const Select: React.FC<SelectProps> = ({
         animationType="fade"
         onRequestClose={() => setModalVisible(false)}
       >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setModalVisible(false)}
-        >
+        <View style={styles.modalOverlay}>
+          {/* Backdrop Dismiss Area */}
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setModalVisible(false)}
+          />
+
+          {/* Modal Dialog Content */}
           <View
             style={styles.modalContent}
             onStartShouldSetResponder={() => true}
+            {...(Platform.OS === 'web'
+              ? {
+                  onClick: (e: any) => {
+                    e.stopPropagation();
+                  },
+                }
+              : {})}
           >
             {/* Modal Header */}
             <View style={styles.modalHeader}>
@@ -232,19 +384,61 @@ export const Select: React.FC<SelectProps> = ({
 
             {/* Search Input if enabled and > 5 options */}
             {searchable && options.length > 5 && (
-              <View style={styles.searchBox}>
-                <Search size={16} color="#94A3B8" {...({} as any)} />
+              <View style={[styles.searchBox, isSearchFocused && styles.searchBoxFocused]}>
+                <Search size={16} color={isSearchFocused ? theme.colors.primary : '#94A3B8'} {...({} as any)} />
                 <TextInput
-                  style={styles.searchInput}
+                  ref={searchInputRef}
+                  style={[
+                    styles.searchInput,
+                    Platform.OS === 'web' && ({ outlineStyle: 'none', outline: 'none' } as any),
+                  ]}
                   placeholder="Search options..."
                   placeholderTextColor="#94A3B8"
                   value={searchQuery}
                   onChangeText={setSearchQuery}
+                  onFocus={() => setIsSearchFocused(true)}
+                  onBlur={() => setIsSearchFocused(false)}
                   autoCorrect={false}
+                  autoCapitalize="none"
+                  autoFocus={true}
+                  {...(Platform.OS === 'web'
+                    ? {
+                        onKeyDown: (e: any) => {
+                          if (e.key === 'ArrowDown') {
+                            e.preventDefault();
+                            setIsNavigatingWithArrows(true);
+                            setHighlightedIndex(prev => {
+                              if (filteredOptions.length === 0) return -1;
+                              const next = prev + 1;
+                              return next < filteredOptions.length ? next : 0;
+                            });
+                          } else if (e.key === 'ArrowUp') {
+                            e.preventDefault();
+                            setIsNavigatingWithArrows(true);
+                            setHighlightedIndex(prev => {
+                              if (filteredOptions.length === 0) return -1;
+                              const next = prev - 1;
+                              return next >= 0 ? next : filteredOptions.length - 1;
+                            });
+                          } else if (e.key === 'Enter') {
+                            e.preventDefault();
+                            if (highlightedIndex >= 0 && highlightedIndex < filteredOptions.length) {
+                              handleSelect(filteredOptions[highlightedIndex]);
+                            } else if (filteredOptions.length > 0) {
+                              handleSelect(filteredOptions[0]);
+                            }
+                          }
+                        },
+                      }
+                    : {})}
                 />
                 {searchQuery.length > 0 && (
-                  <TouchableOpacity onPress={() => setSearchQuery('')}>
-                    <X size={14} color="#94A3B8" {...({} as any)} />
+                  <TouchableOpacity
+                    style={styles.searchClearBtn}
+                    onPress={() => setSearchQuery('')}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <X size={12} color="#64748B" {...({} as any)} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -271,16 +465,19 @@ export const Select: React.FC<SelectProps> = ({
                   <Text style={styles.emptyText}>No matching options found</Text>
                 </View>
               ) : (
-                filteredOptions.map(option => {
+                filteredOptions.map((option, idx) => {
                   const isSelected =
                     selectedOption?.value === option.value ||
                     value === option.value;
+                  const isHighlighted = idx === highlightedIndex;
                   return (
                     <TouchableOpacity
                       key={String(option.value)}
+                      {...(Platform.OS === 'web' ? { id: `select-opt-${idx}` } : {}) as any}
                       style={[
                         styles.optionRow,
                         isSelected && styles.optionRowSelected,
+                        isHighlighted && styles.optionRowHighlighted,
                       ]}
                       onPress={() => handleSelect(option)}
                       activeOpacity={0.7}
@@ -291,11 +488,12 @@ export const Select: React.FC<SelectProps> = ({
                             {option.icon}
                           </View>
                         )}
-                        <View>
+                        <View style={{ flex: 1 }}>
                           <Text
                             style={[
                               styles.optionLabel,
                               isSelected && styles.optionLabelSelected,
+                              isHighlighted && styles.optionLabelHighlighted,
                             ]}
                           >
                             {option.label}
@@ -318,7 +516,7 @@ export const Select: React.FC<SelectProps> = ({
               )}
             </ScrollView>
           </View>
-        </TouchableOpacity>
+        </View>
       </Modal>
     </View>
   );
@@ -487,21 +685,39 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F8FAFC',
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: '#E2E8F0',
-    borderRadius: 10,
+    borderRadius: 12,
     marginHorizontal: 16,
     marginTop: 12,
     marginBottom: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    gap: 8,
+    paddingHorizontal: 14,
+    height: 44,
+    gap: 10,
+  },
+  searchBoxFocused: {
+    borderColor: theme.colors.primary,
+    backgroundColor: '#FFFFFF',
+    shadowColor: theme.colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 3,
   },
   searchInput: {
     flex: 1,
-    fontSize: 13,
-    color: theme.colors.text,
-    paddingVertical: 2,
+    fontSize: 14,
+    color: '#0F172A',
+    paddingVertical: 0,
+    height: '100%',
+  },
+  searchClearBtn: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   optionsList: {
     paddingHorizontal: 12,
@@ -534,6 +750,11 @@ const styles = StyleSheet.create({
   optionRowSelected: {
     backgroundColor: '#FEF3C7', // Warm amber tint for active item
   },
+  optionRowHighlighted: {
+    backgroundColor: '#EFF6FF',
+    borderLeftWidth: 3,
+    borderLeftColor: theme.colors.primary,
+  },
   optionLeft: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -556,6 +777,23 @@ const styles = StyleSheet.create({
   optionLabelSelected: {
     color: '#92400E',
     fontWeight: '700',
+  },
+  optionLabelHighlighted: {
+    color: theme.colors.primary,
+    fontWeight: '700',
+  },
+  highlightBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
+    borderWidth: 1,
+    borderRadius: 6,
+  },
+  highlightBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#1D4ED8',
   },
   optionSubLabel: {
     fontSize: 11,

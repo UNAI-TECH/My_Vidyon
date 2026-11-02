@@ -11,6 +11,7 @@ import { WebSocketProvider } from '../src/hooks/useWebSocket';
 import { SearchProvider } from '../src/hooks/useSearch';
 import { useERPRealtime } from '../src/hooks/useERPRealtime';
 import { ThemedAlertProvider } from '../src/components/common/ThemedAlert';
+import { AccountSwitcherProvider } from '../src/context/AccountSwitcherContext';
 
 const queryClient = new QueryClient();
 
@@ -67,25 +68,27 @@ export default function AppLayout() {
       <StatusBar style="dark" />
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <RBACProvider>
-            <RealtimeObserver>
-              <WebSocketProvider>
-                <ThemedAlertProvider>
-                  <SearchProvider>
-                    <Stack
-                      screenOptions={{
-                        headerShown: false,
-                        contentStyle: { backgroundColor: theme.colors.background },
-                      }}
-                    >
-                      <Stack.Screen name="(auth)" options={{ animation: 'fade' }} />
-                      <Stack.Screen name="(root)" options={{ animation: 'slide_from_right' }} />
-                    </Stack>
-                  </SearchProvider>
-                </ThemedAlertProvider>
-              </WebSocketProvider>
-            </RealtimeObserver>
-          </RBACProvider>
+          <AccountSwitcherProvider>
+            <RBACProvider>
+              <RealtimeObserver>
+                <WebSocketProvider>
+                  <ThemedAlertProvider>
+                    <SearchProvider>
+                      <Stack
+                        screenOptions={{
+                          headerShown: false,
+                          contentStyle: { backgroundColor: theme.colors.background },
+                        }}
+                      >
+                        <Stack.Screen name="(auth)" options={{ animation: 'fade' }} />
+                        <Stack.Screen name="(root)" options={{ animation: 'slide_from_right' }} />
+                      </Stack>
+                    </SearchProvider>
+                  </ThemedAlertProvider>
+                </WebSocketProvider>
+              </RealtimeObserver>
+            </RBACProvider>
+          </AccountSwitcherProvider>
         </AuthProvider>
       </QueryClientProvider>
     </SafeAreaProvider>

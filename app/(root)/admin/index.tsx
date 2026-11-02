@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { NotificationBell } from '../../../src/components/common/NotificationBell';
 import { theme } from '../../../src/theme';
 import { PageHeader } from '../../../src/components/common/PageHeader';
@@ -35,8 +35,10 @@ const chartConfig = {
 };
 
 import { useSuperAdminDashboard } from '../../../src/hooks/useSuperAdminDashboard';
+import { useRouter } from 'expo-router';
 
 export default function AdminDashboard() {
+  const router = useRouter();
   const { role, imageUrl, institutionId, institutionName } = useAuth();
   const { stats, profile, isLoading } = useSuperAdminDashboard();
 
@@ -62,7 +64,14 @@ export default function AdminDashboard() {
     return "Global Network Oversight & Onboarding";
   }, [role, isScoped]);
 
-  if (isLoading) return <View style={styles.container}><Text>Loading SaaS Metrics...</Text></View>;
+  if (isLoading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+        <Text style={styles.loadingText}>Loading SaaS Metrics...</Text>
+      </View>
+    );
+  }
 
   const data = {
     labels: ["Institutions", "Revenue", "Users"],
@@ -103,7 +112,8 @@ export default function AdminDashboard() {
                 { label: 'Config', icon: Shield, href: '/(root)/admin/settings', color: '#A855F7' },
               ]
             : [
-                { label: 'Add Institution', icon: Building2, href: '/(root)/admin/onboarding', color: '#3B82F6' },
+                { label: 'Add Institution', icon: Building2, href: '/(root)/admin/onboarding?reset=true', color: '#3B82F6' },
+                { label: 'Institutions', icon: Building2, href: '/(root)/admin/institutions', color: '#0EA5E9' },
                 { label: 'User Directory', icon: Users, href: '/(root)/admin/users', color: '#6366F1' },
                 { label: 'Password Resets', icon: KeyRound, href: '/(root)/admin/users?tab=reset_requests', color: '#F59E0B' },
                 { label: 'Broadcast', icon: MessageSquare, href: '/(root)/admin/communication', color: '#10B981' },
@@ -123,6 +133,7 @@ export default function AdminDashboard() {
           iconColor="#3B82F6"
           change="+2 this month"
           changeType="positive"
+          onPress={() => router.push('/(root)/admin/institutions')}
         />
         <StatCard
           title="Total Revenue"
@@ -161,6 +172,58 @@ export default function AdminDashboard() {
           change="Operational"
           changeType="positive"
         />
+      </View>
+
+      {/* Recently Added Institutions Section */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionTitle}>
+            Recently Added Institutions {stats.recentInstitutions?.length > 0 ? `(${stats.recentInstitutions.length})` : ''}
+          </Text>
+          <TouchableOpacity onPress={() => router.push('/(root)/admin/institutions')} activeOpacity={0.7}>
+            <Text style={styles.viewAllText}>View All →</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.card}>
+          {stats.recentInstitutions && stats.recentInstitutions.length > 0 ? (
+            stats.recentInstitutions.map((inst, index) => (
+              <TouchableOpacity
+                key={inst.id || inst.institution_id}
+                style={[
+                  styles.institutionItem,
+                  index === stats.recentInstitutions.length - 1 && { borderBottomWidth: 0 },
+                ]}
+                onPress={() => router.push('/(root)/admin/institutions')}
+                activeOpacity={0.7}
+              >
+                <View style={styles.institutionIconWrapper}>
+                  <Building2 size={20} color={theme.colors.primary} {...({} as any)} />
+                </View>
+                <View style={styles.institutionInfo}>
+                  <Text style={styles.institutionName} numberOfLines={1}>{inst.name}</Text>
+                  <Text style={styles.institutionMeta}>
+                    ID: {inst.institution_id} • {inst.city ? `${inst.city}, ${inst.state || ''}` : 'Active Campus'}
+                  </Text>
+                </View>
+                <View style={[
+                  styles.statusBadge,
+                  { backgroundColor: inst.status === 'active' ? '#ECFDF5' : '#FFFBEB' }
+                ]}>
+                  <Text style={[
+                    styles.statusText,
+                    { color: inst.status === 'active' ? '#10B981' : '#F59E0B' }
+                  ]}>
+                    {(inst.status || 'ACTIVE').toUpperCase()}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ))
+          ) : (
+            <View style={{ padding: 20, alignItems: 'center' }}>
+              <Text style={{ color: theme.colors.textMuted }}>No institutions onboarded yet.</Text>
+            </View>
+          )}
+        </View>
       </View>
 
       {/* Pending Requests Section */}
@@ -227,10 +290,25 @@ export default function AdminDashboard() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: 400,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.colors.textMuted,
+  },
   content: { padding: 24, paddingBottom: 40 },
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 24 },
   section: { marginBottom: 32 },
-  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: theme.colors.text, marginBottom: 16 },
+  sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: theme.colors.text },
+  viewAllText: { fontSize: 14, fontWeight: '600', color: theme.colors.primary },
   card: { backgroundColor: 'white', borderRadius: 24, padding: 16, borderWidth: 1, borderColor: '#F1F5F9', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 },
   chartContainer: { 
     backgroundColor: 'white', 
@@ -251,6 +329,13 @@ const styles = StyleSheet.create({
   activityDot: { width: 8, height: 8, borderRadius: 4, marginRight: 12, marginTop: 6 },
   activityText: { fontSize: 13, color: theme.colors.text, lineHeight: 18 },
   activityTime: { fontSize: 10, color: theme.colors.textMuted, marginTop: 4 },
+  institutionItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F8FAFC' },
+  institutionIconWrapper: { width: 38, height: 38, borderRadius: 10, backgroundColor: '#EFF6FF', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  institutionInfo: { flex: 1 },
+  institutionName: { fontSize: 14, fontWeight: 'bold', color: theme.colors.text },
+  institutionMeta: { fontSize: 12, color: theme.colors.textMuted, marginTop: 2 },
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  statusText: { fontSize: 10, fontWeight: 'bold' },
   requestItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F8FAFC' },
   requestInfo: { flex: 1 },
   requestName: { fontSize: 14, fontWeight: 'bold', color: theme.colors.text },
