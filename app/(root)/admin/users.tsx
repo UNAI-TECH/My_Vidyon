@@ -18,6 +18,9 @@ import { StatCard } from '../../../src/components/common/StatCard';
 import { Badge } from '../../../src/components/common/Badge';
 import { Button } from '../../../src/components/common/Button';
 import { AlertModal } from '../../../src/components/common/AlertModal';
+import { DataTable, ColumnDef } from '../../../src/components/common/DataTable';
+import { ActionDropdown, ActionDropdownItem } from '../../../src/components/common/ActionDropdown';
+import { Select, SelectOption } from '../../../src/components/common/Select';
 import { useAuth } from '../../../src/hooks/useAuth';
 import { supabase } from '../../../src/lib/supabase';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -100,6 +103,7 @@ export default function AdminUsers() {
   const [activeTab, setActiveTab] = useState<'all' | StakeholderRole | 'reset_requests'>(
     (params?.tab as any) || 'all'
   );
+  const [filterInstitutionId, setFilterInstitutionId] = useState<string>('all');
 
   React.useEffect(() => {
     if (params?.tab) {
@@ -255,11 +259,16 @@ export default function AdminUsers() {
     return { total, adManagers, financeManagers, instStakeholders, superAdmins, instAdmins };
   }, [stakeholders]);
 
-  // Filtered list based on search and active tab
+  // Filtered list based on search, active tab, and institution filter
   const filteredStakeholders = useMemo(() => {
     return stakeholders.filter((s) => {
       const matchesTab = activeTab === 'all' || s.resolvedRole === activeTab;
       if (!matchesTab) return false;
+
+      const matchesInst =
+        filterInstitutionId === 'all' ||
+        s.institution_id === filterInstitutionId;
+      if (!matchesInst) return false;
 
       if (!searchQuery.trim()) return true;
       const q = searchQuery.toLowerCase().trim();
@@ -270,7 +279,7 @@ export default function AdminUsers() {
         (s.institution_name && s.institution_name.toLowerCase().includes(q))
       );
     });
-  }, [stakeholders, activeTab, searchQuery]);
+  }, [stakeholders, activeTab, filterInstitutionId, searchQuery]);
 
   // Toggle user active / disabled status
   const handleToggleStatus = (user: StakeholderUser) => {
@@ -806,15 +815,50 @@ export default function AdminUsers() {
   const getRoleBadge = (resolvedRole: StakeholderRole) => {
     switch (resolvedRole) {
       case 'ad_manager':
-        return <Badge variant="warning">📢 Ad Manager</Badge>;
+        return (
+          <Badge variant="warning">
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Megaphone size={11} color="#D97706" {...({} as any)} />
+              <Text style={{ fontSize: 10, fontWeight: '700', color: '#D97706' }}>AD MANAGER</Text>
+            </View>
+          </Badge>
+        );
       case 'finance_manager':
-        return <Badge variant="success">💳 Finance Stakeholder</Badge>;
+        return (
+          <Badge variant="success">
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <CreditCard size={11} color="#059669" {...({} as any)} />
+              <Text style={{ fontSize: 10, fontWeight: '700', color: '#059669' }}>FINANCE STAKEHOLDER</Text>
+            </View>
+          </Badge>
+        );
       case 'institution_stakeholder':
-        return <Badge variant="info">🏛️ Inst. Stakeholder</Badge>;
+        return (
+          <Badge variant="info">
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Building2 size={11} color="#0284C7" {...({} as any)} />
+              <Text style={{ fontSize: 10, fontWeight: '700', color: '#0284C7' }}>INST. STAKEHOLDER</Text>
+            </View>
+          </Badge>
+        );
       case 'institution_admin':
-        return <Badge variant="info">🏫 Campus Admin</Badge>;
+        return (
+          <Badge variant="info">
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Building size={11} color="#2563EB" {...({} as any)} />
+              <Text style={{ fontSize: 10, fontWeight: '700', color: '#2563EB' }}>CAMPUS ADMIN</Text>
+            </View>
+          </Badge>
+        );
       case 'superadmin':
-        return <Badge variant="destructive">🛡️ Super Admin</Badge>;
+        return (
+          <Badge variant="destructive">
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Shield size={11} color="#DC2626" {...({} as any)} />
+              <Text style={{ fontSize: 10, fontWeight: '700', color: '#DC2626' }}>SUPER ADMIN</Text>
+            </View>
+          </Badge>
+        );
     }
   };
 
@@ -865,10 +909,10 @@ export default function AdminUsers() {
         />
       </View>
 
-      {/* Search and Tabs */}
+      {/* Search and Dropdown Controls Bar */}
       <View style={styles.controlsCard}>
         <View style={styles.searchBar}>
-          <Search size={18} color={theme.colors.textMuted} style={styles.searchIcon} />
+          <Search size={18} color={theme.colors.textMuted} style={styles.searchIcon} {...({} as any)} />
           <TextInput
             style={styles.searchInput}
             placeholder="Search by name, email, role, or institution..."
@@ -878,376 +922,299 @@ export default function AdminUsers() {
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <X size={16} color={theme.colors.textMuted} />
+              <X size={16} color={theme.colors.textMuted} {...({} as any)} />
             </TouchableOpacity>
           )}
         </View>
 
-        {/* Tab Filters */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsScroll}>
-          <TouchableOpacity
-            style={[styles.tabChip, activeTab === 'all' && styles.activeTabChip]}
-            onPress={() => setActiveTab('all')}
-          >
-            <Text style={[styles.tabChipText, activeTab === 'all' && styles.activeTabChipText]}>
-              All ({stats.total})
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tabChip, activeTab === 'ad_manager' && styles.activeTabChip]}
-            onPress={() => setActiveTab('ad_manager')}
-          >
-            <Text style={[styles.tabChipText, activeTab === 'ad_manager' && styles.activeTabChipText]}>
-              Ad Managers ({stats.adManagers})
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tabChip, activeTab === 'finance_manager' && styles.activeTabChip]}
-            onPress={() => setActiveTab('finance_manager')}
-          >
-            <Text style={[styles.tabChipText, activeTab === 'finance_manager' && styles.activeTabChipText]}>
-              Finance Team ({stats.financeManagers})
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tabChip, activeTab === 'institution_stakeholder' && styles.activeTabChip]}
-            onPress={() => setActiveTab('institution_stakeholder')}
-          >
-            <Text style={[styles.tabChipText, activeTab === 'institution_stakeholder' && styles.activeTabChipText]}>
-              Inst. Stakeholders ({stats.instStakeholders})
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tabChip, activeTab === 'superadmin' && styles.activeTabChip]}
-            onPress={() => setActiveTab('superadmin')}
-          >
-            <Text style={[styles.tabChipText, activeTab === 'superadmin' && styles.activeTabChipText]}>
-              Super Admins ({stats.superAdmins})
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tabChip, activeTab === 'institution_admin' && styles.activeTabChip]}
-            onPress={() => setActiveTab('institution_admin')}
-          >
-            <Text style={[styles.tabChipText, activeTab === 'institution_admin' && styles.activeTabChipText]}>
-              Campus Admins ({stats.instAdmins})
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.tabChip,
-              activeTab === 'reset_requests' && styles.activeTabChip,
-              pendingResetsCount > 0 && { borderColor: '#F59E0B' },
-            ]}
-            onPress={() => setActiveTab('reset_requests')}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <KeyRound size={13} color={activeTab === 'reset_requests' ? 'white' : (pendingResetsCount > 0 ? '#D97706' : theme.colors.textMuted)} />
-              <Text
-                style={[
-                  styles.tabChipText,
-                  activeTab === 'reset_requests' && styles.activeTabChipText,
-                  pendingResetsCount > 0 && activeTab !== 'reset_requests' && { color: '#D97706', fontWeight: 'bold' },
-                ]}
-              >
-                Password Resets ({pendingResetsCount})
-              </Text>
-            </View>
-          </TouchableOpacity>
-        </ScrollView>
+        {/* Dropdown Filters Row */}
+        <View style={{ flexDirection: 'row', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
+          <View style={{ flex: 1, minWidth: 200 }}>
+            <Select
+              placeholder="Filter by Role / View"
+              value={activeTab}
+              options={[
+                { label: `All Stakeholders (${stats.total})`, value: 'all' },
+                { label: `Ad Managers (${stats.adManagers})`, value: 'ad_manager' },
+                { label: `Finance Team (${stats.financeManagers})`, value: 'finance_manager' },
+                { label: `Institution Stakeholders (${stats.instStakeholders})`, value: 'institution_stakeholder' },
+                { label: `Super Admins (${stats.superAdmins})`, value: 'superadmin' },
+                { label: `Campus Admins (${stats.instAdmins})`, value: 'institution_admin' },
+                { label: `Password Reset Requests (${pendingResetsCount})`, value: 'reset_requests' },
+              ]}
+              onSelect={(val) => setActiveTab(val)}
+              searchable={false}
+              containerStyle={{ marginBottom: 0 }}
+            />
+          </View>
+
+          <View style={{ flex: 1, minWidth: 200 }}>
+            <Select
+              placeholder="Filter by Institution Scope"
+              value={filterInstitutionId}
+              options={[
+                { label: 'All Campus Scopes (Global & Inst)', value: 'all' },
+                ...institutions.map(i => ({
+                  label: i.name,
+                  value: i.institution_id || i.id,
+                  subLabel: i.city ? `${i.city}` : undefined,
+                })),
+              ]}
+              onSelect={(val) => setFilterInstitutionId(val)}
+              searchable={true}
+              containerStyle={{ marginBottom: 0 }}
+            />
+          </View>
+        </View>
       </View>
 
-      {/* Stakeholders or Password Resets List */}
+      {/* Stakeholders or Password Resets DataTable */}
       <View style={styles.listSection}>
         {activeTab === 'reset_requests' ? (
-          isLoadingResets ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={theme.colors.primary} />
-              <Text style={styles.loadingText}>Loading password reset requests...</Text>
-            </View>
-          ) : filteredResetRequests.length === 0 ? (
-            <View style={styles.emptyCard}>
-              <KeyRound size={48} color={theme.colors.textMuted} />
-              <Text style={styles.emptyTitle}>No Reset Requests</Text>
-              <Text style={styles.emptySub}>
-                {searchQuery
-                  ? 'No password reset requests matched your search query.'
-                  : 'Users who request a password reset from the login screen will appear here for verification and approval.'}
-              </Text>
-            </View>
-          ) : (
-            filteredResetRequests.map((req) => (
-              <View key={req.id} style={styles.userCard}>
-                <View style={styles.userMainInfo}>
-                  <View
-                    style={[
-                      styles.userAvatar,
-                      {
-                        backgroundColor:
-                          req.status === 'pending'
-                            ? '#FEF3C7'
-                            : req.status === 'approved'
-                            ? '#DCFCE7'
-                            : '#F1F5F9',
-                      },
-                    ]}
-                  >
-                    <KeyRound
-                      size={20}
-                      color={
-                        req.status === 'pending'
-                          ? '#D97706'
-                          : req.status === 'approved'
-                          ? '#16A34A'
-                          : '#64748B'
-                      }
-                    />
+          <DataTable<PasswordResetRequest>
+            columns={[
+              {
+                key: 'full_name',
+                title: 'Requester',
+                sortable: true,
+                width: '28%',
+                render: (req) => (
+                  <View>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#0F172A' }}>
+                      {req.full_name || req.email}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: '#64748B' }}>{req.email}</Text>
                   </View>
-
-                  <View style={styles.userDetails}>
-                    <View style={styles.nameRow}>
-                      <Text style={styles.userName}>{req.full_name || req.email}</Text>
-                      <Badge variant="default">
-                        {req.role ? req.role.replace('_', ' ').toUpperCase() : 'USER'}
-                      </Badge>
-                      <Badge
-                        variant={
-                          req.status === 'approved'
-                            ? 'success'
-                            : req.status === 'pending'
-                            ? 'warning'
-                            : 'destructive'
-                        }
-                      >
-                        {req.status.toUpperCase()}
-                      </Badge>
-                    </View>
-
-                    <View style={styles.metaRow}>
-                      <View style={styles.metaItem}>
-                        <Mail size={13} color={theme.colors.textMuted} />
-                        <Text style={styles.metaText}>{req.email}</Text>
-                      </View>
-                      <View style={styles.metaItem}>
-                        <Clock size={13} color={theme.colors.textMuted} />
-                        <Text style={styles.metaText}>
-                          {new Date(req.created_at).toLocaleDateString()}{' '}
-                          {new Date(req.created_at).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </Text>
-                      </View>
-                    </View>
-
-                    {/* Scope / Institution info */}
-                    <View style={styles.scopeRow}>
-                      {req.institution_name || req.institution_id ? (
-                        <View style={styles.scopeBadgeInst}>
-                          <Building size={12} color="#0284C7" />
-                          <Text style={styles.scopeTextInst}>
-                            {req.institution_name
-                              ? `Institution: ${req.institution_name}`
-                              : `Campus: ${req.institution_id}`}
-                          </Text>
-                        </View>
+                ),
+              },
+              {
+                key: 'role',
+                title: 'Role & Scope',
+                width: '24%',
+                render: (req) => (
+                  <View>
+                    <Badge variant="default">
+                      {req.role ? req.role.replace('_', ' ').toUpperCase() : 'USER'}
+                    </Badge>
+                    <Text style={{ fontSize: 10, color: '#64748B', marginTop: 2 }}>
+                      {req.institution_name || req.institution_id || 'Global'}
+                    </Text>
+                  </View>
+                ),
+              },
+              {
+                key: 'created_at',
+                title: 'Requested At',
+                sortable: true,
+                width: '20%',
+                render: (req) => (
+                  <Text style={{ fontSize: 11, color: '#64748B' }}>
+                    {new Date(req.created_at).toLocaleDateString()}{' '}
+                    {new Date(req.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </Text>
+                ),
+              },
+              {
+                key: 'status',
+                title: 'Status',
+                width: '12%',
+                render: (req) => (
+                  <Badge
+                    variant={
+                      req.status === 'approved'
+                        ? 'success'
+                        : req.status === 'pending'
+                        ? 'warning'
+                        : 'destructive'
+                    }
+                  >
+                    {req.status.toUpperCase()}
+                  </Badge>
+                ),
+              },
+              {
+                key: 'actions',
+                title: 'Actions',
+                width: '16%',
+                align: 'right',
+                render: (req) => {
+                  const resetActions: ActionDropdownItem[] = [
+                    ...(req.status === 'pending'
+                      ? [
+                          {
+                            id: 'approve',
+                            label: 'Approve & Reset Password',
+                            subLabel: 'Sets default setup password; user creates new on login',
+                            icon: <CheckCircle size={15} color="#16A34A" {...({} as any)} />,
+                            variant: 'success' as const,
+                            onPress: () => handleApproveReset(req),
+                          },
+                          {
+                            id: 'reject',
+                            label: 'Reject Request',
+                            subLabel: 'Deny password reset request',
+                            icon: <X size={15} color="#DC2626" {...({} as any)} />,
+                            variant: 'destructive' as const,
+                            onPress: () => handleRejectReset(req),
+                          },
+                        ]
+                      : [
+                          {
+                            id: 're_reset',
+                            label: 'Re-Reset Password',
+                            subLabel: 'Re-trigger password reset to setup mode',
+                            icon: <KeyRound size={15} color="#4338CA" {...({} as any)} />,
+                            onPress: () => handleApproveReset(req),
+                          },
+                        ]),
+                  ];
+                  return <ActionDropdown items={resetActions} size="sm" />;
+                },
+              },
+            ]}
+            data={filteredResetRequests}
+            keyExtractor={(item) => item.id}
+            searchable={false}
+            pageSize={10}
+            loading={isLoadingResets}
+            emptyTitle="No Password Reset Requests"
+            emptyDescription="Users who request password resets from the login screen will appear here."
+          />
+        ) : (
+          <DataTable<StakeholderUser>
+            columns={[
+              {
+                key: 'full_name',
+                title: 'User Profile',
+                sortable: true,
+                width: '28%',
+                render: (user) => (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <View style={styles.userAvatar}>
+                      {user.avatar_url ? (
+                        <Image source={{ uri: user.avatar_url }} style={styles.userAvatarImg} resizeMode="cover" />
                       ) : (
-                        <View style={styles.scopeBadgeGlobal}>
-                          <Globe size={12} color="#16A34A" />
-                          <Text style={styles.scopeTextGlobal}>Global / Admin Scope</Text>
-                        </View>
+                        <Text style={styles.avatarText}>
+                          {user.full_name
+                            .split(' ')
+                            .map((n) => n[0])
+                            .slice(0, 2)
+                            .join('')
+                            .toUpperCase()}
+                        </Text>
                       )}
                     </View>
-
-                    {req.admin_notes ? (
-                      <View
-                        style={{
-                          marginTop: 8,
-                          padding: 8,
-                          backgroundColor: '#F8FAFC',
-                          borderRadius: 6,
-                          borderWidth: 1,
-                          borderColor: '#E2E8F0',
-                        }}
-                      >
-                        <Text style={{ fontSize: 12, color: theme.colors.textMuted, fontStyle: 'italic' }}>
-                          Reason: "{req.admin_notes}"
-                        </Text>
-                      </View>
-                    ) : null}
-
-                    {req.status === 'approved' && (
-                      <View style={{ marginTop: 6, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                        <CheckCircle size={13} color="#16A34A" />
-                        <Text style={{ fontSize: 12, color: '#16A34A', fontWeight: '500' }}>
-                          Reset to Setup Mode • User will set their new password on next login.
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                </View>
-
-                {/* Actions */}
-                <View style={styles.userActions}>
-                  {req.status === 'pending' ? (
-                    <>
-                      <TouchableOpacity
-                        style={[
-                          styles.actionBtn,
-                          { backgroundColor: '#10B981', borderColor: '#059669' },
-                          processingResetId === req.id && { opacity: 0.6 },
-                        ]}
-                        onPress={() => handleApproveReset(req)}
-                        disabled={processingResetId === req.id}
-                      >
-                        {processingResetId === req.id ? (
-                          <ActivityIndicator size="small" color="white" />
-                        ) : (
-                          <>
-                            <CheckCircle size={14} color="white" />
-                            <Text
-                              style={{
-                                color: 'white',
-                                fontWeight: 'bold',
-                                fontSize: 12,
-                                marginLeft: 4,
-                              }}
-                            >
-                              Approve & Reset
-                            </Text>
-                          </>
-                        )}
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={[styles.actionBtn, styles.actionDelete]}
-                        onPress={() => handleRejectReset(req)}
-                        disabled={processingResetId === req.id}
-                      >
-                        <X size={14} color="#EF4444" />
-                        <Text style={{ color: '#EF4444', fontSize: 12, marginLeft: 4 }}>Reject</Text>
-                      </TouchableOpacity>
-                    </>
-                  ) : (
-                    <TouchableOpacity
-                      style={[styles.actionBtn, { borderColor: '#E2E8F0' }]}
-                      onPress={() => handleApproveReset(req)}
-                      disabled={processingResetId === req.id}
-                    >
-                      <KeyRound size={13} color={theme.colors.textMuted} />
-                      <Text style={{ color: theme.colors.textMuted, fontSize: 12, marginLeft: 4 }}>
-                        Re-Reset
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: '#0F172A' }} numberOfLines={1}>
+                        {user.full_name}
                       </Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </View>
-            ))
-          )
-        ) : isLoading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={theme.colors.primary} />
-            <Text style={styles.loadingText}>Loading directory...</Text>
-          </View>
-        ) : filteredStakeholders.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <Users size={48} color={theme.colors.textMuted} />
-            <Text style={styles.emptyTitle}>No Users Found</Text>
-            <Text style={styles.emptySub}>
-              {searchQuery
-                ? 'Try adjusting your search criteria.'
-                : 'No users found matching the selected category. Click "+ Add Stakeholder" to create a new user.'}
-            </Text>
-          </View>
-        ) : (
-          filteredStakeholders.map((user) => (
-            <View key={user.id} style={styles.userCard}>
-              <View style={styles.userMainInfo}>
-                <View style={styles.userAvatar}>
-                  {user.avatar_url ? (
-                    <Image source={{ uri: user.avatar_url }} style={styles.userAvatarImg} resizeMode="cover" />
-                  ) : (
-                    <Text style={styles.avatarText}>
-                      {user.full_name
-                        .split(' ')
-                        .map((n) => n[0])
-                        .slice(0, 2)
-                        .join('')
-                        .toUpperCase()}
-                    </Text>
-                  )}
-                </View>
-
-                <View style={styles.userDetails}>
-                  <View style={styles.nameRow}>
-                    <Text style={styles.userName}>{user.full_name}</Text>
-                    {getRoleBadge(user.resolvedRole)}
-                    <Badge variant={user.is_active ? 'success' : 'destructive'}>
-                      {user.is_active ? 'Active' : 'Disabled'}
-                    </Badge>
-                  </View>
-
-                  <View style={styles.metaRow}>
-                    <View style={styles.metaItem}>
-                      <Mail size={13} color={theme.colors.textMuted} />
-                      <Text style={styles.metaText}>{user.email}</Text>
+                      <Text style={{ fontSize: 11, color: '#64748B' }} numberOfLines={1}>
+                        {user.email}
+                      </Text>
                     </View>
-                    {user.phone && (
-                      <View style={styles.metaItem}>
-                        <Phone size={13} color={theme.colors.textMuted} />
-                        <Text style={styles.metaText}>{user.phone}</Text>
-                      </View>
-                    )}
                   </View>
-
-                  {/* Scope Indicator */}
-                  <View style={styles.scopeRow}>
+                ),
+              },
+              {
+                key: 'resolvedRole',
+                title: 'Role',
+                width: '18%',
+                render: (user) => getRoleBadge(user.resolvedRole),
+              },
+              {
+                key: 'institution_name',
+                title: 'Jurisdiction Scope',
+                width: '24%',
+                render: (user) => (
+                  <View>
                     {user.institution_name ? (
                       <View style={styles.scopeBadgeInst}>
-                        <Building size={12} color="#0284C7" />
-                        <Text style={styles.scopeTextInst}>
-                          Institution: {user.institution_name}
+                        <Building size={12} color="#0284C7" {...({} as any)} />
+                        <Text style={styles.scopeTextInst} numberOfLines={1}>
+                          {user.institution_name}
                         </Text>
                       </View>
                     ) : (
                       <View style={styles.scopeBadgeGlobal}>
-                        <Globe size={12} color="#16A34A" />
+                        <Globe size={12} color="#16A34A" {...({} as any)} />
                         <Text style={styles.scopeTextGlobal}>Global Platform Scope</Text>
                       </View>
                     )}
                   </View>
-                </View>
-              </View>
-
-              {/* Action Buttons */}
-              <View style={styles.userActions}>
-                <TouchableOpacity
-                  style={[styles.actionBtn, user.is_active ? styles.actionDisable : styles.actionEnable]}
-                  onPress={() => handleToggleStatus(user)}
-                >
-                  {user.is_active ? (
-                    <>
-                      <UserX size={14} color="#EF4444" />
-                      <Text style={styles.actionDisableText}>Disable</Text>
-                    </>
-                  ) : (
-                    <>
-                      <UserCheck size={14} color="#10B981" />
-                      <Text style={styles.actionEnableText}>Activate</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.actionBtn, styles.actionDelete]}
-                  onPress={() => handleDelete(user)}
-                >
-                  <Trash2 size={14} color="#94A3B8" />
-                  <Text style={styles.actionDeleteText}>Remove</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))
+                ),
+              },
+              {
+                key: 'is_active',
+                title: 'Status',
+                width: '12%',
+                render: (user) => (
+                  <Badge variant={user.is_active ? 'success' : 'destructive'}>
+                    {user.is_active ? 'Active' : 'Disabled'}
+                  </Badge>
+                ),
+              },
+              {
+                key: 'actions',
+                title: 'Actions',
+                width: '18%',
+                align: 'right',
+                render: (user) => {
+                  const userActions: ActionDropdownItem[] = [
+                    {
+                      id: 'toggle_status',
+                      label: user.is_active ? 'Disable Account' : 'Activate Account',
+                      subLabel: user.is_active ? 'Lock user from logging in' : 'Permit platform login',
+                      icon: user.is_active ? (
+                        <UserX size={15} color="#DC2626" {...({} as any)} />
+                      ) : (
+                        <UserCheck size={15} color="#16A34A" {...({} as any)} />
+                      ),
+                      variant: user.is_active ? 'warning' : 'success',
+                      onPress: () => handleToggleStatus(user),
+                    },
+                    {
+                      id: 'reset_pass',
+                      label: 'Reset Password to Setup Mode',
+                      subLabel: 'User will configure permanent password on next login',
+                      icon: <KeyRound size={15} color="#4338CA" {...({} as any)} />,
+                      onPress: async () => {
+                        try {
+                          await supabase.functions.invoke('create-user', {
+                            body: {
+                              email: user.email,
+                              reset_password: true,
+                              role: user.role,
+                              full_name: user.full_name,
+                              institution_id: user.institution_id || 'global',
+                            },
+                          });
+                          showAlert('Password Reset', `${user.full_name}'s credentials have been reset to setup mode.`, 'success');
+                        } catch (e: any) {
+                          showAlert('Error', e.message || 'Failed to reset password', 'error');
+                        }
+                      },
+                    },
+                    {
+                      id: 'delete_user',
+                      label: 'Remove User',
+                      subLabel: 'Permanently remove stakeholder account',
+                      icon: <Trash2 size={15} color="#DC2626" {...({} as any)} />,
+                      variant: 'destructive',
+                      onPress: () => handleDelete(user),
+                    },
+                  ];
+                  return <ActionDropdown items={userActions} size="sm" />;
+                },
+              },
+            ]}
+            data={filteredStakeholders}
+            keyExtractor={(item) => item.id}
+            searchable={false}
+            pageSize={10}
+            loading={isLoading}
+            emptyTitle="No Stakeholders Found"
+            emptyDescription="Try adjusting your role or institution filter."
+          />
         )}
       </View>
 
@@ -1561,73 +1528,19 @@ export default function AdminUsers() {
 
                     {/* Institution Selector if Specific Institution is picked */}
                     {scopeType === 'institution' && (
-                      <View style={styles.instSelectSection}>
-                        <Text style={styles.inputLabel}>Select Target Institution *</Text>
-                        
-                        <View style={styles.instSearchBox}>
-                          <Search size={15} color={theme.colors.textMuted} />
-                          <TextInput
-                            style={styles.instSearchInput}
-                            placeholder="Search by institution name, code, or city..."
-                            placeholderTextColor={theme.colors.textMuted}
-                            value={instSearch}
-                            onChangeText={setInstSearch}
-                          />
-                          {!!instSearch && (
-                            <TouchableOpacity onPress={() => setInstSearch('')}>
-                              <X size={14} color={theme.colors.textMuted} />
-                            </TouchableOpacity>
-                          )}
-                        </View>
-
-                        <ScrollView style={styles.instCardsScroll} nestedScrollEnabled showsVerticalScrollIndicator={true}>
-                          {filteredInstitutions.length === 0 ? (
-                            <View style={styles.noInstFound}>
-                              <Building2 size={24} color="#94A3B8" />
-                              <Text style={styles.noInstFoundText}>
-                                {instSearch ? 'No matching institutions found' : 'No institutions registered yet'}
-                              </Text>
-                            </View>
-                          ) : (
-                            filteredInstitutions.map((inst) => {
-                              const isSelected = selectedInstitutionId === inst.institution_id || selectedInstitutionId === inst.id;
-                              return (
-                                <TouchableOpacity
-                                  key={inst.id || inst.institution_id}
-                                  style={[styles.instCardItem, isSelected && styles.instCardItemActive]}
-                                  onPress={() => setSelectedInstitutionId(inst.institution_id || inst.id)}
-                                >
-                                  <View style={[styles.instCardIconWrap, isSelected && styles.instCardIconWrapActive]}>
-                                    <Building2 size={18} color={isSelected ? theme.colors.primary : '#4F46E5'} />
-                                  </View>
-
-                                  <View style={styles.instCardInfo}>
-                                    <Text style={[styles.instCardName, isSelected && styles.instCardNameActive]}>
-                                      {inst.name}
-                                    </Text>
-                                    <View style={styles.instCardMetaRow}>
-                                      <View style={styles.instCodeChip}>
-                                        <Text style={styles.instCodeChipText}>Code: {inst.institution_id}</Text>
-                                      </View>
-                                      <View style={styles.instCityChip}>
-                                        <MapPin size={11} color="#059669" />
-                                        <Text style={styles.instCityChipText}>{inst.city || 'India'}</Text>
-                                      </View>
-                                    </View>
-                                  </View>
-
-                                  <View style={styles.instCardCheck}>
-                                    {isSelected ? (
-                                      <CheckCircle size={20} color={theme.colors.primary} />
-                                    ) : (
-                                      <View style={styles.instRadioUnchecked} />
-                                    )}
-                                  </View>
-                                </TouchableOpacity>
-                              );
-                            })
-                          )}
-                        </ScrollView>
+                      <View style={{ marginTop: 16 }}>
+                        <Select
+                          label="Select Target Institution *"
+                          placeholder="Search and select campus..."
+                          value={selectedInstitutionId}
+                          options={institutions.map(inst => ({
+                            label: inst.name,
+                            value: inst.institution_id || inst.id,
+                            subLabel: `${inst.institution_id} • ${inst.city || 'India'}`,
+                          }))}
+                          onSelect={(val) => setSelectedInstitutionId(val)}
+                          searchable={true}
+                        />
                       </View>
                     )}
                   </View>
@@ -1643,90 +1556,30 @@ export default function AdminUsers() {
                       </Text>
                     </View>
 
-                    {/* Search & Institution Card Picker */}
-                    <View style={styles.instSearchBox}>
-                      <Search size={15} color={theme.colors.textMuted} />
-                      <TextInput
-                        style={styles.instSearchInput}
-                        placeholder="Search by institution name, code, or city..."
-                        placeholderTextColor={theme.colors.textMuted}
-                        value={instSearch}
-                        onChangeText={setInstSearch}
-                      />
-                      {!!instSearch && (
-                        <TouchableOpacity onPress={() => setInstSearch('')}>
-                          <X size={14} color={theme.colors.textMuted} />
-                        </TouchableOpacity>
-                      )}
-                    </View>
+                    <Select
+                      label="Target Campus / Institution *"
+                      placeholder="Search and select campus..."
+                      value={selectedInstitutionId}
+                      options={institutions.map(inst => ({
+                        label: inst.name,
+                        value: inst.institution_id || inst.id,
+                        subLabel: `${inst.institution_id} • ${inst.city || 'India'}`,
+                      }))}
+                      onSelect={(val) => setSelectedInstitutionId(val)}
+                      searchable={true}
+                    />
 
-                    <ScrollView style={styles.instCardsScroll} nestedScrollEnabled showsVerticalScrollIndicator={true}>
-                      {filteredInstitutions.length === 0 ? (
-                        <View style={styles.noInstFound}>
-                          <Building2 size={24} color="#94A3B8" />
-                          <Text style={styles.noInstFoundText}>
-                            {instSearch ? 'No matching institutions found' : 'No institutions registered yet'}
-                          </Text>
-                        </View>
-                      ) : (
-                        filteredInstitutions.map((inst) => {
-                          const isSelected = selectedInstitutionId === inst.institution_id || selectedInstitutionId === inst.id;
-                          return (
-                            <TouchableOpacity
-                              key={inst.id || inst.institution_id}
-                              style={[styles.instCardItem, isSelected && styles.instCardItemActive]}
-                              onPress={() => setSelectedInstitutionId(inst.institution_id || inst.id)}
-                            >
-                              <View style={[styles.instCardIconWrap, isSelected && styles.instCardIconWrapActive]}>
-                                <Building2 size={18} color={isSelected ? theme.colors.primary : '#4F46E5'} />
-                              </View>
-
-                              <View style={styles.instCardInfo}>
-                                <Text style={[styles.instCardName, isSelected && styles.instCardNameActive]}>
-                                  {inst.name}
-                                </Text>
-                                <View style={styles.instCardMetaRow}>
-                                  <View style={styles.instCodeChip}>
-                                    <Text style={styles.instCodeChipText}>Code: {inst.institution_id}</Text>
-                                  </View>
-                                  <View style={styles.instCityChip}>
-                                    <MapPin size={11} color="#059669" />
-                                    <Text style={styles.instCityChipText}>{inst.city || 'India'}</Text>
-                                  </View>
-                                </View>
-                              </View>
-
-                              <View style={styles.instCardCheck}>
-                                {isSelected ? (
-                                  <CheckCircle size={20} color={theme.colors.primary} />
-                                ) : (
-                                  <View style={styles.instRadioUnchecked} />
-                                )}
-                              </View>
-                            </TouchableOpacity>
-                          );
-                        })
-                      )}
-                    </ScrollView>
-
-                    {/* Export Files Permission Toggle */}
-                    <TouchableOpacity
-                      style={[styles.exportToggleCard, canExport && styles.exportToggleCardActive]}
-                      onPress={() => setCanExport(!canExport)}
-                    >
-                      <View style={[styles.exportToggleIconWrap, canExport && styles.exportToggleIconWrapActive]}>
-                        <FileSpreadsheet size={20} color={canExport ? '#059669' : '#64748B'} />
-                      </View>
-                      <View style={styles.exportToggleTextWrap}>
-                        <Text style={styles.exportToggleTitle}>Allow Export Files & Reports</Text>
-                        <Text style={styles.exportToggleDesc}>
-                          Grant permission to download and export institution student rosters, fee reports, admissions, and financial Excel spreadsheets.
-                        </Text>
-                      </View>
-                      <View style={[styles.switchPill, canExport && styles.switchPillActive]}>
-                        <View style={[styles.switchKnob, canExport && styles.switchKnobActive]} />
-                      </View>
-                    </TouchableOpacity>
+                    {/* Export Files Permission Select */}
+                    <Select
+                      label="Data Export & Report Privileges"
+                      value={canExport ? 'enabled' : 'disabled'}
+                      options={[
+                        { label: 'Disabled — Read-only analytics & dashboard access', value: 'disabled' },
+                        { label: 'Enabled — Can export student rosters, fee data, and spreadsheets', value: 'enabled' },
+                      ]}
+                      onSelect={(val) => setCanExport(val === 'enabled')}
+                      searchable={false}
+                    />
                   </View>
                 )}
 
@@ -1801,12 +1654,12 @@ export default function AdminUsers() {
                   </View>
                   <View style={styles.summaryUserInfo}>
                     <Text style={styles.summaryUserName}>{fullName}</Text>
-                    <Text style={styles.summaryUserPhone}>{phone ? `📞 ${phone}` : 'No phone specified'}</Text>
+                    <Text style={styles.summaryUserPhone}>{phone ? `Phone: ${phone}` : 'No phone specified'}</Text>
                     <View style={styles.summaryBadgesRow}>
                       <Badge variant="info">
-                        {selectedRole === 'ad_manager' ? '📢 Ad Manager' :
-                         selectedRole === 'finance_manager' ? '💳 Finance Manager' :
-                         selectedRole === 'institution_stakeholder' ? '🏛️ Inst. Admin' : '🛡️ Super Admin'}
+                        {selectedRole === 'ad_manager' ? 'Ad Manager' :
+                         selectedRole === 'finance_manager' ? 'Finance Manager' :
+                         selectedRole === 'institution_stakeholder' ? 'Inst. Admin' : 'Super Admin'}
                       </Badge>
                       <Badge variant="default">
                         {selectedRole === 'superadmin'
@@ -1817,7 +1670,7 @@ export default function AdminUsers() {
                       </Badge>
                       {selectedRole === 'institution_stakeholder' && (
                         <Badge variant={canExport ? 'success' : 'destructive'}>
-                          {canExport ? '✅ Exports Permitted' : '🔒 Exports Restricted'}
+                          {canExport ? 'Exports Permitted' : 'Exports Restricted'}
                         </Badge>
                       )}
                     </View>

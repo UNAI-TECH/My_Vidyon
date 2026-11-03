@@ -78,9 +78,17 @@ export function useNotifications() {
         .limit(50);
 
       if (notifError) {
+        if (
+          notifError.code === 'PGRST116' ||
+          notifError.code === '42P01' ||
+          (notifError as any).name === 'AbortError' ||
+          notifError.message?.includes('AbortError') ||
+          notifError.message?.includes('Lock broken') ||
+          (notifError as any).details?.includes('Lock broken')
+        ) {
+          return [];
+        }
         console.error('Error fetching notifications:', notifError);
-        // Don't throw if just the table is missing / RLS issues, return empty
-        if (notifError.code === 'PGRST116' || notifError.code === '42P01') return [];
         throw notifError;
       }
 
@@ -128,7 +136,7 @@ export function useNotifications() {
         const userRoleLower = (role || '').toLowerCase();
         if (userRoleLower.includes('ad') || userRoleLower.includes('admin') || userRoleLower.includes('stakeholder') || userRoleLower === 'superadmin' || userRoleLower === 'super_admin') {
           let adQuery = (supabase.from('academic_events') as any)
-            .select('id, title, paid_amount, remaining_balance, amount_debited, updated_at, created_at')
+            .select('id, title, paid_amount, remaining_balance, amount_debited, created_at')
             .eq('is_admin_added', true);
 
           if (institutionUuid) {
@@ -143,7 +151,7 @@ export function useNotifications() {
 
           adExhaustedNotifs = depletedAds.map(a => {
             const notifKey = `ad-exhausted-${a.id}`;
-            const eventTime = a.updated_at || a.created_at || new Date().toISOString();
+            const eventTime = a.created_at || new Date().toISOString();
             return {
               id: notifKey,
               title: `⚠️ Ad Ran Out of Credits: ${a.title}`,

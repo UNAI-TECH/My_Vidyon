@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 
 interface BadgeProps {
-  children: string;
+  children: React.ReactNode;
   variant?: 'success' | 'warning' | 'info' | 'destructive' | 'default';
   style?: any;
   textStyle?: any;
@@ -23,9 +23,13 @@ export const Badge = ({ children, variant = 'default', style, textStyle }: Badge
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }, style]}>
-      <Text style={[styles.text, { color: colors.text }, textStyle]}>
-        {children.toUpperCase()}
-      </Text>
+      {typeof children === 'string' ? (
+        <Text style={[styles.text, { color: colors.text }, textStyle]}>
+          {children.toUpperCase()}
+        </Text>
+      ) : (
+        children
+      )}
     </View>
   );
 };

@@ -1,10 +1,11 @@
 import { Tabs, Redirect } from 'expo-router';
 import { TouchableOpacity } from 'react-native';
 import { theme } from '../../../src/theme';
-import { Home, Settings, LogOut } from 'lucide-react-native';
+import { Home, LogOut } from 'lucide-react-native';
 import { useAuth } from '../../../src/hooks/useAuth';
 import { HeaderLogo } from '../../../src/components/common/HeaderLogo';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ProfileTabIcon, ProfileTabBarButton } from '../../../src/components/common/ProfileTabComponents';
 
 export default function StudentTabs() {
   const { signOut, role } = useAuth();
@@ -60,8 +61,9 @@ export default function StudentTabs() {
       <Tabs.Screen
         name="settings"
         options={{
-          tabBarLabel: 'Settings',
-          tabBarIcon: ({ color }) => <Settings size={22} color={color} {...({} as any)} />,
+          tabBarLabel: 'Profile',
+          tabBarIcon: ({ color, focused }) => <ProfileTabIcon color={color} focused={focused} />,
+          tabBarButton: (props) => <ProfileTabBarButton {...props} />,
         }}
       />
 

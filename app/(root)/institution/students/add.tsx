@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Image, ActivityIndicator, Alert, Platform, Modal } from 'react-native';
 import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
@@ -12,12 +12,14 @@ import * as Sharing from 'expo-sharing';
 import * as XLSX from 'xlsx';
 import { 
   UserPlus, ArrowLeft, Save, Camera, Upload, Trash2,
-  ChevronRight, ChevronLeft, ChevronDown, Copy, FileSpreadsheet, Download, Users, Plus, Search, CheckCircle, X
+  ChevronRight, ChevronLeft, ChevronDown, Copy, FileSpreadsheet, Download, Users, Plus, Search, CheckCircle, X,
+  Mail, GraduationCap, Briefcase, Calculator, Coffee, Bus, UserCheck, Shield, User
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { CalendarModal } from '../../../../src/components/common/CalendarPicker';
 import { uploadToSupabaseStorage } from '../../../../src/utils/fileUpload';
+import { Select } from '../../../../src/components/common/Select';
 
 type UserRole = 'student' | 'faculty' | 'admission_officer' | 'accountant' | 'reports_manager' | 'canteen_manager' | 'driver' | 'parent';
 
@@ -30,6 +32,33 @@ const ROLES: { id: UserRole; label: string; color: string; description?: string 
   { id: 'canteen_manager', label: 'Canteen', color: '#10B981', description: 'Cafeteria manager' },
   { id: 'driver', label: 'Transport', color: '#EF4444', description: 'Bus driver' },
   { id: 'parent', label: 'Parent', color: '#8B5CF6', description: 'Student guardian' },
+];
+
+const BLOOD_GROUPS = [
+  { label: 'A+', value: 'A+' },
+  { label: 'A-', value: 'A-' },
+  { label: 'B+', value: 'B+' },
+  { label: 'B-', value: 'B-' },
+  { label: 'O+', value: 'O+' },
+  { label: 'O-', value: 'O-' },
+  { label: 'AB+', value: 'AB+' },
+  { label: 'AB-', value: 'AB-' },
+];
+
+const FACULTY_DESIGNATIONS = [
+  { label: 'Teacher', value: 'Teacher' },
+  { label: 'Senior Teacher', value: 'Senior Teacher' },
+  { label: 'Head of Department (HOD)', value: 'Head of Department' },
+  { label: 'Assistant Professor', value: 'Assistant Professor' },
+  { label: 'Associate Professor', value: 'Associate Professor' },
+  { label: 'Professor', value: 'Professor' },
+  { label: 'Lecturer', value: 'Lecturer' },
+  { label: 'Junior Lecturer', value: 'Junior Lecturer' },
+  { label: 'Primary Teacher (PRT)', value: 'Primary Teacher' },
+  { label: 'Trained Graduate Teacher (TGT)', value: 'TGT' },
+  { label: 'Post Graduate Teacher (PGT)', value: 'PGT' },
+  { label: 'Lab Assistant / Instructor', value: 'Lab Instructor' },
+  { label: 'Special Educator', value: 'Special Educator' },
 ];
 
 // ---- EMAIL GENERATION UTILITY ----
@@ -87,11 +116,31 @@ export default function AddUserScreen() {
   }, [allowedRoles]);
 
   const [selectedRole, setSelectedRole] = useState<UserRole>((params.role as UserRole) || 'student');
+  const [currentStep, setCurrentStep] = useState<number>(1);
   const [isLoading, setIsLoading] = useState(false);
   const [image, setImage] = useState<string | null>(null);
   const [generatedEmail, setGeneratedEmail] = useState('');
   const [bulkProgress, setBulkProgress] = useState<{ current: number; total: number } | null>(null);
   const [bulkResults, setBulkResults] = useState<any[] | null>(null);
+
+  const roleLabel = displayRoles.find(r => r.id === selectedRole)?.label || 'User';
+
+  const goToStep2 = () => {
+    setCurrentStep(2);
+  };
+
+  const goToStep3 = () => {
+    if (!form.firstName.trim() || !form.lastName.trim()) {
+      setAlertConfig({
+        visible: true,
+        title: 'Missing Details',
+        message: 'Please enter First Name and Last Name to continue.',
+        buttons: [{ text: 'OK', onPress: () => setAlertConfig(null) }]
+      });
+      return;
+    }
+    setCurrentStep(3);
+  };
 
   // Parent search
   const [parentSearchQuery, setParentSearchQuery] = useState('');
@@ -121,25 +170,33 @@ export default function AddUserScreen() {
     // Student specific
     admissionNumber: '', className: '', section: '', rollNumber: '', academicYear: '2026-27',
     parentName: '', parentRelation: 'Father', parentPhone: '', parentEmail: '',
-    // Staff specific
-    staffId: '', department: '',
+    // Staff & Faculty specific
+    staffId: '', department: '', designation: '', extension: '', counter: '',
+    // Transport & Fleet
+    vehicleNumber: '', licenseNumber: '',
+    // Parent specific
+    wardInfo: '',
   });
 
   const updateField = (field: string, value: string) => {
     setForm(prev => ({ ...prev, [field]: value }));
   };
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setForm({
       firstName: '', lastName: '', dob: '', gender: 'male', bloodGroup: '',
       phone: '', address: '', city: '', zipCode: '',
       admissionNumber: '', className: '', section: '', rollNumber: '', academicYear: '2026-27',
       parentName: '', parentRelation: 'Father', parentPhone: '', parentEmail: '',
-      staffId: '', department: '',
+      staffId: '', department: '', designation: '', extension: '', counter: '',
+      vehicleNumber: '', licenseNumber: '', wardInfo: '',
     });
     setImage(null);
     setGeneratedEmail('');
-  };
+    setSelectedParent(null);
+    setParentSearchQuery('');
+    setCurrentStep(1);
+  }, []);
 
   // Fetch available classes from groups
   const { data: availableClasses = [] } = useQuery({
@@ -176,6 +233,104 @@ export default function AddUserScreen() {
     },
     enabled: !!institutionId && parentSearchQuery.length >= 2
   });
+
+  // Fetch existing staff for minimal ID auto-generation
+  const { data: existingStaff = [] } = useQuery({
+    queryKey: ['existing-staff-ids', institutionId],
+    queryFn: async (): Promise<any[]> => {
+      if (!institutionId) return [];
+      const { data } = await (supabase
+        .from('profiles') as any)
+        .select('id, staff_id, role')
+        .eq('institution_id', institutionId)
+        .not('staff_id', 'is', null);
+      return data || [];
+    },
+    enabled: !!institutionId
+  });
+
+  // Fetch subjects from the institution to populate Department dropdown
+  const { data: institutionSubjects = [] } = useQuery({
+    queryKey: ['institution-subjects-departments', institutionId],
+    queryFn: async (): Promise<string[]> => {
+      if (!institutionId) return [];
+      const { data, error } = await supabase
+        .from('subjects')
+        .select('name')
+        .eq('institution_id', institutionId)
+        .order('name');
+      if (error) {
+        console.warn('Error fetching subjects for departments:', error);
+        return [];
+      }
+      if (!data) return [];
+      const uniqueNames = Array.from(new Set(data.map((s: any) => s.name?.trim()).filter(Boolean)));
+      return uniqueNames as string[];
+    },
+    enabled: !!institutionId
+  });
+
+  const departmentOptions = useMemo(() => {
+    if (institutionSubjects.length > 0) {
+      return institutionSubjects.map((sub: string) => ({
+        label: sub,
+        value: sub,
+      }));
+    }
+    return [
+      { label: 'English', value: 'English' },
+      { label: 'Mathematics', value: 'Mathematics' },
+      { label: 'Science', value: 'Science' },
+      { label: 'Social Studies', value: 'Social Studies' },
+      { label: 'Physics', value: 'Physics' },
+      { label: 'Chemistry', value: 'Chemistry' },
+      { label: 'Biology', value: 'Biology' },
+      { label: 'Computer Science', value: 'Computer Science' },
+      { label: 'Commerce', value: 'Commerce' },
+      { label: 'Physical Education', value: 'Physical Education' },
+      { label: 'General / Languages', value: 'General' },
+    ];
+  }, [institutionSubjects]);
+
+  const generateMinimalStaffId = useCallback((role: UserRole) => {
+    // Faculty defaults to 'TCH-' (continues TCH-01, TCH-02...), other staff roles default to 'STAFF-' (STAFF-01, STAFF-02...)
+    const prefix = role === 'faculty' ? 'TCH-' : 'STAFF-';
+    
+    // Match any existing IDs with TCH-, T-, STAFF-, S-, or legacy prefixes
+    const regex = role === 'faculty'
+      ? /^(?:TCH-?|T-?)(\d+)$/i
+      : /^(?:STAFF-?|S-?|ADM-?|FIN-?|REP-?|CAN-?|DRV-?)(\d+)$/i;
+    
+    let maxNum = 0;
+    for (const s of existingStaff) {
+      const id = s.staff_id;
+      if (typeof id === 'string') {
+        const match = id.trim().match(regex);
+        if (match && match[1]) {
+          const num = parseInt(match[1], 10);
+          if (!isNaN(num) && num > maxNum) {
+            maxNum = num;
+          }
+        }
+      }
+    }
+    
+    const nextNum = maxNum > 0 ? maxNum + 1 : 1;
+    const formatted = nextNum < 10 ? `0${nextNum}` : `${nextNum}`;
+    return `${prefix}${formatted}`;
+  }, [existingStaff]);
+
+  useEffect(() => {
+    if (selectedRole !== 'student' && selectedRole !== 'parent') {
+      const autoId = generateMinimalStaffId(selectedRole);
+      setForm(prev => {
+        if (!prev.staffId || /^(?:TCH-?|STAFF-?|T|S|ADM-?|FIN-?|CAN-?|REP-?|DRV-?)\d{1,4}$/i.test(prev.staffId)) {
+          return { ...prev, staffId: autoId };
+        }
+        return prev;
+      });
+    }
+  }, [selectedRole, generateMinimalStaffId]);
 
   const handleSelectParent = useCallback((parent: any) => {
     setSelectedParent(parent);
@@ -276,13 +431,19 @@ export default function AddUserScreen() {
 
       if (selectedRole === 'admission_officer') {
         dbRole = 'faculty';
-        dbDept = 'Admissions';
+        dbDept = form.department || 'Admissions';
       } else if (selectedRole === 'accountant') {
         dbRole = 'accountant';
-        dbDept = 'Fee Management';
+        dbDept = form.department || 'Fee Management';
       } else if (selectedRole === 'reports_manager') {
         dbRole = 'analytics';
-        dbDept = 'Reports';
+        dbDept = form.department || 'Reports';
+      } else if (selectedRole === 'canteen_manager') {
+        dbRole = 'canteen_manager';
+        dbDept = form.department || 'Canteen';
+      } else if (selectedRole === 'driver') {
+        dbRole = 'driver';
+        dbDept = form.department || 'Transport';
       }
 
       const body: any = {
@@ -313,7 +474,7 @@ export default function AddUserScreen() {
           body.parent_id = selectedParent.id;
         }
       } else if (selectedRole === 'parent') {
-        // parent-specific fields would go here
+        body.parent_contact = form.phone || null;
       } else {
         body.staff_id = form.staffId || `STF-${Date.now().toString(36).toUpperCase()}`;
         body.department = dbDept;
@@ -337,22 +498,23 @@ export default function AddUserScreen() {
       if (error) throw error;
       if (responseData?.error) throw new Error(responseData.error);
 
-      setGeneratedEmail(email);
+      // Instantly reset the form so admin is ready for the next entry
+      resetForm();
+
       setAlertConfig({
         visible: true,
-        title: '✅ User Created!',
-        message: `${fullName} (${selectedRole})\n\nEmail: ${email}\n\nThe user will set their own password on first login.`,
+        title: '✅ User Created & Form Reset!',
+        message: `${fullName} has been successfully created as ${displayRoles.find(r => r.id === selectedRole)?.label || selectedRole}.\n\nOfficial Email:\n${email}\n\nThe form is now reset and ready for the next user.`,
         buttons: [
           { 
-            text: 'Add Another', 
+            text: 'Add Another User', 
             onPress: () => {
               copyEmail(email);
-              resetForm();
               setAlertConfig(null);
             } 
           },
           { 
-            text: 'Done', 
+            text: 'View Users List', 
             onPress: () => {
               setAlertConfig(null);
               router.back();
@@ -557,331 +719,718 @@ export default function AddUserScreen() {
     await handleDownloadResults(templateData);
   };
 
+  const STEPS = [
+    { id: 1, label: 'Role', subtitle: 'Account Type', icon: Shield },
+    { id: 2, label: 'Personal Details', subtitle: 'Profile Info', icon: User },
+    { id: 3, label: `${roleLabel} Info`, subtitle: 'Role Data', icon: GraduationCap },
+  ];
+
   // ---- RENDER ----
   return (
     <View style={styles.container}>
       <PageHeader
         title="Add User"
-        subtitle={`Create ${displayRoles.find(r => r.id === selectedRole)?.label || 'User'} Account`}
+        subtitle="Create a new user account"
         leftAction={
-          <TouchableOpacity onPress={() => router.back()}>
+          <TouchableOpacity onPress={() => router.back()} style={{ padding: 4 }}>
             <ArrowLeft size={24} color={theme.colors.text} {...({} as any)} />
           </TouchableOpacity>
         }
+        actions={
+          <View style={styles.headerActions}>
+            <TouchableOpacity style={styles.headerBtn} onPress={handleBulkUpload}>
+              <Upload size={14} color={theme.colors.primary} {...({} as any)} />
+              <Text style={styles.headerBtnText}>Bulk Upload</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.headerBtn} onPress={handleDownloadTemplate}>
+              <Download size={14} color={theme.colors.textMuted} {...({} as any)} />
+              <Text style={[styles.headerBtnText, { color: theme.colors.textMuted }]}>Template</Text>
+            </TouchableOpacity>
+            {bulkResults && (
+              <TouchableOpacity style={[styles.headerBtn, { backgroundColor: '#10B98115', borderColor: '#10B98140' }]} onPress={() => handleDownloadResults(bulkResults)}>
+                <FileSpreadsheet size={14} color="#10B981" {...({} as any)} />
+                <Text style={[styles.headerBtnText, { color: '#10B981' }]}>Export</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        }
       />
 
-      {/* Role Selector */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.roleBar} contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}>
-        {displayRoles.map(role => (
-          <TouchableOpacity
-            key={role.id}
-            style={[styles.roleChip, selectedRole === role.id && { backgroundColor: role.color }]}
-            onPress={() => setSelectedRole(role.id)}
-          >
-            <Text style={[styles.roleChipText, selectedRole === role.id && { color: 'white' }]}>{role.label}</Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+      {/* Steps Indicator Bar */}
+      <View style={styles.stepsBar}>
+        <View style={styles.stepsBarInner}>
+          {STEPS.map((s, idx) => {
+            const isDone = currentStep > s.id;
+            const isCurrent = currentStep === s.id;
+            return (
+              <React.Fragment key={s.id}>
+                <TouchableOpacity
+                  style={styles.stepItem}
+                  onPress={() => {
+                    if (s.id < currentStep) {
+                      setCurrentStep(s.id);
+                    } else if (s.id === 2 && currentStep === 1) {
+                      goToStep2();
+                    } else if (s.id === 3 && currentStep === 2) {
+                      goToStep3();
+                    }
+                  }}
+                  disabled={s.id > currentStep}
+                  activeOpacity={0.7}
+                >
+                  <View style={[
+                    styles.stepBadge,
+                    isCurrent && styles.stepBadgeCurrent,
+                    isDone && styles.stepBadgeDone,
+                  ]}>
+                    {isDone ? (
+                      <CheckCircle size={14} color="white" {...({} as any)} />
+                    ) : (
+                      <Text style={[styles.stepBadgeText, isCurrent && styles.stepBadgeTextCurrent]}>
+                        {s.id}
+                      </Text>
+                    )}
+                  </View>
+                  <View style={styles.stepInfo}>
+                    <Text style={[styles.stepTitle, isCurrent && styles.stepTitleCurrent]}>
+                      {s.label}
+                    </Text>
+                    <Text style={styles.stepSubtitle}>{s.subtitle}</Text>
+                  </View>
+                </TouchableOpacity>
 
-      {/* Bulk Actions Bar */}
-      <View style={styles.bulkBar}>
-        <TouchableOpacity style={styles.bulkBtn} onPress={handleBulkUpload}>
-          <Upload size={16} color={theme.colors.primary} {...({} as any)} />
-          <Text style={styles.bulkBtnText}>Bulk Upload</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.bulkBtn} onPress={handleDownloadTemplate}>
-          <Download size={16} color={theme.colors.primary} {...({} as any)} />
-          <Text style={styles.bulkBtnText}>Template</Text>
-        </TouchableOpacity>
-        {bulkResults && (
-          <TouchableOpacity style={[styles.bulkBtn, { backgroundColor: '#10B98115' }]} onPress={() => handleDownloadResults(bulkResults)}>
-            <FileSpreadsheet size={16} color="#10B981" {...({} as any)} />
-            <Text style={[styles.bulkBtnText, { color: '#10B981' }]}>Export Results</Text>
-          </TouchableOpacity>
-        )}
+                {idx < STEPS.length - 1 && (
+                  <View style={[styles.stepLine, isDone && styles.stepLineDone]} />
+                )}
+              </React.Fragment>
+            );
+          })}
+        </View>
       </View>
 
       {/* Bulk Progress */}
       {bulkProgress && (
-        <View style={styles.progressBar}>
-          <View style={[styles.progressFill, { width: `${(bulkProgress.current / bulkProgress.total) * 100}%` }]} />
-          <Text style={styles.progressText}>{bulkProgress.current}/{bulkProgress.total} users processed</Text>
+        <View style={styles.progressContainer}>
+          <View style={styles.progressBar}>
+            <View style={[styles.progressFill, { width: `${(bulkProgress.current / bulkProgress.total) * 100}%` }]} />
+            <Text style={styles.progressText}>{bulkProgress.current}/{bulkProgress.total} users processed</Text>
+          </View>
         </View>
       )}
 
-      {/* Auto Email Preview */}
-      {autoEmail ? (
-        <TouchableOpacity style={styles.emailPreview} onPress={() => copyEmail(autoEmail)}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.emailLabel}>Auto-generated Email</Text>
-            <Text style={styles.emailText}>{autoEmail}</Text>
-          </View>
-          <Copy size={18} color={theme.colors.primary} {...({} as any)} />
-        </TouchableOpacity>
-      ) : null}
-
       <ScrollView style={styles.formContainer} contentContainerStyle={styles.formContent}>
-        <View style={styles.photoContainer}>
-          <TouchableOpacity 
-            style={styles.photoPicker} 
-            onPress={() => setPickerConfig({
-              visible: true,
-              title: 'Upload Photo',
-              options: [
-                { label: 'Camera', icon: Camera, onPress: takePhoto, color: '#3B82F6', bgColor: '#EFF6FF' },
-                { label: 'Gallery', icon: Upload, onPress: pickImage, color: '#8B5CF6', bgColor: '#F5F3FF' },
-                ...(image ? [{ label: 'Remove', icon: Trash2, onPress: () => setImage(null), color: '#EF4444', bgColor: '#FEF2F2' }] : []),
-              ]
-            })}
-          >
-            {image ? (
-              <Image source={{ uri: image }} style={styles.photo} />
-            ) : (
-              <View style={styles.photoPlaceholder}>
-                <Camera size={32} color={theme.colors.textMuted} {...({} as any)} />
-                <Text style={styles.photoText}>Add Photo</Text>
-              </View>
-            )}
-            <View style={styles.photoEditBadge}>
-              <Plus size={16} color="white" {...({} as any)} />
+        {/* PAGE 1: ROLE SELECTION */}
+        {currentStep === 1 && (
+          <View style={styles.card}>
+            <View style={styles.sectionHeader}>
+              <Shield size={18} color={theme.colors.primary} {...({} as any)} />
+              <Text style={styles.sectionTitle}>Account Role</Text>
             </View>
-          </TouchableOpacity>
-        </View>
 
-        {/* Personal Details - Common */}
-        <Text style={styles.sectionTitle}>Personal Details</Text>
-        <View style={styles.row}>
-          <View style={[styles.inputGroup, { flex: 1 }]}>
-            <Text style={styles.label}>First Name *</Text>
-            <TextInput style={styles.input} value={form.firstName} onChangeText={v => updateField('firstName', v)} placeholder="First Name" />
-          </View>
-          <View style={[styles.inputGroup, { flex: 1 }]}>
-            <Text style={styles.label}>Last Name *</Text>
-            <TextInput style={styles.input} value={form.lastName} onChangeText={v => updateField('lastName', v)} placeholder="Last Name" />
-          </View>
-        </View>
-        <View style={styles.row}>
-          <View style={[styles.inputGroup, { flex: 1 }]}>
-            <Text style={styles.label}>DOB (YYYY-MM-DD)</Text>
-            <TouchableOpacity 
-              style={[styles.input, { justifyContent: 'center' }]} 
-              onPress={() => setShowDOBPicker(true)}
-            >
-              <Text style={{ color: form.dob ? theme.colors.text : '#94A3B8' }}>
-                {form.dob || 'Select Date'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-          <View style={[styles.inputGroup, { flex: 1 }]}>
-            <Text style={styles.label}>Phone</Text>
-            <TextInput style={styles.input} value={form.phone} onChangeText={v => updateField('phone', v)} keyboardType="phone-pad" placeholder="+91..." />
-          </View>
-        </View>
+            <Select
+              label="User Role / Account Type *"
+              placeholder="Select user role..."
+              value={selectedRole}
+              options={displayRoles.map(r => ({
+                value: r.id,
+                label: r.label,
+                subLabel: r.description,
+              }))}
+              onSelect={(val) => {
+                setSelectedRole(val as UserRole);
+                setForm(prev => ({
+                  ...prev,
+                  className: '',
+                  section: '',
+                  rollNumber: '',
+                  admissionNumber: '',
+                  parentName: '',
+                  parentPhone: '',
+                  parentEmail: '',
+                  staffId: '',
+                  department: '',
+                  designation: '',
+                  extension: '',
+                  counter: '',
+                  vehicleNumber: '',
+                  licenseNumber: '',
+                  wardInfo: '',
+                }));
+                setSelectedParent(null);
+                setParentSearchQuery('');
+              }}
+              searchable={false}
+            />
 
-        {/* Student-specific */}
-        {selectedRole === 'student' && (
-          <>
-            <Text style={styles.sectionTitle}>Academic Details</Text>
-            <View style={styles.inputGroup}>
-            <Text style={styles.label}>Class *</Text>
-            <TouchableOpacity style={styles.select} onPress={() => {
-              if (availableClasses.length === 0) {
-                setAlertConfig({
-                  visible: true,
-                  title: 'No Classes',
-                  message: 'No classes configured for this institution.',
-                  buttons: [{ text: 'OK', onPress: () => setAlertConfig(null) }]
-                });
-                return;
-              }
-              setPickerConfig({
-                visible: true,
-                title: 'Select Class',
-                options: availableClasses.map((c: any) => ({
-                  label: c.name,
-                  onPress: () => updateField('className', c.name)
-                }))
-              });
-            }}>
-                <Text style={[styles.selectText, !form.className && styles.placeholder]}>{form.className || 'Select Class'}</Text>
-                <ChevronDown size={14} color={theme.colors.textMuted} {...({} as any)} />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.row}>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
-                <Text style={styles.label}>Section</Text>
-                <TouchableOpacity style={styles.select} onPress={() => {
-                  if (availableSections.length === 0) {
-                    setAlertConfig({
-                      visible: true,
-                      title: 'Info',
-                      message: 'Select a class first.',
-                      buttons: [{ text: 'OK', onPress: () => setAlertConfig(null) }]
-                    });
-                    return;
-                  }
-                  setPickerConfig({
-                    visible: true,
-                    title: 'Select Section',
-                    options: availableSections.map((s: string) => ({
-                      label: `Section ${s}`,
-                      onPress: () => updateField('section', s)
-                    }))
-                  });
-                }}>
-                  <Text style={[styles.selectText, !form.section && styles.placeholder]}>{form.section || 'Section'}</Text>
-                  <ChevronDown size={14} color={theme.colors.textMuted} {...({} as any)} />
+            {/* Auto Email Preview */}
+            {autoEmail ? (
+              <View style={styles.emailPreviewBox}>
+                <Mail size={18} color={theme.colors.secondary} {...({} as any)} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.emailLabel}>Official Campus Email</Text>
+                  <Text style={styles.emailText}>{autoEmail}</Text>
+                </View>
+                <TouchableOpacity style={styles.copyPillBtn} onPress={() => copyEmail(autoEmail)}>
+                  <Copy size={13} color="#B45309" {...({} as any)} />
+                  <Text style={styles.copyPillText}>Copy</Text>
                 </TouchableOpacity>
               </View>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
-                <Text style={styles.label}>Roll Number</Text>
-                <TextInput style={styles.input} value={form.rollNumber} onChangeText={v => updateField('rollNumber', v)} keyboardType="numeric" placeholder="12" />
+            ) : null}
+
+            <View style={styles.passwordNote}>
+              <Text style={styles.passwordNoteText}>
+                Initial password will be set by the user upon first login.
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* CARD 2: PERSONAL DETAILS & AVATAR */}
+        {currentStep === 2 && (
+          <View style={styles.card}>
+            <View style={styles.sectionHeader}>
+              <User size={18} color={theme.colors.primary} {...({} as any)} />
+              <Text style={styles.sectionTitle}>Personal Details</Text>
+            </View>
+
+            {/* Avatar and Name Top Row */}
+            <View style={styles.profileTopRow}>
+              <TouchableOpacity 
+                style={styles.avatarWrap} 
+                onPress={() => setPickerConfig({
+                  visible: true,
+                  title: 'Upload Profile Photo',
+                  options: [
+                    { label: 'Camera', icon: Camera, onPress: takePhoto, color: theme.colors.primary, bgColor: '#FFFBEB' },
+                    { label: 'Gallery', icon: Upload, onPress: pickImage, color: theme.colors.secondary, bgColor: '#FFFBEB' },
+                    ...(image ? [{ label: 'Remove Photo', icon: Trash2, onPress: () => setImage(null), color: '#EF4444', bgColor: '#FEF2F2' }] : []),
+                  ]
+                })}
+              >
+                {image ? (
+                  <Image source={{ uri: image }} style={styles.avatarImage} />
+                ) : (
+                  <View style={styles.avatarPlaceholder}>
+                    <Camera size={26} color={theme.colors.textMuted} {...({} as any)} />
+                    <Text style={styles.avatarLabel}>Add Photo</Text>
+                  </View>
+                )}
+                <View style={styles.avatarBadge}>
+                  <Plus size={13} color="white" {...({} as any)} />
+                </View>
+              </TouchableOpacity>
+
+              <View style={{ flex: 1, gap: 12 }}>
+                <View style={styles.row}>
+                  <View style={[styles.inputGroup, { flex: 1 }]}>
+                    <Text style={styles.label}>First Name *</Text>
+                    <TextInput style={styles.input} value={form.firstName} onChangeText={v => updateField('firstName', v)} placeholder="e.g. Rahul" />
+                  </View>
+                  <View style={[styles.inputGroup, { flex: 1 }]}>
+                    <Text style={styles.label}>Last Name *</Text>
+                    <TextInput style={styles.input} value={form.lastName} onChangeText={v => updateField('lastName', v)} placeholder="e.g. Sharma" />
+                  </View>
+                </View>
+
+                <View style={styles.row}>
+                  <View style={[styles.inputGroup, { flex: 1 }]}>
+                    <Text style={styles.label}>Phone Number</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={form.phone}
+                      onChangeText={v => updateField('phone', v.replace(/[^0-9]/g, ''))}
+                      keyboardType="numeric"
+                      inputMode="numeric"
+                      maxLength={15}
+                      placeholder="e.g. 9840012345"
+                    />
+                  </View>
+                  <View style={[styles.inputGroup, { flex: 1 }]}>
+                    <Text style={styles.label}>Date of Birth</Text>
+                    <TouchableOpacity 
+                      style={[styles.input, { justifyContent: 'center' }]} 
+                      onPress={() => setShowDOBPicker(true)}
+                    >
+                      <Text style={{ color: form.dob ? theme.colors.text : '#94A3B8', fontSize: 14 }}>
+                        {form.dob || 'YYYY-MM-DD'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
               </View>
             </View>
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Admission Number</Text>
-              <TextInput style={styles.input} value={form.admissionNumber} onChangeText={v => updateField('admissionNumber', v)} placeholder="ADM/2026/001" />
-            </View>
 
-            <Text style={styles.sectionTitle}>Parent Details</Text>
-
-            {/* Parent Search Dropdown */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Link to Existing Parent (search by email)</Text>
-              <View style={styles.searchWrapper}>
-                <Search size={16} color={theme.colors.textMuted} {...({} as any)} />
-                <TextInput
-                  style={styles.searchInput}
-                  value={parentSearchQuery}
-                  onChangeText={(v) => {
-                    setParentSearchQuery(v);
-                    setShowParentDropdown(true);
-                    if (!v) handleClearParent();
-                  }}
-                  onFocus={() => setShowParentDropdown(true)}
-                  placeholder="Search parent email..."
-                  keyboardType="email-address"
-                  autoCapitalize="none"
+            {/* Gender & Blood Group Row */}
+            <View style={styles.row}>
+              <View style={{ flex: 1 }}>
+                <Select
+                  label="Gender"
+                  value={form.gender}
+                  options={[
+                    { label: 'Male', value: 'male' },
+                    { label: 'Female', value: 'female' },
+                    { label: 'Other', value: 'other' },
+                  ]}
+                  onSelect={(val) => updateField('gender', String(val))}
+                  searchable={false}
                 />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Select
+                  label="Blood Group"
+                  placeholder="Select Blood Group..."
+                  value={form.bloodGroup}
+                  options={BLOOD_GROUPS}
+                  onSelect={(val) => updateField('bloodGroup', String(val))}
+                  searchable={false}
+                />
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* CARD 3: ROLE-SPECIFIC DETAILS */}
+        {currentStep === 3 && (
+          <View style={styles.card}>
+          {/* 1. Student Details */}
+          {selectedRole === 'student' && (
+            <>
+              <View style={styles.sectionHeader}>
+                <GraduationCap size={18} color={theme.colors.primary} {...({} as any)} />
+                <Text style={styles.sectionTitle}>Academic Information</Text>
+              </View>
+
+              <View style={styles.row}>
+                <View style={{ flex: 1 }}>
+                  <Select
+                    label="Class / Grade *"
+                    placeholder="Select Class..."
+                    value={form.className}
+                    options={availableClasses.map((c: any) => ({
+                      label: c.name,
+                      value: c.name,
+                    }))}
+                    onSelect={(val) => {
+                      updateField('className', String(val));
+                      updateField('section', '');
+                    }}
+                    searchable={true}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Select
+                    label="Section"
+                    placeholder={availableSections.length > 0 ? "Select Section..." : "Select Class first"}
+                    value={form.section}
+                    disabled={availableSections.length === 0}
+                    options={availableSections.map((s: string) => ({
+                      label: `Section ${s}`,
+                      value: s,
+                    }))}
+                    onSelect={(val) => updateField('section', String(val))}
+                    searchable={false}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.row}>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.label}>Roll Number</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={form.rollNumber}
+                    onChangeText={v => updateField('rollNumber', v.replace(/[^0-9]/g, ''))}
+                    keyboardType="numeric"
+                    inputMode="numeric"
+                    placeholder="e.g. 12"
+                  />
+                </View>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.label}>Admission Number</Text>
+                  <TextInput style={styles.input} value={form.admissionNumber} onChangeText={v => updateField('admissionNumber', v)} placeholder="e.g. ADM/2026/001" />
+                </View>
+              </View>
+
+              <View style={[styles.sectionHeader, { marginTop: 16 }]}>
+                <Users size={18} color={theme.colors.primary} {...({} as any)} />
+                <Text style={styles.sectionTitle}>Parent / Guardian Information</Text>
+              </View>
+
+              {/* Parent Search Dropdown */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Link Existing Parent (search by email)</Text>
+                <View style={styles.searchWrapper}>
+                  <Search size={16} color={theme.colors.textMuted} {...({} as any)} />
+                  <TextInput
+                    style={styles.searchInput}
+                    value={parentSearchQuery}
+                    onChangeText={(v) => {
+                      setParentSearchQuery(v);
+                      setShowParentDropdown(true);
+                      if (!v) handleClearParent();
+                    }}
+                    onFocus={() => setShowParentDropdown(true)}
+                    placeholder="Search registered parent email..."
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+                  {selectedParent && (
+                    <TouchableOpacity onPress={handleClearParent}>
+                      <X size={16} color={theme.colors.textMuted} {...({} as any)} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {showParentDropdown && parentResults.length > 0 && (
+                  <View style={styles.dropdownList}>
+                    {parentResults.map((p: any) => (
+                      <TouchableOpacity
+                        key={p.id}
+                        style={styles.dropdownItem}
+                        onPress={() => handleSelectParent(p)}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.dropdownName}>{p.full_name || 'Parent'}</Text>
+                          <Text style={styles.dropdownEmail}>{p.email}</Text>
+                        </View>
+                        {selectedParent?.id === p.id && (
+                          <CheckCircle size={16} color="#10B981" {...({} as any)} />
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+
                 {selectedParent && (
-                  <TouchableOpacity onPress={handleClearParent}>
-                    <X size={16} color={theme.colors.textMuted} {...({} as any)} />
-                  </TouchableOpacity>
+                  <View style={styles.selectedParentCard}>
+                    <View style={styles.selectedParentDot} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.selectedParentName}>✓ Linked: {selectedParent.full_name}</Text>
+                      <Text style={styles.selectedParentEmail}>{selectedParent.email}</Text>
+                    </View>
+                    <CheckCircle size={18} color="#10B981" {...({} as any)} />
+                  </View>
                 )}
               </View>
 
-              {/* Dropdown results */}
-              {showParentDropdown && parentResults.length > 0 && (
-                <View style={styles.dropdownList}>
-                  {parentResults.map((p: any) => (
-                    <TouchableOpacity
-                      key={p.id}
-                      style={styles.dropdownItem}
-                      onPress={() => handleSelectParent(p)}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.dropdownName}>{p.full_name || 'Parent'}</Text>
-                        <Text style={styles.dropdownEmail}>{p.email}</Text>
-                      </View>
-                      {selectedParent?.id === p.id && (
-                        <CheckCircle size={16} color="#10B981" {...({} as any)} />
-                      )}
-                    </TouchableOpacity>
-                  ))}
+              <View style={styles.row}>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.label}>Parent Full Name {!selectedParent ? '*' : '(auto-filled)'}</Text>
+                  <TextInput
+                    style={[styles.input, selectedParent && styles.inputReadOnly]}
+                    value={form.parentName}
+                    onChangeText={v => updateField('parentName', v)}
+                    placeholder="e.g. Suresh Sharma"
+                    editable={!selectedParent}
+                  />
                 </View>
-              )}
-
-              {/* Selected Parent Card */}
-              {selectedParent && (
-                <View style={styles.selectedParentCard}>
-                  <View style={styles.selectedParentDot} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.selectedParentName}>{selectedParent.full_name}</Text>
-                    <Text style={styles.selectedParentEmail}>{selectedParent.email}</Text>
-                  </View>
-                  <CheckCircle size={18} color="#10B981" {...({} as any)} />
+                <View style={{ flex: 1 }}>
+                  <Select
+                    label="Relationship"
+                    value={form.parentRelation}
+                    options={[
+                      { label: 'Father', value: 'Father' },
+                      { label: 'Mother', value: 'Mother' },
+                      { label: 'Guardian', value: 'Guardian' },
+                    ]}
+                    onSelect={(v) => updateField('parentRelation', String(v))}
+                    searchable={false}
+                  />
                 </View>
-              )}
-            </View>
-
-            {/* Auto-filled / manual parent details */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Parent Name {!selectedParent ? '*' : '(auto-filled)'}</Text>
-              <TextInput
-                style={[styles.input, selectedParent && styles.inputReadOnly]}
-                value={form.parentName}
-                onChangeText={v => updateField('parentName', v)}
-                placeholder="Parent Full Name"
-                editable={!selectedParent}
-              />
-            </View>
-            <View style={styles.row}>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
-                <Text style={styles.label}>Parent Phone</Text>
-                <TextInput
-                  style={[styles.input, selectedParent && styles.inputReadOnly]}
-                  value={form.parentPhone}
-                  onChangeText={v => updateField('parentPhone', v)}
-                  keyboardType="phone-pad"
-                  placeholder="+91..."
-                  editable={!selectedParent}
-                />
               </View>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
-                <Text style={styles.label}>Parent Email</Text>
-                <TextInput
-                  style={[styles.input, selectedParent && styles.inputReadOnly]}
-                  value={form.parentEmail}
-                  onChangeText={v => updateField('parentEmail', v)}
-                  keyboardType="email-address"
-                  placeholder="email@..."
-                  editable={!selectedParent}
-                />
-              </View>
-            </View>
-          </>
-        )}
 
-        {/* Staff-specific */}
-        {(selectedRole !== 'student' && selectedRole !== 'parent') && (
-          <>
-            <Text style={styles.sectionTitle}>Staff Details</Text>
-            <View style={styles.row}>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
-                <Text style={styles.label}>Staff ID *</Text>
-                <TextInput style={styles.input} value={form.staffId} onChangeText={v => updateField('staffId', v)} placeholder="TCH001" />
+              <View style={styles.row}>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.label}>Parent Phone</Text>
+                  <TextInput
+                    style={[styles.input, selectedParent && styles.inputReadOnly]}
+                    value={form.parentPhone}
+                    onChangeText={v => updateField('parentPhone', v.replace(/[^0-9]/g, ''))}
+                    keyboardType="numeric"
+                    inputMode="numeric"
+                    maxLength={15}
+                    placeholder="e.g. 9840054321"
+                    editable={!selectedParent}
+                  />
+                </View>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.label}>Parent Email</Text>
+                  <TextInput
+                    style={[styles.input, selectedParent && styles.inputReadOnly]}
+                    value={form.parentEmail}
+                    onChangeText={v => updateField('parentEmail', v)}
+                    keyboardType="email-address"
+                    placeholder="parent@example.com"
+                    editable={!selectedParent}
+                  />
+                </View>
               </View>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
-                <Text style={styles.label}>Department</Text>
-                <TextInput style={styles.input} value={form.department} onChangeText={v => updateField('department', v)} placeholder="Science" />
-              </View>
-            </View>
-          </>
-        )}
-
-        <View style={{ height: 100 }} />
-      </ScrollView>
-
-      {/* Footer */}
-      <View style={styles.footer}>
-        <TouchableOpacity style={styles.prevBtn} onPress={() => router.back()}>
-          <ChevronLeft size={20} color={theme.colors.text} {...({} as any)} />
-          <Text style={styles.prevBtnText}>Cancel</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.saveBtn, isLoading && { opacity: 0.6 }]}
-          onPress={handleSubmit}
-          disabled={isLoading}
-        >
-          {isLoading ? (
-            <ActivityIndicator color="white" size="small" />
-          ) : (
-            <>
-              <Save size={20} color="white" {...({} as any)} />
-              <Text style={styles.saveBtnText}>Create User</Text>
             </>
           )}
-        </TouchableOpacity>
+
+          {/* 2. Faculty Details */}
+          {selectedRole === 'faculty' && (
+            <>
+              <View style={styles.sectionHeader}>
+                <Briefcase size={18} color={theme.colors.primary} {...({} as any)} />
+                <Text style={styles.sectionTitle}>Faculty Details</Text>
+              </View>
+
+              <View style={styles.row}>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.label}>Staff ID * (Auto-generated)</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={form.staffId}
+                    onChangeText={v => updateField('staffId', v)}
+                    placeholder={generateMinimalStaffId('faculty')}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Select
+                    label="Department *"
+                    placeholder="Select Department..."
+                    value={form.department}
+                    options={departmentOptions}
+                    onSelect={(val) => updateField('department', String(val))}
+                    searchable={true}
+                  />
+                </View>
+              </View>
+              <View>
+                <Select
+                  label="Designation"
+                  placeholder="Select Designation..."
+                  value={form.designation}
+                  options={FACULTY_DESIGNATIONS}
+                  onSelect={(val) => updateField('designation', String(val))}
+                  searchable={true}
+                />
+              </View>
+            </>
+          )}
+
+          {/* 3. Admissions Officer */}
+          {selectedRole === 'admission_officer' && (
+            <>
+              <View style={styles.sectionHeader}>
+                <UserCheck size={18} color={theme.colors.primary} {...({} as any)} />
+                <Text style={styles.sectionTitle}>Admissions Desk Details</Text>
+              </View>
+
+              <View style={styles.row}>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.label}>Staff ID * (Auto-generated)</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={form.staffId}
+                    onChangeText={v => updateField('staffId', v)}
+                    placeholder={generateMinimalStaffId('admission_officer')}
+                  />
+                </View>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.label}>Desk / Office Extension</Text>
+                  <TextInput style={styles.input} value={form.extension} onChangeText={v => updateField('extension', v)} placeholder="e.g. Ext 104 / Front Desk" />
+                </View>
+              </View>
+            </>
+          )}
+
+          {/* 4. Accountant */}
+          {selectedRole === 'accountant' && (
+            <>
+              <View style={styles.sectionHeader}>
+                <Calculator size={18} color={theme.colors.primary} {...({} as any)} />
+                <Text style={styles.sectionTitle}>Finance & Accounts Details</Text>
+              </View>
+
+              <View style={styles.row}>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.label}>Staff ID * (Auto-generated)</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={form.staffId}
+                    onChangeText={v => updateField('staffId', v)}
+                    placeholder={generateMinimalStaffId('accountant')}
+                  />
+                </View>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.label}>Fee Counter / Desk ID</Text>
+                  <TextInput style={styles.input} value={form.counter} onChangeText={v => updateField('counter', v)} placeholder="e.g. Cash Counter 1" />
+                </View>
+              </View>
+            </>
+          )}
+
+          {/* 5. Reports Manager */}
+          {selectedRole === 'reports_manager' && (
+            <>
+              <View style={styles.sectionHeader}>
+                <FileSpreadsheet size={18} color={theme.colors.primary} {...({} as any)} />
+                <Text style={styles.sectionTitle}>Academic Records Details</Text>
+              </View>
+
+              <View style={styles.row}>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.label}>Staff ID * (Auto-generated)</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={form.staffId}
+                    onChangeText={v => updateField('staffId', v)}
+                    placeholder={generateMinimalStaffId('reports_manager')}
+                  />
+                </View>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.label}>Section / Department</Text>
+                  <TextInput style={styles.input} value={form.department || 'Reports & Analytics'} onChangeText={v => updateField('department', v)} placeholder="Reports & Analytics" />
+                </View>
+              </View>
+            </>
+          )}
+
+          {/* 6. Canteen Manager */}
+          {selectedRole === 'canteen_manager' && (
+            <>
+              <View style={styles.sectionHeader}>
+                <Coffee size={18} color={theme.colors.primary} {...({} as any)} />
+                <Text style={styles.sectionTitle}>Cafeteria Details</Text>
+              </View>
+
+              <View style={styles.row}>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.label}>Staff ID * (Auto-generated)</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={form.staffId}
+                    onChangeText={v => updateField('staffId', v)}
+                    placeholder={generateMinimalStaffId('canteen_manager')}
+                  />
+                </View>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.label}>Canteen / Counter Name</Text>
+                  <TextInput style={styles.input} value={form.department} onChangeText={v => updateField('department', v)} placeholder="e.g. Main Campus Dining" />
+                </View>
+              </View>
+            </>
+          )}
+
+          {/* 7. Transport / Driver */}
+          {selectedRole === 'driver' && (
+            <>
+              <View style={styles.sectionHeader}>
+                <Bus size={18} color={theme.colors.primary} {...({} as any)} />
+                <Text style={styles.sectionTitle}>Transport & Fleet Details</Text>
+              </View>
+
+              <View style={styles.row}>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.label}>Driver Staff ID * (Auto-generated)</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={form.staffId}
+                    onChangeText={v => updateField('staffId', v)}
+                    placeholder={generateMinimalStaffId('driver')}
+                  />
+                </View>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.label}>Assigned Bus / Vehicle *</Text>
+                  <TextInput style={styles.input} value={form.vehicleNumber} onChangeText={v => updateField('vehicleNumber', v)} placeholder="e.g. Bus 04 / Route 12" />
+                </View>
+              </View>
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Driving License Number</Text>
+                <TextInput style={styles.input} value={form.licenseNumber} onChangeText={v => updateField('licenseNumber', v)} placeholder="e.g. DL-0420110012345" />
+              </View>
+            </>
+          )}
+
+          {/* 8. Parent */}
+          {selectedRole === 'parent' && (
+            <>
+              <View style={styles.sectionHeader}>
+                <Users size={18} color={theme.colors.primary} {...({} as any)} />
+                <Text style={styles.sectionTitle}>Parent & Ward Details</Text>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Linked Student / Ward Info</Text>
+                <TextInput style={styles.input} value={form.wardInfo} onChangeText={v => updateField('wardInfo', v)} placeholder="e.g. Student Name, Admission No, or Class" />
+              </View>
+              <View style={styles.row}>
+                <View style={{ flex: 1 }}>
+                  <Select
+                    label="Relationship to Ward"
+                    value={form.parentRelation}
+                    options={[
+                      { label: 'Father', value: 'Father' },
+                      { label: 'Mother', value: 'Mother' },
+                      { label: 'Guardian', value: 'Guardian' },
+                    ]}
+                    onSelect={(v) => updateField('parentRelation', String(v))}
+                    searchable={false}
+                  />
+                </View>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.label}>Occupation / Work</Text>
+                  <TextInput style={styles.input} value={form.department} onChangeText={v => updateField('department', v)} placeholder="e.g. Professional / Business" />
+                </View>
+              </View>
+            </>
+          )}
+        </View>
+      )}
+
+        <View style={{ height: 40 }} />
+      </ScrollView>
+
+      {/* Sticky Bottom Actions Bar */}
+      <View style={styles.footer}>
+        <View style={styles.footerInner}>
+          {currentStep === 1 ? (
+            <TouchableOpacity style={styles.cancelBtn} onPress={() => router.back()}>
+              <ChevronLeft size={18} color={theme.colors.textMuted} {...({} as any)} />
+              <Text style={styles.cancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={styles.cancelBtn} onPress={() => setCurrentStep(prev => prev - 1)}>
+              <ChevronLeft size={18} color={theme.colors.textMuted} {...({} as any)} />
+              <Text style={styles.cancelBtnText}>Back</Text>
+            </TouchableOpacity>
+          )}
+
+          {currentStep === 1 && (
+            <TouchableOpacity style={styles.saveBtn} onPress={goToStep2}>
+              <Text style={styles.saveBtnText}>Continue to Personal Details</Text>
+              <ChevronRight size={18} color="white" {...({} as any)} />
+            </TouchableOpacity>
+          )}
+
+          {currentStep === 2 && (
+            <TouchableOpacity style={styles.saveBtn} onPress={goToStep3}>
+              <Text style={styles.saveBtnText}>Continue to {roleLabel} Details</Text>
+              <ChevronRight size={18} color="white" {...({} as any)} />
+            </TouchableOpacity>
+          )}
+
+          {currentStep === 3 && (
+            <TouchableOpacity
+              style={[styles.saveBtn, isLoading && { opacity: 0.6 }]}
+              onPress={handleSubmit}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator color="white" size="small" />
+              ) : (
+                <>
+                  <UserPlus size={18} color="white" {...({} as any)} />
+                  <Text style={styles.saveBtnText}>
+                    Create {roleLabel}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {/* Unified Premium Picker Sheet */}
@@ -984,53 +1533,321 @@ export default function AddUserScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
-  roleBar: { maxHeight: 52, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
-  roleChip: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 20, backgroundColor: '#F1F5F9' },
-  roleChipText: { fontSize: 13, fontWeight: '700', color: theme.colors.textMuted },
-  bulkBar: { flexDirection: 'row', padding: 12, gap: 8, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
-  bulkBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12, backgroundColor: '#3B82F610', borderWidth: 1, borderColor: '#3B82F620' },
-  bulkBtnText: { fontSize: 12, fontWeight: '700', color: theme.colors.primary },
-  progressBar: { height: 28, backgroundColor: '#E2E8F0', marginHorizontal: 16, marginTop: 8, borderRadius: 14, overflow: 'hidden', justifyContent: 'center' },
-  progressFill: { position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: '#3B82F6', borderRadius: 14 },
-  progressText: { textAlign: 'center', fontSize: 11, fontWeight: 'bold', color: 'white', zIndex: 1 },
-  emailPreview: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginTop: 12, padding: 14, backgroundColor: '#3B82F610', borderRadius: 16, borderWidth: 1, borderColor: '#3B82F620', gap: 12 },
-  emailLabel: { fontSize: 10, fontWeight: 'bold', color: theme.colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
-  emailText: { fontSize: 14, fontWeight: '600', color: theme.colors.primary, marginTop: 2 },
+  headerActions: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  headerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: 'white',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  headerBtnText: { fontSize: 13, fontWeight: '600', color: theme.colors.text },
+
+  // Steps Indicator Styles
+  stepsBar: {
+    backgroundColor: 'white',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+  },
+  stepsBarInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    maxWidth: 720,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  stepItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  stepBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  stepBadgeCurrent: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  stepBadgeDone: {
+    backgroundColor: '#10B981',
+    borderColor: '#10B981',
+  },
+  stepBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  stepBadgeTextCurrent: {
+    color: 'white',
+  },
+  stepInfo: {
+    gap: 1,
+  },
+  stepTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  stepTitleCurrent: {
+    color: theme.colors.text,
+    fontWeight: '700',
+  },
+  stepSubtitle: {
+    fontSize: 11,
+    color: '#94A3B8',
+  },
+  stepLine: {
+    flex: 1,
+    height: 2,
+    backgroundColor: '#E2E8F0',
+    marginHorizontal: 12,
+    maxWidth: 60,
+  },
+  stepLineDone: {
+    backgroundColor: '#10B981',
+  },
+
+  progressContainer: { paddingHorizontal: 20, paddingTop: 10 },
+  progressBar: { height: 26, backgroundColor: '#E2E8F0', borderRadius: 13, overflow: 'hidden', justifyContent: 'center' },
+  progressFill: { position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: theme.colors.primary, borderRadius: 13 },
+  progressText: { textAlign: 'center', fontSize: 11, fontWeight: '700', color: 'white', zIndex: 1 },
+
   formContainer: { flex: 1 },
-  formContent: { padding: 16, gap: 12 },
-  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: theme.colors.text, marginTop: 8, marginBottom: 4 },
-  row: { flexDirection: 'row', gap: 12 },
-  inputGroup: { gap: 4 },
-  label: { fontSize: 12, fontWeight: '600', color: theme.colors.textMuted },
-  input: { backgroundColor: 'white', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, fontSize: 14, color: theme.colors.text },
-  inputReadOnly: { backgroundColor: '#F8FAFC', color: theme.colors.textMuted },
-  select: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'white', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0' },
-  selectText: { fontSize: 14, color: theme.colors.text },
-  placeholder: { color: '#94A3B8' },
-  // Parent search
-  searchWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
+  formContent: {
+    padding: 24,
+    paddingBottom: 120,
+    width: '100%',
+    maxWidth: 880,
+    alignSelf: 'center',
+    gap: 20,
+  },
+
+  // Card Structure
+  card: {
+    backgroundColor: 'white',
+    borderRadius: 20,
+    padding: 22,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+    gap: 16,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    paddingBottom: 10,
+  },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: theme.colors.text },
+  divider: { height: 1, backgroundColor: '#F1F5F9', marginVertical: 4 },
+
+  // Email Preview Box
+  emailPreviewBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#FFFBEB',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    gap: 10,
+  },
+  emailLabel: { fontSize: 10.5, fontWeight: '700', color: '#B45309', textTransform: 'uppercase', letterSpacing: 0.5 },
+  emailText: { fontSize: 13.5, fontWeight: '700', color: '#78350F', marginTop: 1 },
+  copyPillBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'white',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  copyPillText: { fontSize: 12, fontWeight: '700', color: '#B45309' },
+
+  passwordNote: {
+    paddingHorizontal: 4,
+  },
+  passwordNoteText: {
+    fontSize: 12.5,
+    color: theme.colors.textMuted,
+  },
+
+  // Profile Avatar Row
+  profileTopRow: {
+    flexDirection: 'row',
+    gap: 20,
+    alignItems: 'flex-start',
+  },
+  avatarWrap: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: '#F8FAFC',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    position: 'relative',
+    marginTop: 4,
+  },
+  avatarImage: { width: 84, height: 84, borderRadius: 42 },
+  avatarPlaceholder: { alignItems: 'center', gap: 2 },
+  avatarLabel: { fontSize: 10.5, fontWeight: '600', color: '#64748B' },
+  avatarBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    backgroundColor: theme.colors.primary,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'white',
+  },
+
+  row: { flexDirection: 'row', gap: 14 },
+  inputGroup: { gap: 6 },
+  label: { fontSize: 13, fontWeight: '600', color: '#334155' },
+  input: {
+    backgroundColor: 'white',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: theme.colors.text,
+  },
+  inputReadOnly: { backgroundColor: '#F8FAFC', color: '#64748B' },
+
+  // Parent Search
+  searchWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    gap: 8,
+  },
   searchInput: { flex: 1, fontSize: 14, color: theme.colors.text, padding: 0 },
-  dropdownList: { marginTop: 4, backgroundColor: 'white', borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', overflow: 'hidden', zIndex: 999 },
-  dropdownItem: { flexDirection: 'row', alignItems: 'center', padding: 14, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', gap: 10 },
-  dropdownName: { fontSize: 14, fontWeight: '600', color: theme.colors.text },
-  dropdownEmail: { fontSize: 12, color: theme.colors.textMuted },
-  selectedParentCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#F0FDF4', borderRadius: 12, padding: 12, marginTop: 8, borderWidth: 1, borderColor: '#D1FAE5' },
-  selectedParentDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#10B981' },
-  selectedParentName: { fontSize: 13, fontWeight: 'bold', color: '#065F46' },
-  selectedParentEmail: { fontSize: 12, color: '#10B981' },
-  footer: { flexDirection: 'row', justifyContent: 'space-between', padding: 16, paddingBottom: 28, borderTopWidth: 1, borderTopColor: '#F1F5F9', backgroundColor: 'white' },
-  prevBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
-  prevBtnText: { fontSize: 16, fontWeight: '600', color: theme.colors.text },
-  saveBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#10B981', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 14, minWidth: 150, justifyContent: 'center' },
-  saveBtnText: { color: 'white', fontSize: 16, fontWeight: 'bold' },
-  
-  // Photo Picker
-  photoContainer: { alignItems: 'center', marginVertical: 16 },
-  photoPicker: { width: 120, height: 120, borderRadius: 60, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#E2E8F0', borderStyle: 'dashed', position: 'relative' },
-  photo: { width: 116, height: 116, borderRadius: 58 },
-  photoPlaceholder: { alignItems: 'center', gap: 4 },
-  photoText: { fontSize: 12, fontWeight: '600', color: theme.colors.textMuted },
-  photoEditBadge: { position: 'absolute', bottom: 4, right: 4, backgroundColor: theme.colors.primary, width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: 'white' },
+  dropdownList: {
+    marginTop: 4,
+    backgroundColor: 'white',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    overflow: 'hidden',
+    zIndex: 999,
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    gap: 10,
+  },
+  dropdownName: { fontSize: 13.5, fontWeight: '600', color: '#0F172A' },
+  dropdownEmail: { fontSize: 12, color: '#64748B' },
+  selectedParentCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#F0FDF4',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+  },
+  selectedParentDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#16A34A' },
+  selectedParentName: { fontSize: 13, fontWeight: '700', color: '#15803D' },
+  selectedParentEmail: { fontSize: 12, color: '#16A34A' },
+
+  // Sticky Clean Footer
+  footer: {
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    backgroundColor: 'white',
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  footerInner: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    maxWidth: 880,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  cancelBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    backgroundColor: 'white',
+  },
+  cancelBtnText: { fontSize: 14, fontWeight: '600', color: theme.colors.textMuted },
+  saveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: 26,
+    paddingVertical: 11,
+    borderRadius: 20,
+    minWidth: 160,
+    justifyContent: 'center',
+    shadowColor: theme.colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  saveBtnText: { color: 'white', fontSize: 14.5, fontWeight: '700' },
 
   // Action Sheet Styles
   sheetOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
@@ -1047,14 +1864,14 @@ const styles = StyleSheet.create({
 
   // Alert Modal Styles
   alertOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 },
-  alertContent: { backgroundColor: 'white', borderRadius: 24, padding: 24, width: '100%', maxWidth: 340, alignItems: 'center' },
-  alertTitle: { fontSize: 20, fontWeight: 'bold', color: theme.colors.text, marginBottom: 12, textAlign: 'center' },
-  alertMessage: { fontSize: 15, color: theme.colors.textMuted, textAlign: 'center', marginBottom: 24, lineHeight: 22 },
+  alertContent: { backgroundColor: 'white', borderRadius: 24, padding: 24, width: '100%', maxWidth: 360, alignItems: 'center' },
+  alertTitle: { fontSize: 19, fontWeight: 'bold', color: theme.colors.text, marginBottom: 10, textAlign: 'center' },
+  alertMessage: { fontSize: 14, color: theme.colors.textMuted, textAlign: 'center', marginBottom: 20, lineHeight: 21 },
   alertActions: { width: '100%', gap: 10, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center' },
-  alertBtn: { flex: 1, height: 48, borderRadius: 14, justifyContent: 'center', alignItems: 'center', minWidth: 120 },
+  alertBtn: { flex: 1, height: 46, borderRadius: 12, justifyContent: 'center', alignItems: 'center', minWidth: 120 },
   alertPrimaryBtn: { backgroundColor: theme.colors.primary },
   alertDestructiveBtn: { backgroundColor: '#EF4444' },
   alertCancelBtn: { backgroundColor: '#F1F5F9' },
-  alertBtnText: { fontSize: 15, fontWeight: '700' },
+  alertBtnText: { fontSize: 14, fontWeight: '700' },
   alertCancelBtnText: { color: theme.colors.textMuted },
 });

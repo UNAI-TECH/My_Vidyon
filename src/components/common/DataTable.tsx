@@ -221,8 +221,12 @@ export function DataTable<T extends Record<string, any>>({
         />
       ) : (
         <View style={styles.tableCard}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={true}>
-            <View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={true}
+            contentContainerStyle={{ minWidth: '100%' }}
+          >
+            <View style={{ minWidth: '100%' }}>
               {/* Header Row */}
               <View style={styles.headerRow}>
                 {columns.map(col => {

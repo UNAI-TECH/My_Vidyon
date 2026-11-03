@@ -1,8 +1,10 @@
-import React from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
 import { theme } from '../../theme';
 import { useAuth } from '../../hooks/useAuth';
+import { useAccountSwitcher } from '../../context/AccountSwitcherContext';
+import { supabase } from '../../lib/supabase';
 import {
   LayoutDashboard,
   Briefcase,
@@ -87,12 +89,29 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({ role }) => {
     fullName, 
     imageUrl, 
     institutionName, 
-    institutionLogo 
+    institutionLogo,
+    institutionId
   } = useAuth();
+  const { openAccountSwitcher } = useAccountSwitcher();
 
-  const [logoFailed, setLogoFailed] = React.useState(false);
+  const [logoFailed, setLogoFailed] = useState(false);
+  const [allowedRoles, setAllowedRoles] = useState<{ canteen?: boolean; finance?: boolean; transport?: boolean }>({});
 
-  const items = React.useMemo(() => {
+  useEffect(() => {
+    if (!institutionId) return;
+    (supabase
+      .from('institutions') as any)
+      .select('allowed_roles')
+      .eq('institution_id', institutionId)
+      .maybeSingle()
+      .then(({ data }: any) => {
+        if (data?.allowed_roles) {
+          setAllowedRoles(data.allowed_roles);
+        }
+      });
+  }, [institutionId]);
+
+  const items = useMemo(() => {
     if (role === 'admin') {
       if (userRole === 'ad_manager') {
         return [
@@ -148,8 +167,14 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({ role }) => {
       ];
     }
 
+    if (allowedRoles.finance === false) {
+      return INSTITUTION_NAV_ITEMS.filter(
+        item => item.label !== 'Fee Management' && !item.href.includes('/fees')
+      );
+    }
+
     return INSTITUTION_NAV_ITEMS;
-  }, [role, userRole]);
+  }, [role, userRole, allowedRoles]);
 
   const isItemActive = (href: string) => {
     const baseHref = href.split('?')[0];
@@ -228,6 +253,8 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({ role }) => {
         <TouchableOpacity 
           style={styles.userRow}
           onPress={() => router.push(settingsHref as any)}
+          onLongPress={openAccountSwitcher}
+          delayLongPress={350}
           activeOpacity={0.7}
         >
           {imageUrl && (imageUrl.startsWith('http') || imageUrl.startsWith('data:')) ? (
@@ -247,6 +274,17 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({ role }) => {
               {institutionName || userRole || role}
             </Text>
           </View>
+          <TouchableOpacity 
+            onPress={(e) => {
+              e.stopPropagation();
+              openAccountSwitcher();
+            }}
+            style={{ padding: 6, borderRadius: 8, backgroundColor: '#F1F5F9', marginLeft: 4 }}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Users size={14} color="#64748B" {...({} as any)} />
+          </TouchableOpacity>
         </TouchableOpacity>
 
         <TouchableOpacity 
@@ -274,21 +312,23 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   header: {
+    height: 72,
     paddingHorizontal: 16,
-    paddingTop: 18,
-    paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'flex-start',
+    overflow: 'hidden',
   },
   customBrandLogo: {
-    width: 130,
-    height: 36,
+    width: 150,
+    height: 48,
   },
   logo: {
-    width: 130,
-    height: 36,
+    width: 150,
+    height: 48,
+    transform: [{ scale: 1.8 }],
+    marginLeft: 26,
   },
   sectionHeader: {
     fontSize: 10,

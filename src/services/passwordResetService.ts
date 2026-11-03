@@ -47,16 +47,18 @@ export async function submitPasswordResetRequest(params: {
   // 2. Also check institutions table if this email is an institution admin
   let instName = '';
   let instId = userProfile?.institution_id || null;
+  let primaryContactEmail = '';
   try {
     const { data: inst } = await (supabase
       .from('institutions') as any)
-      .select('name, institution_id')
-      .or(`admin_email.eq.${cleanEmail},email.eq.${cleanEmail}${instId ? `,institution_id.eq.${instId}` : ''}`)
+      .select('name, institution_id, admin_email, email, primary_contact_email')
+      .or(`admin_email.eq.${cleanEmail},email.eq.${cleanEmail},primary_contact_email.eq.${cleanEmail}${instId ? `,institution_id.eq.${instId}` : ''}`)
       .maybeSingle();
 
     if (inst) {
       instName = inst.name || '';
       if (!instId) instId = inst.institution_id;
+      primaryContactEmail = inst.primary_contact_email || inst.email || '';
       if (!userProfile) {
         userProfile = {
           full_name: `${inst.name} Admin`,
@@ -68,6 +70,8 @@ export async function submitPasswordResetRequest(params: {
   } catch (err) {
     console.warn('[PasswordResetService] Institution lookup error:', err);
   }
+
+  const notificationTargetEmail = primaryContactEmail || cleanEmail;
 
   const newRequest: PasswordResetRequest = {
     id: `reset-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
@@ -95,11 +99,19 @@ export async function submitPasswordResetRequest(params: {
         role: newRequest.role,
         institution_id: newRequest.institution_id,
         status: 'pending',
-        admin_notes: newRequest.admin_notes
+        admin_notes: `${newRequest.admin_notes || ''}${primaryContactEmail ? ` [Contact: ${primaryContactEmail}]` : ''}`
       }]);
 
     if (!error) {
       dbSaved = true;
+      // Also send notification via Supabase auth reset password
+      if (primaryContactEmail) {
+        try {
+          await supabase.auth.resetPasswordForEmail(primaryContactEmail.toLowerCase());
+        } catch (e) {
+          console.warn('[PasswordResetService] resetPasswordForEmail warning:', e);
+        }
+      }
     } else {
       console.warn('[PasswordResetService] password_reset_requests insert error:', error.message);
     }

@@ -15,6 +15,7 @@ export interface SuperAdminDashboardStats {
     serverHealth: string;
     recentActivity: any[];
     pendingRequests: any[];
+    recentInstitutions: any[];
     revenueTrend: { labels: string[], data: number[] };
     onboardingTrend: { labels: string[], data: number[] };
     performanceRatios: number[];
@@ -32,6 +33,7 @@ export function useSuperAdminDashboard() {
                 { event: '*', schema: 'public', table: 'institutions' },
                 () => {
                     queryClient.invalidateQueries({ queryKey: ['superadmin-institutions'] });
+                    queryClient.invalidateQueries({ queryKey: ['superadmin-recent-institutions'] });
                     queryClient.invalidateQueries({ queryKey: ['superadmin-pending-requests'] });
                     queryClient.invalidateQueries({ queryKey: ['superadmin-onboarding-trend'] });
                 }
@@ -191,12 +193,32 @@ export function useSuperAdminDashboard() {
     const { data: recentActivity = [], isLoading: loadingActivity } = useQuery({
         queryKey: ['superadmin-activity'],
         queryFn: async () => {
-            const { data } = await supabase
+            const { data: profs, error: profErr } = await supabase
                 .from('profiles')
-                .select('*, institutions(name)')
+                .select('*')
                 .order('updated_at', { ascending: false })
                 .limit(5);
-            return data || [];
+
+            if (profErr || !profs) return [];
+
+            const instIds = [...new Set(profs.map((p: any) => p.institution_id).filter(Boolean))];
+            const instMap: Record<string, string> = {};
+            if (instIds.length > 0) {
+                const { data: insts } = await supabase
+                    .from('institutions')
+                    .select('institution_id, name')
+                    .in('institution_id', instIds);
+                if (insts) {
+                    insts.forEach((i: any) => {
+                        instMap[i.institution_id] = i.name;
+                    });
+                }
+            }
+
+            return profs.map((p: any) => ({
+                ...p,
+                institutions: { name: instMap[p.institution_id] || p.institution_id || 'Network' }
+            }));
         },
     });
 
@@ -209,6 +231,19 @@ export function useSuperAdminDashboard() {
                 .select('*')
                 .eq('status', 'pending')
                 .order('created_at', { ascending: false });
+            return data || [];
+        },
+    });
+
+    // 7b. Recent Institutions (Recently Created / Onboarded)
+    const { data: recentInstitutions = [] } = useQuery({
+        queryKey: ['superadmin-recent-institutions'],
+        queryFn: async () => {
+            const { data } = await supabase
+                .from('institutions')
+                .select('id, institution_id, name, type, institution_category, status, city, state, created_at, logo_url')
+                .order('created_at', { ascending: false })
+                .limit(5);
             return data || [];
         },
     });
@@ -255,6 +290,7 @@ export function useSuperAdminDashboard() {
         serverHealth: '99.99%',
         recentActivity,
         pendingRequests,
+        recentInstitutions,
         revenueTrend,
         onboardingTrend,
         performanceRatios
@@ -263,6 +299,6 @@ export function useSuperAdminDashboard() {
     return {
         stats,
         profile,
-        isLoading: loadingInst || loadingRev || loadingUsers || loadingActivity || loadingPending || loadingRevTrend || loadingOnboardingTrend,
+        isLoading: loadingInst || loadingUsers,
     };
 }

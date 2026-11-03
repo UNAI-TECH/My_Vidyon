@@ -1,11 +1,11 @@
 import { Tabs } from 'expo-router';
 import { theme } from '../../../../src/theme';
-import { LayoutDashboard, Settings } from 'lucide-react-native';
+import { LayoutDashboard, LogOut } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HeaderLogo } from '../../../../src/components/common/HeaderLogo';
 import { TouchableOpacity } from 'react-native';
-import { LogOut } from 'lucide-react-native';
 import { useAuth } from '../../../../src/hooks/useAuth';
+import { ProfileTabIcon, ProfileTabBarButton } from '../../../../src/components/common/ProfileTabComponents';
 
 export default function FacultyTabsLayout() {
   const { signOut } = useAuth();
@@ -50,8 +50,9 @@ export default function FacultyTabsLayout() {
       <Tabs.Screen
         name="settings"
         options={{
-          tabBarLabel: 'Settings',
-          tabBarIcon: ({ color }) => <Settings size={22} color={color} {...({} as any)} />,
+          tabBarLabel: 'Profile',
+          tabBarIcon: ({ color, focused }) => <ProfileTabIcon color={color} focused={focused} />,
+          tabBarButton: (props) => <ProfileTabBarButton {...props} />,
         }}
       />
     </Tabs>
