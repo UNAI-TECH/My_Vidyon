@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image } from 'react-native';
-import { useRouter, usePathname } from 'expo-router';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, Platform } from 'react-native';
+import { useRouter, usePathname, useGlobalSearchParams } from 'expo-router';
 import { theme } from '../../theme';
 import { useAuth } from '../../hooks/useAuth';
 import { useAccountSwitcher } from '../../context/AccountSwitcherContext';
@@ -41,8 +41,18 @@ export interface NavItem {
 }
 
 interface DesktopSidebarProps {
-  role: 'institution' | 'admin';
+  role: 'institution' | 'admin' | 'accountant';
 }
+
+const ACCOUNTANT_NAV_ITEMS: NavItem[] = [
+  { label: 'Dashboard', href: '/(root)/accountant', icon: LayoutDashboard },
+  { label: 'Fee Structure', href: '/(root)/accountant/fees', icon: CreditCard },
+  { label: 'Transactions', href: '/(root)/accountant/transactions', icon: CreditCard },
+  { label: 'Reports', href: '/(root)/accountant/reports', icon: BarChart3 },
+  { label: 'Quick Bills', href: '/(root)/accountant/quick-bills', icon: FileText },
+  { label: 'Notifications', href: '/(root)/accountant/notifications', icon: Bell },
+  { label: 'Settings', href: '/(root)/accountant/settings', icon: Settings },
+];
 
 const INSTITUTION_NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', href: '/(root)/institution', icon: LayoutDashboard },
@@ -79,9 +89,25 @@ const ADMIN_NAV_ITEMS: NavItem[] = [
   { label: 'Settings & Config', href: '/(root)/admin/settings', icon: Settings },
 ];
 
+const normalizePath = (path: string): string => {
+  if (!path) return '';
+  return path
+    .split('?')[0]
+    .replace(/\/\([^)]+\)/g, '')
+    .replace(/\/index$/, '')
+    .replace(/\/+$/, '')
+    .toLowerCase();
+};
+
+const getQueryTab = (href: string): string | null => {
+  const match = href.match(/[?&]tab=([^&]+)/);
+  return match ? match[1] : null;
+};
+
 export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({ role }) => {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useGlobalSearchParams<{ tab?: string }>();
   const { 
     signOut, 
     user, 
@@ -112,6 +138,10 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({ role }) => {
   }, [institutionId]);
 
   const items = useMemo(() => {
+    if (role === 'accountant') {
+      return ACCOUNTANT_NAV_ITEMS;
+    }
+
     if (role === 'admin') {
       if (userRole === 'ad_manager') {
         return [
@@ -176,13 +206,60 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({ role }) => {
     return INSTITUTION_NAV_ITEMS;
   }, [role, userRole, allowedRoles]);
 
-  const isItemActive = (href: string) => {
-    const baseHref = href.split('?')[0];
-    if (href === '/(root)/admin' || href === '/(root)/institution') {
-      return pathname === href || pathname === `${href}/` || pathname === `${href}/index`;
+  const activeHref = useMemo(() => {
+    const currentPath = normalizePath(pathname);
+    const currentTab = typeof searchParams?.tab === 'string' ? searchParams.tab : null;
+
+    // 1. Exact match with query params (e.g. ?tab=reset_requests)
+    for (const item of items) {
+      const itemPath = normalizePath(item.href);
+      const itemTab = getQueryTab(item.href);
+      if (itemPath === currentPath && itemTab && itemTab === currentTab) {
+        return item.href;
+      }
     }
-    return pathname.startsWith(baseHref);
-  };
+
+    // 2. Exact match without query params when current tab is not set
+    for (const item of items) {
+      const itemPath = normalizePath(item.href);
+      const itemTab = getQueryTab(item.href);
+      if (itemPath === currentPath && !itemTab && !currentTab) {
+        return item.href;
+      }
+    }
+
+    // 2b. Exact match fallback for path even if search params have other unrelated keys
+    for (const item of items) {
+      const itemPath = normalizePath(item.href);
+      const itemTab = getQueryTab(item.href);
+      if (itemPath === currentPath && !itemTab) {
+        return item.href;
+      }
+    }
+
+    // 3. Prefix match for subpages (e.g. /admin/institutions/details or /institution/fees/collection)
+    // Exclude root dashboard entries (/admin, /institution, /accountant)
+    const prefixCandidates = items.filter(item => {
+      const itemPath = normalizePath(item.href);
+      if (itemPath === '/admin' || itemPath === '/institution' || itemPath === '/accountant') {
+        return false;
+      }
+      return currentPath.startsWith(itemPath + '/');
+    });
+
+    if (prefixCandidates.length > 0) {
+      prefixCandidates.sort((a, b) => normalizePath(b.href).length - normalizePath(a.href).length);
+      return prefixCandidates[0].href;
+    }
+
+    // 4. Default to dashboard root if current path is root
+    for (const item of items) {
+      const itemPath = normalizePath(item.href);
+      if (itemPath === currentPath) return item.href;
+    }
+
+    return null;
+  }, [items, pathname, searchParams]);
 
   const effectiveLogo = institutionLogo;
   const isValidLogo = Boolean(
@@ -192,8 +269,17 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({ role }) => {
     !logoFailed
   );
 
-  const homeHref = role === 'admin' ? '/(root)/admin' : '/(root)/institution';
-  const settingsHref = role === 'admin' ? '/(root)/admin/settings' : '/(root)/institution/settings';
+  const homeHref = role === 'admin' 
+    ? '/(root)/admin' 
+    : role === 'accountant' 
+      ? '/(root)/accountant' 
+      : '/(root)/institution';
+
+  const settingsHref = role === 'admin' 
+    ? '/(root)/admin/settings' 
+    : role === 'accountant' 
+      ? '/(root)/accountant/settings' 
+      : '/(root)/institution/settings';
 
   return (
     <View style={styles.container}>
@@ -218,29 +304,38 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({ role }) => {
       >
         <Text style={styles.sectionHeader}>MAIN NAVIGATION</Text>
         {items.map((item) => {
-          const active = isItemActive(item.href);
+          const active = item.href === activeHref;
           const Icon = item.icon;
 
           return (
             <TouchableOpacity
               key={item.href}
-              style={[styles.navItem, active && styles.navItemActive]}
+              style={[
+                styles.navItem, 
+                active && styles.navItemActive,
+                Platform.OS === 'web' && ({ cursor: 'pointer' } as any),
+              ]}
               onPress={() => router.push(item.href as any)}
-              activeOpacity={0.7}
+              activeOpacity={0.75}
             >
               <View style={[styles.iconWrap, active && styles.iconWrapActive]}>
                 <Icon
                   size={19}
-                  color={active ? '#FFFFFF' : theme.colors.textMuted}
+                  color={active ? '#1E293B' : theme.colors.textMuted}
                   {...({} as any)}
                 />
               </View>
-              <Text style={[styles.navItemText, active && styles.navItemTextActive]}>
+              <Text 
+                style={[styles.navItemText, active && styles.navItemTextActive]}
+                numberOfLines={1}
+              >
                 {item.label}
               </Text>
               {item.badge && (
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>{item.badge}</Text>
+                <View style={[styles.badge, active && styles.badgeActive]}>
+                  <Text style={[styles.badgeText, active && styles.badgeTextActive]}>
+                    {item.badge}
+                  </Text>
                 </View>
               )}
             </TouchableOpacity>
@@ -355,11 +450,16 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   navItemActive: {
-    backgroundColor: '#FAB75A18',
+    backgroundColor: theme.colors.primary, // #FAB75A Vidyon signature warm gold
+    shadowColor: '#FAB75A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 5,
+    elevation: 2,
   },
   iconWrap: {
-    width: 30,
-    height: 30,
+    width: 32,
+    height: 32,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
@@ -367,7 +467,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
   },
   iconWrapActive: {
-    backgroundColor: theme.colors.primary,
+    backgroundColor: '#FFFFFF',
+    shadowColor: 'rgba(0, 0, 0, 0.08)',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    elevation: 1,
   },
   navItemText: {
     fontSize: 13.5,
@@ -385,7 +490,15 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 10,
   },
+  badgeActive: {
+    backgroundColor: '#1E293B',
+  },
   badgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  badgeTextActive: {
     color: '#FFFFFF',
     fontSize: 11,
     fontWeight: 'bold',

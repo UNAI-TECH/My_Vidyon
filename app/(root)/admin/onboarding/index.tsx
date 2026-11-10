@@ -2229,6 +2229,21 @@ export default function InstitutionOnboarding() {
           }
         }
 
+        if (!isEditMode && basicInfo.school_code?.trim()) {
+          const { data: existingCode } = await (supabase.from('institutions') as any)
+            .select('id, institution_id')
+            .eq('institution_id', basicInfo.school_code.trim())
+            .maybeSingle();
+          if (existingCode) {
+            setSubmitting(false);
+            return showAlert(
+              'Duplicate School Code',
+              `An institution with the school code "${basicInfo.school_code.trim()}" already exists. Please choose a distinct code.`,
+              'error'
+            );
+          }
+        }
+
         const fullAddr = [
           basicInfo.address_line_1,
           basicInfo.address_line_2,

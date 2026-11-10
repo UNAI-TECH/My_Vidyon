@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, createContext, useContext } from 'react';
 import { Platform, Alert } from 'react-native';
-import { supabase } from '../lib/supabase';
+import { supabase, SUPABASE_PROJECT_ID } from '../lib/supabase';
 import { Session, User } from '@supabase/supabase-js';
 import { LargeSecureStore } from '../lib/storage';
 
@@ -64,11 +64,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     // We use scope: 'local' so GoTrue cancels local timers without destroying
     // the refresh_token globally, preserving Quick Login.
     try {
+      const tokenKey = SUPABASE_PROJECT_ID ? `sb-${SUPABASE_PROJECT_ID}-auth-token` : 'sb-auth-token';
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
-        window.localStorage.removeItem('sb-ccyqzcaghwaggtmkmigi-auth-token');
+        window.localStorage.removeItem(tokenKey);
+        for (let i = window.localStorage.length - 1; i >= 0; i--) {
+          const k = window.localStorage.key(i);
+          if (k && k.startsWith('sb-') && k.endsWith('-auth-token')) {
+            window.localStorage.removeItem(k);
+          }
+        }
       }
       const { LargeSecureStore } = require('../lib/storage');
-      await LargeSecureStore.removeItem('sb-ccyqzcaghwaggtmkmigi-auth-token');
+      await LargeSecureStore.removeItem(tokenKey);
     } catch(e) {
       console.error('[Auth] Failed to wipe device token', e);
     }

@@ -1,10 +1,6 @@
 import { LargeSecureStore } from '../lib/storage';
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
-
-// Direct API config — needed to bypass the Supabase client's internal session checks
-const SUPABASE_URL = 'https://ccyqzcaghwaggtmkmigi.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNjeXF6Y2FnaHdhZ2d0bWttaWdpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc2ODUwMjgsImV4cCI6MjA4MzI2MTAyOH0.pJTXXaMH1FQC5ml7IWGI3DjOfIl0aAW4Xcgy5dhKSvE';
+import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from '../lib/supabase';
 
 export interface SavedAccount {
   id: string;
