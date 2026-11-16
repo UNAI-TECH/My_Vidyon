@@ -20,6 +20,7 @@ import { supabase } from '../../../../src/lib/supabase';
 import { FormField } from '../../../../src/components/common/FormField';
 import { Button } from '../../../../src/components/common/Button';
 import { useRBAC } from '../../../../src/hooks/useRBAC';
+import { sortClasses } from '../../../../src/utils/classUtils';
 
 export default function InstitutionOrg() {
   const { institutionId, institutionUuid, role } = useAuth();
@@ -125,16 +126,17 @@ export default function InstitutionOrg() {
         studentData = sData || [];
       }
 
-      return rawClasses.map(c => ({
+      const mapped = rawClasses.map(c => ({
         ...c,
         studentCount: studentData.filter(s => s.class_id === c.id).length || 0
       }));
+      return sortClasses(mapped);
     },
     enabled: !!targetId
   });
 
   const filteredClasses = useMemo(() => {
-    return classes.filter(cls => {
+    const list = classes.filter(cls => {
       const matchesSearch = !searchQuery || cls.name.toLowerCase().includes(searchQuery.toLowerCase());
       const stage = (cls.stage || '').toLowerCase();
       const name = (cls.name || '').toLowerCase();
@@ -148,6 +150,7 @@ export default function InstitutionOrg() {
 
       return matchesSearch && matchesStage;
     });
+    return sortClasses(list);
   }, [classes, searchQuery, selectedStage]);
 
   // Handle Add Department

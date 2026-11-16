@@ -17,6 +17,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { useFacultyDashboard } from '../../../../src/hooks/useFacultyDashboard';
 import { AlertModal } from '../../../../src/components/common/AlertModal';
 import { uploadToSupabaseStorage } from '../../../../src/utils/fileUpload';
+import { compareClasses, compareSections } from '../../../../src/utils/classUtils';
 
 export default function FacultyMaterialsUpload() {
   const { user, institutionId, institutionUuid } = useAuth();
@@ -112,7 +113,12 @@ export default function FacultyMaterialsUpload() {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView 
+      style={styles.container} 
+      contentContainerStyle={[styles.content, { paddingBottom: 60 }]}
+      keyboardShouldPersistTaps="handled"
+      automaticallyAdjustKeyboardInsets={true}
+    >
       <PageHeader 
         title="Upload Materials" 
         subtitle="Share study materials with your classes"
@@ -127,16 +133,24 @@ export default function FacultyMaterialsUpload() {
         <Text style={styles.label}>Select Class & Subject *</Text>
         <View style={styles.mappingContainer}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.mappingList} contentContainerStyle={styles.mappingListContent}>
-            {assignedSubjects.map((item: any) => (
-              <TouchableOpacity 
-                key={item.id} 
-                style={[
-                  styles.mappingCard, 
-                  selectedMapping?.id === item.id && styles.selectedMapping
-                ]}
-                onPress={() => setSelectedMapping(item)}
-                activeOpacity={0.7}
-              >
+            {[...assignedSubjects]
+              .sort((a: any, b: any) => {
+                const classCmp = compareClasses(a.classes?.name || '', b.classes?.name || '');
+                if (classCmp !== 0) return classCmp;
+                const secCmp = compareSections(a.section || '', b.section || '');
+                if (secCmp !== 0) return secCmp;
+                return (a.subjects?.name || '').localeCompare(b.subjects?.name || '');
+              })
+              .map((item: any) => (
+                <TouchableOpacity 
+                  key={item.id} 
+                  style={[
+                    styles.mappingCard, 
+                    selectedMapping?.id === item.id && styles.selectedMapping
+                  ]}
+                  onPress={() => setSelectedMapping(item)}
+                  activeOpacity={0.7}
+                >
                 <View style={[styles.mappingIcon, selectedMapping?.id === item.id && styles.selectedMappingIcon]}>
                   <Book size={20} color={selectedMapping?.id === item.id ? 'white' : theme.colors.primary} {...({} as any)} />
                 </View>

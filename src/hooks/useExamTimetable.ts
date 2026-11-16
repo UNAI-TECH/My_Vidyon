@@ -21,23 +21,49 @@ export function useExamTimetable(options: {
         queryFn: async () => {
             if (!institutionId) return [];
 
-            // 1. Get Class IDs that might be used (Name or UUID)
+            // 1. Resolve institution IDs (UUID or institution_id code)
+            const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+            const validInstIds = new Set<string>([institutionId]);
+            try {
+                const instQuery = supabase.from('institutions').select('id, institution_id');
+                if (isUUID(institutionId)) {
+                    instQuery.eq('id', institutionId);
+                } else {
+                    instQuery.ilike('institution_id', institutionId);
+                }
+                const { data: instData } = await (instQuery as any).maybeSingle();
+                if (instData) {
+                    if (instData.id) validInstIds.add(instData.id);
+                    if (instData.institution_id) {
+                        validInstIds.add(instData.institution_id);
+                        validInstIds.add(instData.institution_id.toUpperCase());
+                        validInstIds.add(instData.institution_id.toLowerCase());
+                    }
+                }
+            } catch (_) {}
+            const instIdsList = Array.from(validInstIds).filter(Boolean);
+
+            // 2. Get Class IDs that might be used (Name or UUID)
             let classIds: string[] = [];
             if (classId) {
-                const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(classId);
-                if (!isUUID) {
+                const isClassUUID = isUUID(classId);
+                if (!isClassUUID) {
                     const { data: classesData } = await supabase
                         .from('classes')
                         .select('id')
-                        .eq('institution_id', institutionId)
+                        .in('institution_id', instIdsList)
                         .eq('name', classId);
                     classIds = (classesData as any[])?.map((c: any) => c.id) || [];
                 }
             }
             
-            // 2. Fetch schedules
+            // 3. Fetch schedules
             let query = supabase.from('exam_schedules').select('*');
-            query = query.eq('institution_id', institutionId);
+            if (instIdsList.length > 1) {
+                query = query.in('institution_id', instIdsList);
+            } else {
+                query = query.eq('institution_id', institutionId);
+            }
 
             if (classId) {
                 if (classIds.length > 0) {
@@ -57,7 +83,7 @@ export function useExamTimetable(options: {
             if (error) throw error;
             return data;
         },
-        enabled: !!(institutionId && (classId || facultyId || studentId)),
+        enabled: !!institutionId,
     });
 
     // 2. Fetch Entries for a specific schedule

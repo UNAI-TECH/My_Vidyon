@@ -1,5 +1,17 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Modal, Alert } from 'react-native';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  ScrollView, 
+  TouchableOpacity, 
+  TextInput, 
+  ActivityIndicator, 
+  Modal, 
+  Alert,
+  KeyboardAvoidingView,
+  Platform 
+} from 'react-native';
 import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
 import { useAuth } from '../../../../src/hooks/useAuth';
@@ -14,17 +26,19 @@ import {
   X,
   ClipboardList,
   BookOpen,
-  Calendar
+  Calendar,
+  Info,
+  Check
 } from 'lucide-react-native';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../../../../src/lib/supabase';
 import { format } from 'date-fns';
-import { useFacultyDashboard } from '../../../../src/hooks/useFacultyDashboard';
+import { useFacultyDashboard, resolveInstitutionIds } from '../../../../src/hooks/useFacultyDashboard';
 import { Trash2, Calendar as CalendarIcon } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
-import { Platform } from 'react-native';
 import { CalendarModal } from '../../../../src/components/common/CalendarPicker';
 import { AlertModal } from '../../../../src/components/common/AlertModal';
+import { sortClasses, sortSections, compareClasses, compareSections } from '../../../../src/utils/classUtils';
 import { AdBanner } from '../../../../src/components/common/Ads/AdBanner';
 
 export default function FacultyAssignments() {
@@ -46,15 +60,80 @@ export default function FacultyAssignments() {
   const [editId, setEditId] = React.useState<string | null>(null);
   const [showDatePicker, setShowDatePicker] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [selectionMode, setSelectionMode] = React.useState<'assigned' | 'all'>('assigned');
+  const [selectedClassName, setSelectedClassName] = React.useState('');
+  const [selectedSubjectName, setSelectedSubjectName] = React.useState('');
+
   const [formData, setFormData] = React.useState({
     title: '',
     description: '',
     subject_id: '',
     class_id: '',
-    section: '',
+    section: 'A',
     due_date: new Date().toISOString().split('T')[0],
     total_marks: '100',
   });
+
+  const targetInstId = institutionUuid || institutionId;
+
+  // Fallback: Fetch all institution classes in case assignedSubjects is empty or faculty needs another class
+  const { data: institutionClasses = [], isLoading: isLoadingClasses } = useQuery<any[]>({
+    queryKey: ['faculty-all-institution-classes', targetInstId],
+    queryFn: async () => {
+      if (!targetInstId) return [];
+      const validInstIds = await resolveInstitutionIds(targetInstId);
+      const { data, error } = await supabase
+        .from('classes')
+        .select('id, name, sections, stage, class_order')
+        .in('institution_id', validInstIds.length > 0 ? validInstIds : [targetInstId]);
+      if (error) {
+        console.error('Error fetching institution classes:', error);
+        return [];
+      }
+      return sortClasses(data || []);
+    },
+    enabled: !!targetInstId,
+  });
+
+  // Fallback: Fetch all institution subjects in case assignedSubjects is empty
+  const { data: institutionSubjects = [], isLoading: isLoadingSubjects } = useQuery<any[]>({
+    queryKey: ['faculty-all-institution-subjects', targetInstId],
+    queryFn: async () => {
+      if (!targetInstId) return [];
+      const validInstIds = await resolveInstitutionIds(targetInstId);
+      const { data, error } = await supabase
+        .from('subjects')
+        .select('id, name')
+        .in('institution_id', validInstIds.length > 0 ? validInstIds : [targetInstId])
+        .order('name');
+      if (error) {
+        console.error('Error fetching institution subjects:', error);
+        return [];
+      }
+      return data || [];
+    },
+    enabled: !!targetInstId,
+  });
+
+  // Available sections for the currently selected class in manual mode
+  const selectedClassObj = institutionClasses.find((c: any) => c.id === formData.class_id);
+  const availableSections: string[] = React.useMemo(() => {
+    if (!selectedClassObj) return ['A'];
+    if (Array.isArray(selectedClassObj.sections) && selectedClassObj.sections.length > 0) {
+      return sortSections(selectedClassObj.sections);
+    }
+    return ['A', 'B', 'C'];
+  }, [selectedClassObj]);
+
+  const sortedAssignedSubjects = React.useMemo(() => {
+    return [...assignedSubjects].sort((a: any, b: any) => {
+      const classCmp = compareClasses(a.classes?.name || '', b.classes?.name || '');
+      if (classCmp !== 0) return classCmp;
+      const secCmp = compareSections(a.section || '', b.section || '');
+      if (secCmp !== 0) return secCmp;
+      return (a.subjects?.name || '').localeCompare(b.subjects?.name || '');
+    });
+  }, [assignedSubjects]);
 
   const [alertConfig, setAlertConfig] = React.useState<{
     visible: boolean;
@@ -79,18 +158,42 @@ export default function FacultyAssignments() {
     });
   };
 
-  // Fetching moved to hook
+  const resetForm = () => {
+    setFormData({
+      title: '',
+      description: '',
+      subject_id: '',
+      class_id: '',
+      section: 'A',
+      due_date: new Date().toISOString().split('T')[0],
+      total_marks: '100',
+    });
+    setSelectedClassName('');
+    setSelectedSubjectName('');
+    setIsEditing(false);
+    setEditId(null);
+  };
 
   const handleCreateAssignment = async () => {
-    if (!formData.title || !formData.subject_id || !formData.class_id) {
-      showAlert('Error', 'Please fill in all required fields', 'error');
+    if (!formData.title || !formData.title.trim()) {
+      showAlert('Missing Title', 'Please enter an assignment title.', 'warning');
+      return;
+    }
+
+    if (!formData.class_id) {
+      showAlert('Missing Class', 'Please select a class for this assignment.', 'warning');
+      return;
+    }
+
+    if (!formData.subject_id) {
+      showAlert('Missing Subject', 'Please select a subject for this assignment.', 'warning');
       return;
     }
 
     const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
     if (!isUUID(formData.subject_id) || !isUUID(formData.class_id)) {
-      showAlert('Data Error', 'One of the selected items has an invalid internal ID. Please select a valid subject/class.', 'error');
+      showAlert('Data Error', 'One of the selected items has an invalid internal ID. Please select a valid subject/class.', 'warning');
       return;
     }
 
@@ -102,20 +205,25 @@ export default function FacultyAssignments() {
         s.class_id === formData.class_id && 
         s.section === formData.section
       );
+      const matchedClass = institutionClasses.find((c: any) => c.id === formData.class_id);
+      const matchedSubject = institutionSubjects.find((s: any) => s.id === formData.subject_id);
+
+      const finalClassName = selected?.classes?.name || matchedClass?.name || selectedClassName || 'Class';
+      const finalSubjectName = selected?.subjects?.name || matchedSubject?.name || selectedSubjectName || 'Subject';
 
       const payload = {
         institution_id: institutionUuid || institutionId,
         teacher_id: user?.id,
         created_by: user?.id,
-        title: formData.title,
-        description: formData.description,
+        title: formData.title.trim(),
+        description: formData.description.trim(),
         subject_id: formData.subject_id,
         class_id: formData.class_id,
-        subject: selected?.subjects?.name || 'Unknown',
-        class_name: selected?.classes?.name || 'Unknown',
-        section: formData.section,
+        subject: finalSubjectName,
+        class_name: finalClassName,
+        section: formData.section || 'A',
         due_date: formData.due_date,
-        total_marks: parseInt(formData.total_marks),
+        total_marks: parseInt(formData.total_marks || '100', 10) || 100,
       };
 
       const query = isEditing 
@@ -132,7 +240,7 @@ export default function FacultyAssignments() {
 
       if (isEditing && (!affectedRows || affectedRows.length === 0)) {
         console.warn('UI: UPDATE executed but NO rows were affected. RLS likely blocking write.');
-        showAlert('Warning', 'Assignment was not updated. You might not have permission to edit this record.', 'error');
+        showAlert('Warning', 'Assignment was not updated. You might not have permission to edit this record.', 'warning');
         setIsSubmitting(false);
         return;
       }
@@ -141,17 +249,7 @@ export default function FacultyAssignments() {
 
       showAlert('Success', `Assignment ${isEditing ? 'updated' : 'created'} successfully`, 'success');
       setShowCreateModal(false);
-      setIsEditing(false);
-      setEditId(null);
-      setFormData({
-        title: '',
-        description: '',
-        subject_id: '',
-        class_id: '',
-        section: '',
-        due_date: new Date().toISOString().split('T')[0],
-        total_marks: '100',
-      });
+      resetForm();
       refetch();
     } catch (error: any) {
       console.error('Error creating assignment:', error);
@@ -312,101 +410,247 @@ export default function FacultyAssignments() {
         animationType="slide"
         transparent={true}
         onRequestClose={() => setShowCreateModal(false)}
+        statusBarTranslucent
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{isEditing ? 'Edit Assignment' : 'New Assignment'}</Text>
-              <TouchableOpacity onPress={() => setShowCreateModal(false)}>
-                <X size={24} color={theme.colors.text} {...({} as any)} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.inputLabel}>Title</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Assignment Title"
-                value={formData.title}
-                onChangeText={(text) => setFormData({...formData, title: text})}
-              />
-
-              <Text style={styles.inputLabel}>Select subject & Class</Text>
-              <View style={styles.subjectsGrid}>
-                {assignedSubjects.map((s: any, i: number) => (
-                  <TouchableOpacity 
-                    key={i} 
-                    style={[
-                      styles.subjectOption,
-                      formData.subject_id === s.subject_id && formData.class_id === s.class_id && formData.section === s.section && styles.subjectOptionSelected
-                    ]}
-                    onPress={() => setFormData({
-                      ...formData, 
-                      subject_id: s.subject_id, 
-                      class_id: s.class_id, 
-                      section: s.section
-                    })}
-                  >
-                    <Text style={[
-                      styles.subjectOptionText,
-                      formData.subject_id === s.subject_id && formData.class_id === s.class_id && formData.section === s.section && styles.subjectOptionTextSelected
-                    ]}>
-                      {s.subjects?.name} ({s.classes?.name}-{s.section})
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>{isEditing ? 'Edit Assignment' : 'New Assignment'}</Text>
+                <TouchableOpacity onPress={() => setShowCreateModal(false)} style={styles.closeBtn}>
+                  <X size={24} color={theme.colors.text} {...({} as any)} />
+                </TouchableOpacity>
               </View>
 
-              <View style={styles.row}>
-                <View style={{ flex: 1, marginRight: 8 }}>
-                  <Text style={styles.inputLabel}>Due Date</Text>
-                  <TouchableOpacity 
-                    style={styles.dateInput}
-                    onPress={() => setShowDatePicker(true)}
-                  >
-                    <CalendarIcon size={18} color={theme.colors.textMuted} {...({} as any)} />
-                    <Text style={styles.dateText}>
-                      {format(new Date(formData.due_date), 'MMM d, yyyy')}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-                <View style={{ flex: 1, marginLeft: 8 }}>
-                  <Text style={styles.inputLabel}>Total Marks (max 100)</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="100"
-                    keyboardType="numeric"
-                    value={formData.total_marks}
-                    onChangeText={(text) => setFormData({...formData, total_marks: text})}
-                  />
-                </View>
-              </View>
-
-              <Text style={styles.inputLabel}>Description</Text>
-              <TextInput
-                style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
-                placeholder="Instructions for students..."
-                multiline
-                value={formData.description}
-                onChangeText={(text) => setFormData({...formData, description: text})}
-              />
-
-              <TouchableOpacity 
-                style={[styles.submitBtn, isSubmitting && { opacity: 0.7 }]}
-                onPress={handleCreateAssignment}
-                disabled={isSubmitting}
+              <ScrollView 
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                automaticallyAdjustKeyboardInsets={true}
+                contentContainerStyle={{ paddingBottom: 60 }}
               >
-                {isSubmitting ? (
-                  <ActivityIndicator color="white" />
-                ) : (
-                  <Text style={styles.submitBtnText}>
-                    {isEditing ? 'Update Assignment' : 'Create Assignment'}
+                <Text style={styles.inputLabel}>Title *</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Assignment Title"
+                  placeholderTextColor="#94A3B8"
+                  value={formData.title}
+                  onChangeText={(text) => setFormData({...formData, title: text})}
+                />
+
+                <View style={styles.sectionHeaderRow}>
+                  <Text style={styles.inputLabel}>
+                    {assignedSubjects.length > 0 && selectionMode === 'assigned'
+                      ? 'Your Assigned Subjects (as Subject Teacher) *'
+                      : 'Select Subject & Class *'}
                   </Text>
+                  {assignedSubjects.length > 0 && institutionClasses.length > 0 && (
+                    <TouchableOpacity 
+                      onPress={() => setSelectionMode(selectionMode === 'assigned' ? 'all' : 'assigned')}
+                      style={styles.modeToggleBtn}
+                    >
+                      <Text style={styles.modeToggleText}>
+                        {selectionMode === 'assigned' ? 'Browse all school classes' : 'Show my assigned subjects'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                 {/* Option A: Fast chips from Faculty's subject teacher assignments */}
+                {selectionMode === 'assigned' && sortedAssignedSubjects.length > 0 ? (
+                  <View style={styles.subjectsGrid}>
+                    {sortedAssignedSubjects.map((s: any, i: number) => {
+                      const isSelected = 
+                        formData.subject_id === s.subject_id && 
+                        formData.class_id === s.class_id && 
+                        formData.section === s.section;
+                      return (
+                        <TouchableOpacity 
+                          key={i} 
+                          style={[
+                            styles.subjectOption,
+                            isSelected && styles.subjectOptionSelected
+                          ]}
+                          onPress={() => {
+                            setFormData({
+                              ...formData, 
+                              subject_id: s.subject_id, 
+                              class_id: s.class_id, 
+                              section: s.section || 'A'
+                            });
+                            setSelectedClassName(s.classes?.name || '');
+                            setSelectedSubjectName(s.subjects?.name || '');
+                          }}
+                        >
+                          <Text style={[
+                            styles.subjectOptionText,
+                            isSelected && styles.subjectOptionTextSelected
+                          ]}>
+                            {s.subjects?.name || 'Subject'} ({s.classes?.name || 'Class'}-{s.section || 'A'})
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                ) : (
+                  /* Option B: Fallback directly from institution classes & subjects */
+                  <View style={styles.fallbackBox}>
+                    {assignedSubjects.length === 0 && (
+                      <View style={styles.infoBanner}>
+                        <Info size={16} color="#0369A1" {...({} as any)} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.infoBannerTitle}>
+                            No subjects have been assigned to you
+                          </Text>
+                          <Text style={styles.infoBannerText}>
+                            You have not been assigned as a subject teacher to any class yet. You can choose a class and subject from the school directory below, or contact your school administrator to assign your subjects.
+                          </Text>
+                        </View>
+                      </View>
+                    )}
+
+                    {/* 1. Class Selection */}
+                    <Text style={styles.subInputLabel}>1. Target Class</Text>
+                    {institutionClasses.length === 0 ? (
+                      <Text style={styles.emptyNotice}>
+                        {isLoadingClasses ? 'Loading classes...' : 'No classes found for this institution.'}
+                      </Text>
+                    ) : (
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsScroll}>
+                        {institutionClasses.map((c: any) => {
+                          const isSelected = formData.class_id === c.id;
+                          return (
+                            <TouchableOpacity
+                              key={c.id}
+                              style={[styles.chip, isSelected && styles.chipSelected]}
+                              onPress={() => {
+                                const sections = Array.isArray(c.sections) && c.sections.length > 0 ? c.sections : ['A'];
+                                setFormData({
+                                  ...formData,
+                                  class_id: c.id,
+                                  section: sections[0] || 'A'
+                                });
+                                setSelectedClassName(c.name || '');
+                              }}
+                            >
+                              <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
+                                {c.name}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </ScrollView>
+                    )}
+
+                    {/* 2. Section Selection */}
+                    {formData.class_id ? (
+                      <>
+                        <Text style={styles.subInputLabel}>2. Section</Text>
+                        <View style={styles.sectionRow}>
+                          {availableSections.map((sec: string) => {
+                            const isSecSelected = formData.section === sec;
+                            return (
+                              <TouchableOpacity
+                                key={sec}
+                                style={[styles.sectionChip, isSecSelected && styles.sectionChipSelected]}
+                                onPress={() => setFormData({ ...formData, section: sec })}
+                              >
+                                <Text style={[styles.sectionChipText, isSecSelected && styles.sectionChipTextSelected]}>
+                                  Section {sec}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </>
+                    ) : null}
+
+                    {/* 3. Subject Selection */}
+                    <Text style={styles.subInputLabel}>3. Subject</Text>
+                    {institutionSubjects.length === 0 ? (
+                      <Text style={styles.emptyNotice}>
+                        {isLoadingSubjects ? 'Loading subjects...' : 'No subjects found for this institution.'}
+                      </Text>
+                    ) : (
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsScroll}>
+                        {institutionSubjects.map((sub: any) => {
+                          const isSubSelected = formData.subject_id === sub.id;
+                          return (
+                            <TouchableOpacity
+                              key={sub.id}
+                              style={[styles.chip, isSubSelected && styles.chipSelected]}
+                              onPress={() => {
+                                setFormData({ ...formData, subject_id: sub.id });
+                                setSelectedSubjectName(sub.name || '');
+                              }}
+                            >
+                              <Text style={[styles.chipText, isSubSelected && styles.chipTextSelected]}>
+                                {sub.name}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </ScrollView>
+                    )}
+                  </View>
                 )}
-              </TouchableOpacity>
-            </ScrollView>
+
+                <View style={styles.row}>
+                  <View style={{ flex: 1, marginRight: 8 }}>
+                    <Text style={styles.inputLabel}>Due Date *</Text>
+                    <TouchableOpacity 
+                      style={styles.dateInput}
+                      onPress={() => setShowDatePicker(true)}
+                    >
+                      <CalendarIcon size={18} color={theme.colors.textMuted} {...({} as any)} />
+                      <Text style={styles.dateText}>
+                        {format(new Date(formData.due_date), 'MMM d, yyyy')}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 8 }}>
+                    <Text style={styles.inputLabel}>Total Marks (max 100)</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="100"
+                      placeholderTextColor="#94A3B8"
+                      keyboardType="numeric"
+                      value={formData.total_marks}
+                      onChangeText={(text) => setFormData({...formData, total_marks: text})}
+                    />
+                  </View>
+                </View>
+
+                <Text style={styles.inputLabel}>Description</Text>
+                <TextInput
+                  style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+                  placeholder="Instructions for students..."
+                  placeholderTextColor="#94A3B8"
+                  multiline
+                  value={formData.description}
+                  onChangeText={(text) => setFormData({...formData, description: text})}
+                />
+
+                <TouchableOpacity 
+                  style={[styles.submitBtn, isSubmitting && { opacity: 0.7 }]}
+                  onPress={handleCreateAssignment}
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <ActivityIndicator color="white" />
+                  ) : (
+                    <Text style={styles.submitBtnText}>
+                      {isEditing ? 'Update Assignment' : 'Create Assignment'}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </ScrollView>
+            </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Unified Calendar Picker for Due Date */}
@@ -467,7 +711,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 36, 
     borderTopRightRadius: 36, 
     padding: 24, 
-    maxHeight: '90%',
+    maxHeight: '92%',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -10 },
     shadowOpacity: 0.1,
@@ -478,7 +722,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row', 
     justifyContent: 'space-between', 
     alignItems: 'center', 
-    marginBottom: 24 
+    marginBottom: 20 
+  },
+  closeBtn: {
+    padding: 6,
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9',
   },
   modalTitle: { 
     fontSize: 22, 
@@ -493,6 +742,32 @@ const styles = StyleSheet.create({
     marginBottom: 8, 
     marginTop: 16,
     marginLeft: 4
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  modeToggleBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  modeToggleText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: theme.colors.primary,
+  },
+  subInputLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+    marginTop: 10,
+    marginBottom: 6,
+    marginLeft: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   input: { 
     backgroundColor: '#F8FAFC', 
@@ -527,6 +802,97 @@ const styles = StyleSheet.create({
   },
   subjectOptionText: { fontSize: 13, color: '#64748B', fontWeight: '500' },
   subjectOptionTextSelected: { color: theme.colors.primary, fontWeight: '800' },
+  
+  // Fallback Selector Styles
+  fallbackBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginTop: 4,
+  },
+  infoBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    backgroundColor: '#E0F2FE',
+    padding: 12,
+    borderRadius: 14,
+    marginBottom: 10,
+  },
+  infoBannerTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0369A1',
+    marginBottom: 3,
+  },
+  infoBannerText: {
+    fontSize: 12,
+    color: '#0369A1',
+    fontWeight: '500',
+    lineHeight: 17,
+  },
+  chipsScroll: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingVertical: 4,
+  },
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: 'white',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+  },
+  chipSelected: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  chipText: {
+    fontSize: 13,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  chipTextSelected: {
+    color: 'white',
+    fontWeight: '800',
+  },
+  sectionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginVertical: 4,
+  },
+  sectionChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: 'white',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+  },
+  sectionChipSelected: {
+    backgroundColor: '#1E293B',
+    borderColor: '#1E293B',
+  },
+  sectionChipText: {
+    fontSize: 12,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  sectionChipTextSelected: {
+    color: 'white',
+    fontWeight: '800',
+  },
+  emptyNotice: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontStyle: 'italic',
+    marginVertical: 4,
+  },
+
   submitBtn: { 
     backgroundColor: theme.colors.primary, 
     borderRadius: 18, 

@@ -20,6 +20,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { CalendarModal } from '../../../../src/components/common/CalendarPicker';
 import { uploadToSupabaseStorage } from '../../../../src/utils/fileUpload';
 import { Select } from '../../../../src/components/common/Select';
+import { sortClasses, sortSections } from '../../../../src/utils/classUtils';
 
 type UserRole = 'student' | 'faculty' | 'admission_officer' | 'accountant' | 'reports_manager' | 'canteen_manager' | 'driver' | 'parent';
 
@@ -205,14 +206,19 @@ export default function AddUserScreen() {
       if (!institutionId) return [];
       const { data } = await supabase
         .from('groups')
-        .select('id, name, classes(id, name, sections)')
+        .select('id, name, classes(id, name, sections, stage, class_order)')
         .eq('institution_id', institutionId);
       if (!data) return [];
-      return data.flatMap((g: any) =>
+      const list = data.flatMap((g: any) =>
         (g.classes || []).map((c: any) => ({
-          id: c.id, name: c.name, sections: c.sections || []
+          id: c.id, 
+          name: c.name, 
+          stage: c.stage,
+          class_order: c.class_order,
+          sections: sortSections(Array.isArray(c.sections) ? c.sections : (c.sections ? [c.sections] : []))
         }))
       );
+      return sortClasses(list);
     },
     enabled: !!institutionId
   });
@@ -249,48 +255,46 @@ export default function AddUserScreen() {
     enabled: !!institutionId
   });
 
-  // Fetch subjects from the institution to populate Department dropdown
-  const { data: institutionSubjects = [] } = useQuery({
-    queryKey: ['institution-subjects-departments', institutionId],
-    queryFn: async (): Promise<string[]> => {
+  // Fetch departments & subjects from the institution to populate Department dropdown
+  const { data: departmentOptions = [] } = useQuery<{ label: string; value: string }[]>({
+    queryKey: ['institution-faculty-departments-dropdown', institutionId],
+    queryFn: async (): Promise<{ label: string; value: string }[]> => {
       if (!institutionId) return [];
-      const { data, error } = await supabase
-        .from('subjects')
-        .select('name')
-        .eq('institution_id', institutionId)
-        .order('name');
-      if (error) {
-        console.warn('Error fetching subjects for departments:', error);
-        return [];
+      const [subjectsRes, deptsRes] = await Promise.all([
+        supabase
+          .from('subjects')
+          .select('name')
+          .eq('institution_id', institutionId)
+          .order('name'),
+        (supabase.from('departments') as any)
+          .select('name')
+          .eq('institution_id', institutionId)
+          .order('name')
+      ]);
+
+      const names = new Set<string>();
+
+      (deptsRes.data || []).forEach((d: any) => {
+        const n = d.name?.trim();
+        if (n) names.add(n);
+      });
+
+      (subjectsRes.data || []).forEach((s: any) => {
+        const n = s.name?.trim();
+        if (n) names.add(n);
+      });
+
+      if (names.size === 0) {
+        ['English', 'Mathematics', 'Science', 'Social Studies', 'Physics', 'Chemistry', 'Biology', 'Computer Science', 'Commerce', 'Physical Education', 'General'].forEach(d => names.add(d));
       }
-      if (!data) return [];
-      const uniqueNames = Array.from(new Set(data.map((s: any) => s.name?.trim()).filter(Boolean)));
-      return uniqueNames as string[];
+
+      return Array.from(names).sort().map(name => ({
+        label: name,
+        value: name,
+      }));
     },
     enabled: !!institutionId
   });
-
-  const departmentOptions = useMemo(() => {
-    if (institutionSubjects.length > 0) {
-      return institutionSubjects.map((sub: string) => ({
-        label: sub,
-        value: sub,
-      }));
-    }
-    return [
-      { label: 'English', value: 'English' },
-      { label: 'Mathematics', value: 'Mathematics' },
-      { label: 'Science', value: 'Science' },
-      { label: 'Social Studies', value: 'Social Studies' },
-      { label: 'Physics', value: 'Physics' },
-      { label: 'Chemistry', value: 'Chemistry' },
-      { label: 'Biology', value: 'Biology' },
-      { label: 'Computer Science', value: 'Computer Science' },
-      { label: 'Commerce', value: 'Commerce' },
-      { label: 'Physical Education', value: 'Physical Education' },
-      { label: 'General / Languages', value: 'General' },
-    ];
-  }, [institutionSubjects]);
 
   const generateMinimalStaffId = useCallback((role: UserRole) => {
     // Faculty defaults to 'TCH-' (continues TCH-01, TCH-02...), other staff roles default to 'STAFF-' (STAFF-01, STAFF-02...)
@@ -352,7 +356,7 @@ export default function AddUserScreen() {
 
   const availableSections = useMemo(() => {
     const cls = availableClasses.find((c: any) => c.name === form.className);
-    return cls ? cls.sections : [];
+    return cls ? sortSections(cls.sections) : [];
   }, [availableClasses, form.className]);
 
   // Auto-generate email when relevant fields change

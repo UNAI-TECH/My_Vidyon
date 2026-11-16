@@ -117,10 +117,29 @@ export function useStudentTimetable(authUserId: string | undefined) {
     enabled: !!classId && !!section,
   });
 
+  // 4. Fetch Timetable Config / Bell Schedule Template for this Student's Institution
+  const { data: timetableConfig, isLoading: isConfigLoading } = useQuery({
+    queryKey: ['student-institution-timetable-config', student?.institution_id],
+    queryFn: async () => {
+      if (!student?.institution_id) return null;
+      const { data, error } = await (supabase.from('timetable_configs') as any)
+        .select('*')
+        .eq('institution_id', student.institution_id)
+        .maybeSingle();
+      if (error) {
+        console.warn('Error fetching student timetable config:', error);
+        return null;
+      }
+      return data;
+    },
+    enabled: !!student?.institution_id,
+  });
+
   return {
     student,
     slots,
     specialSlots,
-    isLoading: isStudentLoading || isSlotsLoading || isSpecialLoading,
+    timetableConfig,
+    isLoading: isStudentLoading || isSlotsLoading || isSpecialLoading || isConfigLoading,
   };
 }

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Linking, Modal, TextInput, RefreshControl, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Linking, Modal, TextInput, RefreshControl, Image, KeyboardAvoidingView, Platform } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
@@ -341,67 +341,83 @@ export default function AssignmentDetails() {
         animationType="fade"
         transparent={true}
         onRequestClose={() => setVerificationModal(false)}
+        statusBarTranslucent
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Verify Submission</Text>
-              <TouchableOpacity onPress={() => setVerificationModal(false)}>
-                <X size={24} color={theme.colors.text} {...({} as any)} />
-              </TouchableOpacity>
-            </View>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Verify Submission</Text>
+                <TouchableOpacity onPress={() => setVerificationModal(false)}>
+                  <X size={24} color={theme.colors.text} {...({} as any)} />
+                </TouchableOpacity>
+              </View>
 
-            <View style={styles.modalBody}>
-              {verificationData.status === 'verified' ? (
-                <>
-                  <Text style={styles.label}>Award Marks</Text>
-                  <TextInput
-                    style={styles.input}
-                    keyboardType="numeric"
-                    value={verificationData.marks}
-                    onChangeText={(text) => setVerificationData({...verificationData, marks: text})}
-                    placeholder={`Max ${assignment.total_marks}`}
-                  />
-                  <Text style={styles.label}>Feedback (Optional)</Text>
-                  <TextInput
-                    style={[styles.input, { height: 80, textAlignVertical: 'top' }]}
-                    multiline
-                    value={verificationData.feedback}
-                    onChangeText={(text) => setVerificationData({...verificationData, feedback: text})}
-                    placeholder="Good work..."
-                  />
-                </>
-              ) : (
-                <>
-                  <Text style={styles.label}>Changes to be done (Feedback)</Text>
-                  <TextInput
-                    style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
-                    multiline
-                    value={verificationData.feedback}
-                    onChangeText={(text) => setVerificationData({...verificationData, feedback: text})}
-                    placeholder="Explain what the student needs to fix to resubmit..."
-                    autoFocus
-                  />
-                </>
-              )}
-
-              <TouchableOpacity 
-                style={[styles.finalSubmitBtn, verifying && { opacity: 0.7 }]}
-                onPress={handleVerify}
-                disabled={verifying}
+              <ScrollView 
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                automaticallyAdjustKeyboardInsets={true}
+                contentContainerStyle={{ paddingBottom: 16 }}
               >
-                {verifying ? (
-                  <ActivityIndicator color="white" />
-                ) : (
-                  <Text style={styles.finalSubmitText}>Final Submit</Text>
-                )}
-              </TouchableOpacity>
-              <Text style={styles.warningNote}>
-                Note: Once finalized, this evaluation cannot be undone.
-              </Text>
+                <View style={styles.modalBody}>
+                  {verificationData.status === 'verified' ? (
+                    <>
+                      <Text style={styles.label}>Award Marks</Text>
+                      <TextInput
+                        style={styles.input}
+                        keyboardType="numeric"
+                        value={verificationData.marks}
+                        onChangeText={(text) => setVerificationData({...verificationData, marks: text})}
+                        placeholder={`Max ${assignment.total_marks}`}
+                        placeholderTextColor="#94A3B8"
+                      />
+                      <Text style={styles.label}>Feedback (Optional)</Text>
+                      <TextInput
+                        style={[styles.input, { height: 80, textAlignVertical: 'top' }]}
+                        multiline
+                        value={verificationData.feedback}
+                        onChangeText={(text) => setVerificationData({...verificationData, feedback: text})}
+                        placeholder="Good work..."
+                        placeholderTextColor="#94A3B8"
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <Text style={styles.label}>Changes to be done (Feedback)</Text>
+                      <TextInput
+                        style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+                        multiline
+                        value={verificationData.feedback}
+                        onChangeText={(text) => setVerificationData({...verificationData, feedback: text})}
+                        placeholder="Explain what the student needs to fix to resubmit..."
+                        placeholderTextColor="#94A3B8"
+                        autoFocus
+                      />
+                    </>
+                  )}
+
+                  <TouchableOpacity 
+                    style={[styles.finalSubmitBtn, verifying && { opacity: 0.7 }]}
+                    onPress={handleVerify}
+                    disabled={verifying}
+                  >
+                    {verifying ? (
+                      <ActivityIndicator color="white" />
+                    ) : (
+                      <Text style={styles.finalSubmitText}>Final Submit</Text>
+                    )}
+                  </TouchableOpacity>
+                  <Text style={styles.warningNote}>
+                    Note: Once finalized, this evaluation cannot be undone.
+                  </Text>
+                </View>
+              </ScrollView>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <AlertModal

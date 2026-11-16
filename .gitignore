@@ -71,6 +71,10 @@ yarn-error.*
 /bundle/
 /bundles/
 
+# IDE settings
+.idea/
+.vscode/
+
 # Test coverage
 coverage/
 

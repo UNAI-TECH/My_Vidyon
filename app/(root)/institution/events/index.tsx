@@ -20,7 +20,8 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { AlertModal } from '../../../../src/components/common/AlertModal';
 import { format } from 'date-fns';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import { CalendarModal } from '../../../../src/components/common/CalendarPicker';
+import { TimePickerModal } from '../../../../src/components/common/TimePickerModal';
 import { uploadToSupabaseStorage } from '../../../../src/utils/fileUpload';
 
 type EventType = 'holiday' | 'exam' | 'sports' | 'cultural' | 'other';
@@ -182,31 +183,36 @@ export default function InstitutionEvents() {
     createMutation.mutate(form);
   };
 
-  const onDateChange = (event: any, selectedDate?: Date) => {
+  const handleDateSelect = (dateStr: string) => {
     const pickerType = showDatePicker;
     setShowDatePicker(null);
-    if (selectedDate && pickerType) {
-      if (pickerType === 'start') {
-        setForm({ ...form, event_date: selectedDate });
-      } else {
-        setForm({ ...form, end_date: selectedDate });
-      }
+    if (!dateStr || !pickerType) return;
+
+    const [y, m, d] = dateStr.split('-').map(Number);
+    if (pickerType === 'start') {
+      const updated = new Date(form.event_date);
+      updated.setFullYear(y, m - 1, d);
+      setForm(prev => ({ ...prev, event_date: updated }));
+    } else {
+      const updated = new Date(form.end_date);
+      updated.setFullYear(y, m - 1, d);
+      setForm(prev => ({ ...prev, end_date: updated }));
     }
   };
 
-  const onTimeChange = (event: any, selectedDate?: Date) => {
+  const handleTimeSelect = (selectedDate: Date) => {
     const pickerType = showTimePicker;
     setShowTimePicker(null);
-    if (selectedDate && pickerType) {
-      if (pickerType === 'start') {
-        const updated = new Date(form.event_date);
-        updated.setHours(selectedDate.getHours(), selectedDate.getMinutes());
-        setForm({ ...form, event_date: updated });
-      } else {
-        const updated = new Date(form.end_date);
-        updated.setHours(selectedDate.getHours(), selectedDate.getMinutes());
-        setForm({ ...form, end_date: updated });
-      }
+    if (!selectedDate || !pickerType) return;
+
+    if (pickerType === 'start') {
+      const updated = new Date(form.event_date);
+      updated.setHours(selectedDate.getHours(), selectedDate.getMinutes(), 0, 0);
+      setForm(prev => ({ ...prev, event_date: updated }));
+    } else {
+      const updated = new Date(form.end_date);
+      updated.setHours(selectedDate.getHours(), selectedDate.getMinutes(), 0, 0);
+      setForm(prev => ({ ...prev, end_date: updated }));
     }
   };
 
@@ -346,20 +352,21 @@ export default function InstitutionEvents() {
                 </TouchableOpacity>
               </View>
 
-              {showDatePicker && (
-                <DateTimePicker
-                  value={showDatePicker === 'start' ? form.event_date : form.end_date}
-                  mode="date"
-                  onChange={onDateChange}
-                />
-              )}
-              {showTimePicker && (
-                <DateTimePicker
-                  value={showTimePicker === 'start' ? form.event_date : form.end_date}
-                  mode="time"
-                  onChange={onTimeChange}
-                />
-              )}
+              <CalendarModal
+                visible={showDatePicker !== null}
+                onClose={() => setShowDatePicker(null)}
+                initialDate={format(showDatePicker === 'start' ? form.event_date : form.end_date, 'yyyy-MM-dd')}
+                title={showDatePicker === 'start' ? "Select Event Start Date" : "Select Event End Date"}
+                onSelect={handleDateSelect}
+              />
+
+              <TimePickerModal
+                visible={showTimePicker !== null}
+                onClose={() => setShowTimePicker(null)}
+                initialTime={showTimePicker === 'start' ? form.event_date : form.end_date}
+                title={showTimePicker === 'start' ? "Select Start Time" : "Select End Time"}
+                onSelect={handleTimeSelect}
+              />
 
               <Text style={styles.label}>EVENT BANNER (OPTIONAL)</Text>
               <TouchableOpacity 

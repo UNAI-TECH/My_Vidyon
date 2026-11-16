@@ -16,6 +16,8 @@ import {
   ActivityIndicator,
   Alert,
   Switch,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
 import { theme } from '../../theme';
@@ -293,27 +295,36 @@ export const StakeholderManagementModal: React.FC<StakeholderManagementModalProp
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          {/* Header */}
-          <View style={styles.header}>
-            <View style={{ flex: 1 }}>
-              <View style={styles.titleRow}>
-                <ShieldCheck size={20} color={theme.colors.primary} {...({} as any)} />
-                <Text style={styles.title}>Institution Stakeholders</Text>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            {/* Header */}
+            <View style={styles.header}>
+              <View style={{ flex: 1 }}>
+                <View style={styles.titleRow}>
+                  <ShieldCheck size={20} color={theme.colors.primary} {...({} as any)} />
+                  <Text style={styles.title}>Institution Stakeholders</Text>
+                </View>
+                <Text style={styles.subtitle} numberOfLines={1}>
+                  {institutionName} ({institutionId})
+                </Text>
               </View>
-              <Text style={styles.subtitle} numberOfLines={1}>
-                {institutionName} ({institutionId})
-              </Text>
+              <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
+                <X size={20} color="#64748B" {...({} as any)} />
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
-              <X size={20} color="#64748B" {...({} as any)} />
-            </TouchableOpacity>
-          </View>
 
-          {/* Body */}
-          <ScrollView style={styles.body} contentContainerStyle={{ paddingBottom: 24 }}>
+            {/* Body */}
+            <ScrollView 
+              style={styles.body} 
+              contentContainerStyle={{ paddingBottom: 40 }}
+              keyboardShouldPersistTaps="handled"
+              automaticallyAdjustKeyboardInsets={true}
+            >
             {/* View-Only Explanation */}
             <View style={styles.infoBanner}>
               <AlertCircle size={16} color="#D97706" {...({} as any)} />
@@ -504,6 +515,7 @@ export const StakeholderManagementModal: React.FC<StakeholderManagementModalProp
           </ScrollView>
         </View>
       </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 };

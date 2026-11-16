@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, FlatList } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, FlatList, Modal } from 'react-native';
 import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
 import { useAuth } from '../../../../src/hooks/useAuth';
@@ -10,16 +10,20 @@ import {
   Clock, 
   User, 
   ChevronRight, 
-  Plus,
-  ArrowRight,
-  MapPin,
-  Coffee,
-  Utensils,
-  BookOpen,
-  X
+  Plus, 
+  MapPin, 
+  Coffee, 
+  Utensils, 
+  BookOpen, 
+  X,
+  Sparkles
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
-import { Modal } from 'react-native';
+import { 
+  generateTemplateDailyGrid, 
+  mergeSlotsWithTemplate, 
+  formatTimeHHMM 
+} from '../../../../src/utils/timetableUtils';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -30,17 +34,32 @@ export default function TimetableIndexScreen() {
   const [activeDay, setActiveDay] = useState('Monday');
   const [selectedSlot, setSelectedSlot] = useState<any>(null);
   
-  // Reuse useInstitutionUsers to get faculty list
+  // Get faculty list
   const { staff } = useInstitutionUsers(institutionId);
   const faculties = useMemo(() => staff.filter((s: any) => s.role === 'teacher' || s.role === 'faculty'), [staff]);
 
-  const { slots, isLoading } = useInstitutionTimetable(institutionId, selectedFaculty?.id);
+  const { slots, timetableConfig, isLoading } = useInstitutionTimetable(institutionId, selectedFaculty?.id);
 
+  // Merge daily timetable with the institution template grid
   const daySlots = useMemo(() => {
-    return slots
-      .filter((s: any) => s.day_of_week === activeDay)
-      .sort((a: any, b: any) => a.start_time.localeCompare(b.start_time));
-  }, [slots, activeDay]);
+    if (!selectedFaculty) return [];
+    const templateGrid = generateTemplateDailyGrid(timetableConfig, activeDay);
+    const merged = mergeSlotsWithTemplate(templateGrid, slots, activeDay);
+
+    return merged.map(s => {
+      // Find matching raw slot for relations (subjects, classes)
+      const matched = (slots as any[]).find((raw: any) => 
+        raw.day_of_week === activeDay && 
+        formatTimeHHMM(raw.start_time) === s.start_time
+      );
+
+      return {
+        ...s,
+        subjects: (matched as any)?.subjects || (s.subject_id && s.subject_id !== 'break' && s.subject_id !== 'lunch' ? { name: s.subject_id } : null),
+        classes: (matched as any)?.classes || (s.class_id ? { name: s.class_id } : null),
+      };
+    });
+  }, [slots, timetableConfig, activeDay, selectedFaculty]);
 
   const renderFacultyItem = ({ item }: { item: any }) => (
     <TouchableOpacity 
@@ -48,7 +67,7 @@ export default function TimetableIndexScreen() {
       onPress={() => setSelectedFaculty(item)}
     >
       <Text style={[styles.facultyChipText, selectedFaculty?.id === item.id && styles.activeFacultyChipText]}>
-        {item.full_name.split(' ')[0]}
+        {item.full_name?.split(' ')[0] || item.full_name}
       </Text>
     </TouchableOpacity>
   );
@@ -91,8 +110,8 @@ export default function TimetableIndexScreen() {
 
       {!selectedFaculty ? (
         <View style={styles.emptyState}>
-          <Calendar size={48} color="#E2E8F0" {...({} as any)} />
-          <Text style={styles.emptyText}>Select a faculty to view their schedule</Text>
+          <Calendar size={48} color="#CBD5E1" {...({} as any)} />
+          <Text style={styles.emptyText}>Select a faculty member above to view their schedule</Text>
         </View>
       ) : isLoading ? (
         <View style={styles.loader}>
@@ -101,67 +120,115 @@ export default function TimetableIndexScreen() {
       ) : (
         <ScrollView style={styles.slotList} contentContainerStyle={styles.slotListContent}>
           <View style={styles.listHeader}>
-            <Text style={styles.listTitle}>{activeDay}'s Schedule</Text>
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <TouchableOpacity 
-                style={styles.editBtn} 
-                onPress={() => router.push({
-                  pathname: '/(root)/institution/timetable/edit',
-                  params: { facultyId: selectedFaculty.id, day: activeDay }
-                })}
-              >
-                <Plus size={16} color="white" {...({} as any)} />
-                <Text style={styles.editBtnText}>Edit</Text>
-              </TouchableOpacity>
+            <View>
+              <Text style={styles.listTitle}>{activeDay}'s Schedule</Text>
+              <Text style={styles.listSubtitle}>
+                {selectedFaculty.full_name} • Bell Schedule Template
+              </Text>
             </View>
+            <TouchableOpacity 
+              style={styles.editBtn} 
+              onPress={() => router.push({
+                pathname: '/(root)/institution/timetable/edit',
+                params: { facultyId: selectedFaculty.id, day: activeDay }
+              })}
+            >
+              <Plus size={16} color="white" {...({} as any)} />
+              <Text style={styles.editBtnText}>Edit Schedule</Text>
+            </TouchableOpacity>
           </View>
 
           {daySlots.length === 0 ? (
             <View style={styles.noSlots}>
               <Clock size={32} color="#E2E8F0" {...({} as any)} />
-              <Text style={styles.noSlotsText}>No classes scheduled for today</Text>
+              <Text style={styles.noSlotsText}>No template or periods found</Text>
             </View>
           ) : (
-            daySlots.map((slot: any, i: number) => (
-              <TouchableOpacity 
-                key={slot.id} 
-                style={[
-                  styles.slotCard,
-                  (slot.subject_id === 'break' || slot.subject_id === 'lunch') && styles.breakCard
-                ]}
-                onPress={() => setSelectedSlot(slot)}
-              >
-                <View style={[
-                  styles.periodCircle,
-                  (slot.subject_id === 'break' || slot.subject_id === 'lunch') && styles.breakCircle
-                ]}>
-                  {slot.subject_id === 'break' ? <Coffee size={18} color={theme.colors.primary} /> : 
-                   slot.subject_id === 'lunch' ? <Utensils size={18} color={theme.colors.primary} /> :
-                   <Text style={styles.periodNumber}>{i + 1}</Text>}
-                </View>
-                <View style={styles.slotInfo}>
-                  <Text style={styles.subjectName}>
-                    {slot.subject_id === 'break' ? 'Short Break' : 
-                     slot.subject_id === 'lunch' ? 'Lunch Break' : 
-                     (slot.subjects?.name || 'Unknown Subject')}
-                  </Text>
-                  {slot.subjects?.name && (
-                    <Text style={styles.className}>{slot.classes?.name || 'N/A'}{slot.section ? ` - Section ${slot.section}` : ''}</Text>
-                  )}
-                  <View style={styles.timeInfo}>
-                    <Clock size={12} color={theme.colors.textMuted} {...({} as any)} />
-                    <Text style={styles.timeText}>{slot.start_time} - {slot.end_time}</Text>
-                    {slot.room_number && (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 12 }}>
-                        <MapPin size={12} color={theme.colors.textMuted} {...({} as any)} />
-                        <Text style={styles.timeText}>{slot.room_number}</Text>
+            daySlots.map((slot: any, i: number) => {
+              const isBreak = slot.is_break || slot.type === 'break' || slot.type === 'lunch';
+              const isLunch = slot.type === 'lunch';
+              const hasClassAssigned = !isBreak && (slot.subject_id || slot.subjects?.name);
+
+              if (isBreak) {
+                return (
+                  <View 
+                    key={slot.id || `break-${i}`} 
+                    style={[styles.slotCard, isLunch ? styles.lunchCard : styles.shortBreakCard]}
+                  >
+                    <View style={[styles.periodCircle, isLunch ? styles.lunchCircle : styles.breakCircle]}>
+                      {isLunch ? <Utensils size={18} color="#059669" {...({} as any)} /> : <Coffee size={18} color="#D97706" {...({} as any)} />}
+                    </View>
+                    <View style={styles.slotInfo}>
+                      <Text style={[styles.subjectName, isLunch ? { color: '#065F46' } : { color: '#92400E' }]}>
+                        {slot.label || (isLunch ? 'Lunch Break' : 'Short Break')}
+                      </Text>
+                      <View style={styles.timeInfo}>
+                        <Clock size={12} color={theme.colors.textMuted} {...({} as any)} />
+                        <Text style={styles.timeText}>{slot.start_time} - {slot.end_time} ({slot.duration}m)</Text>
                       </View>
-                    )}
+                    </View>
                   </View>
-                </View>
-                <ChevronRight size={18} color={theme.colors.textMuted} {...({} as any)} />
-              </TouchableOpacity>
-            ))
+                );
+              }
+
+              if (!hasClassAssigned) {
+                return (
+                  <TouchableOpacity 
+                    key={slot.id || `free-${i}`} 
+                    style={[styles.slotCard, styles.freeSlotCard]}
+                    onPress={() => router.push({
+                      pathname: '/(root)/institution/timetable/edit',
+                      params: { facultyId: selectedFaculty.id, day: activeDay }
+                    })}
+                  >
+                    <View style={[styles.periodCircle, styles.freePeriodCircle]}>
+                      <Text style={styles.freePeriodNumber}>{slot.period_index || i + 1}</Text>
+                    </View>
+                    <View style={styles.slotInfo}>
+                      <Text style={styles.freePeriodText}>Free Period / Unassigned</Text>
+                      <View style={styles.timeInfo}>
+                        <Clock size={12} color={theme.colors.textMuted} {...({} as any)} />
+                        <Text style={styles.timeText}>{slot.start_time} - {slot.end_time}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.assignChip}>
+                      <Text style={styles.assignChipText}>+ Assign</Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              }
+
+              return (
+                <TouchableOpacity 
+                  key={slot.id || `period-${i}`} 
+                  style={styles.slotCard}
+                  onPress={() => setSelectedSlot(slot)}
+                >
+                  <View style={styles.periodCircle}>
+                    <Text style={styles.periodNumber}>{slot.period_index || i + 1}</Text>
+                  </View>
+                  <View style={styles.slotInfo}>
+                    <Text style={styles.subjectName}>
+                      {slot.subjects?.name || slot.subject_id || 'Assigned Subject'}
+                    </Text>
+                    <Text style={styles.className}>
+                      Class {slot.classes?.name || 'Class'}{slot.section ? ` • Section ${slot.section}` : ''}
+                    </Text>
+                    <View style={styles.timeInfo}>
+                      <Clock size={12} color={theme.colors.textMuted} {...({} as any)} />
+                      <Text style={styles.timeText}>{slot.start_time} - {slot.end_time}</Text>
+                      {slot.room_number ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 10 }}>
+                          <MapPin size={12} color={theme.colors.textMuted} {...({} as any)} />
+                          <Text style={styles.timeText}>Room {slot.room_number}</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  </View>
+                  <ChevronRight size={18} color={theme.colors.textMuted} {...({} as any)} />
+                </TouchableOpacity>
+              );
+            })
           )}
         </ScrollView>
       )}
@@ -178,16 +245,18 @@ export default function TimetableIndexScreen() {
           activeOpacity={1} 
           onPress={() => setSelectedSlot(null)}
         >
-          <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
+          <TouchableOpacity 
+            activeOpacity={1} 
+            style={styles.modalContent} 
+            onPress={(e) => {
+              // Stop propagation so clicking inside the modal does not close it
+              if (e && e.stopPropagation) e.stopPropagation();
+            }}
+          >
             <View style={styles.modalHeader}>
               <View style={styles.modalTypeIndicator}>
-                {selectedSlot?.subject_id === 'break' ? <Coffee size={18} color={theme.colors.primary} /> : 
-                 selectedSlot?.subject_id === 'lunch' ? <Utensils size={18} color={theme.colors.primary} /> :
-                 <BookOpen size={18} color={theme.colors.primary} />}
-                <Text style={styles.modalTypeText}>
-                  {selectedSlot?.subject_id === 'break' ? 'General Break' : 
-                   selectedSlot?.subject_id === 'lunch' ? 'Lunch Hour' : 'Academic Class'}
-                </Text>
+                <BookOpen size={16} color={theme.colors.primary} {...({} as any)} />
+                <Text style={styles.modalTypeText}>Academic Class</Text>
               </View>
               <TouchableOpacity onPress={() => setSelectedSlot(null)}>
                 <X size={20} color={theme.colors.textMuted} {...({} as any)} />
@@ -196,18 +265,14 @@ export default function TimetableIndexScreen() {
 
             <View style={styles.modalBody}>
               <Text style={styles.modalSubject}>
-                {selectedSlot?.subject_id === 'break' ? 'Short Break' : 
-                 selectedSlot?.subject_id === 'lunch' ? 'Lunch Break' : 
-                 selectedSlot?.subjects?.name}
+                {selectedSlot?.subjects?.name || selectedSlot?.subject_id}
               </Text>
               
-              {selectedSlot?.subjects?.name && (
-                <View style={styles.modalClassBox}>
-                  <Text style={styles.modalClassName}>
-                    Class {selectedSlot?.classes?.name} • Section {selectedSlot?.section}
-                  </Text>
-                </View>
-              )}
+              <View style={styles.modalClassBox}>
+                <Text style={styles.modalClassName}>
+                  Class {selectedSlot?.classes?.name || 'N/A'} • Section {selectedSlot?.section || 'A'}
+                </Text>
+              </View>
 
               <View style={styles.modalDetailGrid}>
                 <View style={styles.modalDetailItem}>
@@ -218,7 +283,7 @@ export default function TimetableIndexScreen() {
                   </View>
                 </View>
 
-                {selectedSlot?.room_number && (
+                {selectedSlot?.room_number ? (
                   <View style={styles.modalDetailItem}>
                     <MapPin size={16} color={theme.colors.primary} {...({} as any)} />
                     <View>
@@ -226,7 +291,7 @@ export default function TimetableIndexScreen() {
                       <Text style={styles.modalDetailValue}>Room {selectedSlot?.room_number}</Text>
                     </View>
                   </View>
-                )}
+                ) : null}
                 
                 <View style={styles.modalDetailItem}>
                   <User size={16} color={theme.colors.primary} {...({} as any)} />
@@ -242,7 +307,7 @@ export default function TimetableIndexScreen() {
               <TouchableOpacity 
                 style={styles.modalEditBtn}
                 onPress={() => {
-                  const day = selectedSlot.day_of_week;
+                  const day = activeDay;
                   const fId = selectedFaculty.id;
                   setSelectedSlot(null);
                   router.push({
@@ -252,10 +317,10 @@ export default function TimetableIndexScreen() {
                 }}
               >
                 <Plus size={18} color="white" {...({} as any)} />
-                <Text style={styles.modalEditBtnText}>Edit Entry</Text>
+                <Text style={styles.modalEditBtnText}>Edit Schedule</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
     </View>
@@ -278,42 +343,70 @@ const styles = StyleSheet.create({
   dayTabText: { fontSize: 13, fontWeight: '600', color: theme.colors.textMuted },
   activeDayTabText: { color: theme.colors.primary, fontWeight: 'bold' },
   slotList: { flex: 1 },
-  slotListContent: { padding: 16 },
+  slotListContent: { padding: 16, paddingBottom: 32 },
   listHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   listTitle: { fontSize: 18, fontWeight: 'bold', color: theme.colors.text },
-  editBtn: { backgroundColor: theme.colors.primary, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
+  listSubtitle: { fontSize: 12, color: theme.colors.textMuted, marginTop: 2 },
+  editBtn: { backgroundColor: theme.colors.primary, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12 },
   editBtnText: { color: 'white', fontWeight: 'bold', fontSize: 13 },
   loader: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', opacity: 0.5 },
-  emptyText: { marginTop: 12, fontSize: 14, color: theme.colors.textMuted },
+  emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
+  emptyText: { marginTop: 12, fontSize: 14, color: theme.colors.textMuted, textAlign: 'center' },
   noSlots: { paddingVertical: 40, alignItems: 'center', opacity: 0.5 },
   noSlotsText: { marginTop: 8, fontSize: 14, color: theme.colors.textMuted },
-  slotCard: { backgroundColor: 'white', borderRadius: 16, padding: 16, marginBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 16, borderWidth: 1, borderColor: '#F1F5F9' },
-  breakCard: { backgroundColor: '#F8FAFC', borderStyle: 'dashed' },
-  periodCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' },
-  breakCircle: { backgroundColor: '#E2E8F0' },
-  periodNumber: { fontSize: 18, fontWeight: 'bold', color: theme.colors.primary },
+  
+  slotCard: { 
+    backgroundColor: 'white', 
+    borderRadius: 16, 
+    padding: 16, 
+    marginBottom: 12, 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    gap: 16, 
+    borderWidth: 1, 
+    borderColor: '#F1F5F9',
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4
+  },
+  shortBreakCard: { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' },
+  lunchCard: { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' },
+  freeSlotCard: { backgroundColor: '#F8FAFC', borderStyle: 'dashed', borderColor: '#CBD5E1' },
+  
+  periodCircle: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#FEF3C7', justifyContent: 'center', alignItems: 'center' },
+  breakCircle: { backgroundColor: '#FDE68A' },
+  lunchCircle: { backgroundColor: '#D1FAE5' },
+  freePeriodCircle: { backgroundColor: '#E2E8F0' },
+  periodNumber: { fontSize: 16, fontWeight: 'bold', color: theme.colors.primary },
+  freePeriodNumber: { fontSize: 14, fontWeight: '600', color: theme.colors.textMuted },
+  
   slotInfo: { flex: 1 },
-  subjectName: { fontSize: 16, fontWeight: 'bold', color: theme.colors.text },
-  className: { fontSize: 13, color: theme.colors.textMuted, marginTop: 2 },
+  subjectName: { fontSize: 15, fontWeight: 'bold', color: theme.colors.text },
+  freePeriodText: { fontSize: 14, fontWeight: '600', color: theme.colors.textMuted },
+  className: { fontSize: 13, color: theme.colors.textMuted, marginTop: 2, fontWeight: '500' },
   timeInfo: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
-  timeText: { fontSize: 11, color: theme.colors.textMuted },
+  timeText: { fontSize: 12, color: theme.colors.textMuted },
+  
+  assignChip: { backgroundColor: 'white', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, borderWidth: 1, borderColor: '#CBD5E1' },
+  assignChipText: { fontSize: 11, fontWeight: '700', color: theme.colors.primary },
 
   // Modal Styles
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  modalContent: { backgroundColor: 'white', borderRadius: 32, width: '100%', maxWidth: 400, padding: 24, elevation: 5 },
+  modalContent: { backgroundColor: 'white', borderRadius: 24, width: '100%', maxWidth: 400, padding: 24, elevation: 5 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  modalTypeIndicator: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#F0F9FF', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
-  modalTypeText: { fontSize: 11, fontWeight: '700', color: theme.colors.primary, textTransform: 'uppercase' },
-  modalBody: { gap: 16 },
-  modalSubject: { fontSize: 22, fontWeight: '900', color: theme.colors.text },
+  modalTypeIndicator: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FEF3C7', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10 },
+  modalTypeText: { fontSize: 11, fontWeight: '700', color: '#B45309', textTransform: 'uppercase' },
+  modalBody: { gap: 14 },
+  modalSubject: { fontSize: 20, fontWeight: '800', color: theme.colors.text },
   modalClassBox: { backgroundColor: '#F8FAFC', padding: 10, borderRadius: 10, alignSelf: 'flex-start' },
-  modalClassName: { fontSize: 14, fontWeight: '600', color: theme.colors.textMuted },
-  modalDetailGrid: { gap: 16, marginTop: 8 },
+  modalClassName: { fontSize: 13, fontWeight: '600', color: theme.colors.textMuted },
+  modalDetailGrid: { gap: 12, marginTop: 6 },
   modalDetailItem: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   modalDetailLabel: { fontSize: 11, color: theme.colors.textMuted, fontWeight: '600' },
-  modalDetailValue: { fontSize: 15, fontWeight: '700', color: theme.colors.text },
-  modalFooter: { marginTop: 32 },
-  modalEditBtn: { backgroundColor: theme.colors.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 14, borderRadius: 16 },
-  modalEditBtnText: { color: 'white', fontWeight: 'bold', fontSize: 15 }
+  modalDetailValue: { fontSize: 14, fontWeight: '700', color: theme.colors.text },
+  modalFooter: { marginTop: 24 },
+  modalEditBtn: { backgroundColor: theme.colors.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 14, borderRadius: 16 },
+  modalEditBtnText: { color: 'white', fontWeight: 'bold', fontSize: 14 }
 });

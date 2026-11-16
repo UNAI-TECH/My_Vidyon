@@ -22,7 +22,8 @@ import {
 } from 'lucide-react-native';
 import { Badge } from '../../../../src/components/common/Badge';
 import { useRouter } from 'expo-router';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, useQuery } from '@tanstack/react-query';
+import { compareClasses, compareSections } from '../../../../src/utils/classUtils';
 
 export default function DepartmentsScreen() {
   const { institutionId, loading: authLoading } = useAuth();
@@ -30,6 +31,7 @@ export default function DepartmentsScreen() {
   const queryClient = useQueryClient();
   const [viewMode, setViewMode] = useState<'subjects' | 'classes' | 'depts'>('subjects');
   const [expandedSubject, setExpandedSubject] = useState<string | null>(null);
+  const [selectedDeptButton, setSelectedDeptButton] = useState<string>('all');
 
   const { 
     subjects, 
@@ -39,14 +41,35 @@ export default function DepartmentsScreen() {
     isLoading: isDataLoading 
   } = useInstitutionFaculty(institutionId);
 
+  // Fetch configured departments from departments table
+  const { data: configuredDepartments = [] } = useQuery<any[]>({
+    queryKey: ['institution-departments-table', institutionId],
+    queryFn: async () => {
+      if (!institutionId) return [];
+      const { data, error } = await (supabase.from('departments') as any)
+        .select('*')
+        .eq('institution_id', institutionId)
+        .order('name');
+      if (error) {
+        console.warn('Error fetching departments:', error);
+        return [];
+      }
+      return data || [];
+    },
+    enabled: !!institutionId,
+  });
+
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await queryClient.invalidateQueries({ queryKey: ['institution-assignments-assign'] });
-    await queryClient.invalidateQueries({ queryKey: ['institution-classes-assign'] });
-    await queryClient.invalidateQueries({ queryKey: ['institution-subjects-assign'] });
-    await queryClient.invalidateQueries({ queryKey: ['institution-staff-assign'] });
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['institution-assignments-assign'] }),
+      queryClient.invalidateQueries({ queryKey: ['institution-classes-assign'] }),
+      queryClient.invalidateQueries({ queryKey: ['institution-subjects-assign'] }),
+      queryClient.invalidateQueries({ queryKey: ['institution-staff-assign'] }),
+      queryClient.invalidateQueries({ queryKey: ['institution-departments-table'] })
+    ]);
     setIsRefreshing(false);
   };
 
@@ -179,15 +202,65 @@ export default function DepartmentsScreen() {
     return Object.values(staffMap);
   };
 
+  // Aggregate all unique departments across departments table, subjects, and staff profiles
+  const allDepartments = useMemo(() => {
+    const deptSet = new Set<string>();
+
+    // 1. From departments table
+    configuredDepartments.forEach((d: any) => {
+      const n = (d.name || '').trim();
+      if (n) deptSet.add(n);
+    });
+
+    // 2. From subjects
+    (subjects as any[]).forEach((s: any) => {
+      const d = (s.department || '').trim();
+      if (d) deptSet.add(d);
+      const name = (s.name || '').trim();
+      if (name && ['English', 'Mathematics', 'Maths', 'Science', 'Language', 'Tamil', 'Hindi', 'Social Studies', 'Physics', 'Chemistry', 'Biology', 'Computer Science'].some(k => k.toLowerCase() === name.toLowerCase())) {
+        deptSet.add(name);
+      }
+    });
+
+    // 3. From staff profiles
+    (staff as any[]).forEach((st: any) => {
+      const d = (st.department || '').trim();
+      if (d) deptSet.add(d);
+    });
+
+    if (deptSet.size === 0) {
+      ['English', 'Mathematics', 'Science', 'Language', 'Social Studies'].forEach(d => deptSet.add(d));
+    }
+
+    return Array.from(deptSet).sort((a, b) => a.localeCompare(b));
+  }, [configuredDepartments, subjects, staff]);
+
   const getDepartmentData = () => {
     const depts: Record<string, any[]> = {};
-    staff.forEach((s: any) => {
-      const d = s.department || 'General';
-      if (!depts[d]) depts[d] = [];
-      
-      const staffAssignments = assignments.filter((a: any) => a.faculty_profile_id === s.id);
-      depts[d].push({ ...s, assignments: staffAssignments });
+
+    // 1. Pre-seed all detected departments so every department appears
+    allDepartments.forEach((name) => {
+      depts[name] = [];
     });
+
+    // 2. Map staff to departments
+    staff.forEach((s: any) => {
+      const rawDept = (s.department || '').trim();
+      const matched = allDepartments.find(
+        (d) => d.toLowerCase() === rawDept.toLowerCase()
+      );
+      const deptKey = matched || (rawDept || 'General');
+
+      if (!depts[deptKey]) depts[deptKey] = [];
+      const staffAssignments = (assignments as any[]).filter((a: any) => a.faculty_profile_id === s.id);
+      depts[deptKey].push({ ...s, assignments: staffAssignments });
+    });
+
+    // 3. Remove 'General' if empty and other departments exist
+    if (depts['General'] && depts['General'].length === 0 && Object.keys(depts).length > 1) {
+      delete depts['General'];
+    }
+
     return Object.entries(depts).sort((a, b) => a[0].localeCompare(b[0]));
   };
 
@@ -202,6 +275,11 @@ export default function DepartmentsScreen() {
           profiles: staffInfo ? { full_name: staffInfo.full_name } : null,
           classes: classInfo ? { name: classInfo.name } : null
         };
+      })
+      .sort((a, b) => {
+        const classCmp = compareClasses(a.classes?.name || '', b.classes?.name || '');
+        if (classCmp !== 0) return classCmp;
+        return compareSections(a.section || '', b.section || '');
       });
   }, [assignments, staff, classes]);
 
@@ -419,47 +497,164 @@ export default function DepartmentsScreen() {
           </>
         )}
 
-        {institutionId && viewMode === 'depts' && (
-          <>
-            {getDepartmentData().map(([deptName, members]) => (
-              <View key={deptName} style={styles.deptSection}>
-                <View style={styles.deptHeader}>
-                  <Text style={styles.deptTitle}>{deptName}</Text>
-                  <Badge variant="info">{String(members.length) + ' Members'}</Badge>
-                </View>
-                <View style={styles.deptGrid}>
-                  {members.map((member: any) => (
-                    <View key={member.id} style={styles.memberCard}>
-                      <View style={styles.memberInfo}>
-                        <View style={styles.avatarMini}>
-                          <Text style={styles.avatarTextMini}>{(member as any).full_name[0]}</Text>
-                        </View>
-                        <Text style={styles.memberName}>{(member as any).full_name}</Text>
+        {institutionId && viewMode === 'depts' && (() => {
+          const departmentEntries = getDepartmentData();
+          const filteredDepartmentEntries = selectedDeptButton === 'all'
+            ? departmentEntries
+            : departmentEntries.filter(([name]) => name.toLowerCase() === selectedDeptButton.toLowerCase());
+
+          return (
+            <>
+              {/* Top Department Filter Buttons */}
+              {departmentEntries.length > 0 && (
+                <View style={styles.deptButtonsContainer}>
+                  <ScrollView 
+                    horizontal 
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.deptButtonsScroll}
+                  >
+                    <TouchableOpacity
+                      style={[
+                        styles.deptBtn,
+                        selectedDeptButton === 'all' && styles.deptBtnActive
+                      ]}
+                      onPress={() => setSelectedDeptButton('all')}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[
+                        styles.deptBtnText,
+                        selectedDeptButton === 'all' && styles.deptBtnTextActive
+                      ]}>
+                        All Departments
+                      </Text>
+                      <View style={[
+                        styles.deptPill,
+                        selectedDeptButton === 'all' && styles.deptPillActive
+                      ]}>
+                        <Text style={[
+                          styles.deptPillText,
+                          selectedDeptButton === 'all' && styles.deptPillTextActive
+                        ]}>
+                          {staff.length}
+                        </Text>
                       </View>
-                      <View style={styles.assignmentBadges}>
-                        {member.assignments.length === 0 ? (
-                          <Text style={styles.noAssignments}>No active assignments</Text>
-                        ) : (
-                          member.assignments.map((a: any, idx: number) => {
-                            const classInfo = classes.find((c: any) => c.id === a.class_id && c.section === a.section);
-                            return (
-                              <View key={idx} style={styles.miniBadge}>
-                                <Text style={styles.miniBadgeText}>
-                                  {a.assignment_type === 'class_teacher' ? 'CT: ' : ''}
-                                  {(classInfo as any)?.name || 'Cls'} - {a.section}
+                    </TouchableOpacity>
+
+                    {departmentEntries.map(([deptName, members]) => {
+                      const isActive = selectedDeptButton.toLowerCase() === deptName.toLowerCase();
+                      return (
+                        <TouchableOpacity
+                          key={deptName}
+                          style={[
+                            styles.deptBtn,
+                            isActive && styles.deptBtnActive
+                          ]}
+                          onPress={() => setSelectedDeptButton(deptName)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[
+                            styles.deptBtnText,
+                            isActive && styles.deptBtnTextActive
+                          ]}>
+                            {deptName}
+                          </Text>
+                          <View style={[
+                            styles.deptPill,
+                            isActive && styles.deptPillActive
+                          ]}>
+                            <Text style={[
+                              styles.deptPillText,
+                              isActive && styles.deptPillTextActive
+                            ]}>
+                              {members.length}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              )}
+
+              {filteredDepartmentEntries.length === 0 ? (
+                <View style={styles.empty}>
+                  <Text style={styles.emptyText}>No departments or faculty records found.</Text>
+                  <TouchableOpacity 
+                    style={styles.miniAssignBtn}
+                    onPress={() => router.push('/(root)/institution/faculty/assign')}
+                  >
+                    <Plus size={14} color={theme.colors.primary} {...({} as any)} />
+                    <Text style={styles.miniAssignText}>Assign Faculty</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                filteredDepartmentEntries.map(([deptName, members]) => (
+                  <View key={deptName} style={styles.deptSection}>
+                    <View style={styles.deptHeader}>
+                      <Text style={styles.deptTitle}>{deptName}</Text>
+                      <Badge variant={members.length > 0 ? "info" : "default"}>
+                        {`${members.length} Member${members.length !== 1 ? 's' : ''}`}
+                      </Badge>
+                    </View>
+                    <View style={styles.deptGrid}>
+                      {members.length === 0 ? (
+                        <View style={styles.emptyDeptBox}>
+                          <Text style={styles.emptyDeptText}>No faculty currently assigned to {deptName}</Text>
+                          <TouchableOpacity 
+                            style={styles.miniAssignBtn}
+                            onPress={() => router.push('/(root)/institution/faculty/assign')}
+                          >
+                            <Plus size={14} color={theme.colors.primary} {...({} as any)} />
+                            <Text style={styles.miniAssignText}>Assign Faculty to {deptName}</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : (
+                        members.map((member: any) => (
+                          <View key={member.id} style={styles.memberCard}>
+                            <View style={styles.memberInfo}>
+                              <View style={styles.avatarMini}>
+                                <Text style={styles.avatarTextMini}>
+                                  {(member.full_name?.[0] || '?').toUpperCase()}
                                 </Text>
                               </View>
-                            );
-                          })
-                        )}
-                      </View>
+                              <View style={{ flex: 1 }}>
+                                <Text style={styles.memberName}>{member.full_name || 'Faculty Member'}</Text>
+                                <Text style={styles.deptSub}>{member.role ? member.role.toUpperCase() : 'FACULTY'}</Text>
+                              </View>
+                            </View>
+                            <View style={styles.assignmentBadges}>
+                              {member.assignments.length === 0 ? (
+                                <Text style={styles.noAssignments}>No active assignments</Text>
+                              ) : (
+                                member.assignments.map((a: any, idx: number) => {
+                                  const classInfo = classes.find((c: any) => c.id === a.class_id && c.section === a.section);
+                                  const subInfo = a.assignment_type === 'subject_staff' 
+                                    ? (subjects as any[]).find((s: any) => s.id === a.subject_id) 
+                                    : null;
+                                  const prefix = a.assignment_type === 'class_teacher' 
+                                    ? 'CT: ' 
+                                    : (subInfo?.name ? `${subInfo.name}: ` : '');
+
+                                  return (
+                                    <View key={idx} style={styles.miniBadge}>
+                                      <Text style={styles.miniBadgeText}>
+                                        {prefix}{(classInfo as any)?.name || 'Class'} - {a.section}
+                                      </Text>
+                                    </View>
+                                  );
+                                })
+                              )}
+                            </View>
+                          </View>
+                        ))
+                      )}
                     </View>
-                  ))}
-                </View>
-              </View>
-            ))}
-          </>
-        )}
+                  </View>
+                ))
+              )}
+            </>
+          );
+        })()}
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -606,6 +801,59 @@ const styles = StyleSheet.create({
   ctTeacher: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F1F5F9' },
   ctName: { fontSize: 14, fontWeight: '600', color: theme.colors.text },
   deptSection: { marginBottom: 24 },
+  deptButtonsContainer: {
+    marginBottom: 16,
+  },
+  deptButtonsScroll: {
+    gap: 8,
+    paddingVertical: 4,
+  },
+  deptBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  deptBtnActive: {
+    backgroundColor: theme.colors.secondary,
+    borderColor: theme.colors.secondary,
+  },
+  deptBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: theme.colors.text,
+  },
+  deptBtnTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  deptPill: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  deptPillActive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  deptPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: theme.colors.textMuted,
+  },
+  deptPillTextActive: {
+    color: '#FFFFFF',
+  },
   deptHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, paddingHorizontal: 4 },
   deptTitle: { fontSize: 18, fontWeight: 'bold', color: theme.colors.text },
   deptGrid: { gap: 12 },
@@ -618,6 +866,21 @@ const styles = StyleSheet.create({
   miniBadge: { backgroundColor: '#F1F5F9', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
   miniBadgeText: { fontSize: 10, fontWeight: '600', color: theme.colors.textMuted },
   noAssignments: { fontSize: 12, color: theme.colors.textMuted, fontStyle: 'italic' },
+  deptSub: { fontSize: 11, color: theme.colors.textMuted, marginTop: 2 },
+  emptyDeptBox: {
+    padding: 16,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderStyle: 'dashed',
+  },
+  emptyDeptText: {
+    fontSize: 13,
+    color: theme.colors.textMuted,
+    fontStyle: 'italic',
+  },
 
   legacyLangCard: {
     backgroundColor: '#F0FDFA',

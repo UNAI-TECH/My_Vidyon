@@ -17,6 +17,7 @@ import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { ActivityIndicator as RNActivityIndicator } from 'react-native';
 import { AlertModal } from '../../../../src/components/common/AlertModal';
+import { compareClasses, compareSections } from '../../../../src/utils/classUtils';
 
 export default function FacultyAnnouncements() {
   const insets = useSafeAreaInsets();
@@ -124,9 +125,11 @@ export default function FacultyAnnouncements() {
   return (
     <ScrollView 
       style={styles.container} 
+      keyboardShouldPersistTaps="handled"
+      automaticallyAdjustKeyboardInsets={true}
       contentContainerStyle={[
         styles.content, 
-        { paddingBottom: insets.bottom + theme.spacing.xl }
+        { paddingBottom: insets.bottom + theme.spacing.xl + 40 }
       ]}
     >
       <PageHeader title="Class Communication" subtitle="Broadcast announcements to your classes" />
@@ -215,18 +218,24 @@ export default function FacultyAnnouncements() {
             
             {showClassSelector && (
               <View style={styles.dropdown}>
-                {assignedSubjects.map((s: any, i: number) => (
-                  <TouchableOpacity 
-                    key={i} 
-                    style={styles.dropdownItem}
-                    onPress={() => {
-                      setSelectedClass(s);
-                      setShowClassSelector(false);
-                    }}
-                  >
-                    <Text style={styles.dropdownText}>{s.classes?.name} - {s.section}</Text>
-                  </TouchableOpacity>
-                ))}
+                {[...assignedSubjects]
+                  .sort((a: any, b: any) => {
+                    const classCmp = compareClasses(a.classes?.name || '', b.classes?.name || '');
+                    if (classCmp !== 0) return classCmp;
+                    return compareSections(a.section || '', b.section || '');
+                  })
+                  .map((s: any, i: number) => (
+                    <TouchableOpacity 
+                      key={i} 
+                      style={styles.dropdownItem}
+                      onPress={() => {
+                        setSelectedClass(s);
+                        setShowClassSelector(false);
+                      }}
+                    >
+                      <Text style={styles.dropdownText}>{s.classes?.name} - {s.section}</Text>
+                    </TouchableOpacity>
+                  ))}
               </View>
             )}
           </>

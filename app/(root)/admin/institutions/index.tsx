@@ -49,6 +49,13 @@ import {
   X,
   ExternalLink,
   Upload,
+  Mail,
+  Phone,
+  Award,
+  Calendar,
+  CheckCircle2,
+  Building,
+  Sparkles,
 } from 'lucide-react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '../../../../src/lib/supabase';
@@ -61,6 +68,7 @@ import {
   deleteOnboardingDraft,
   OnboardingDraft,
 } from '../../../../src/services/onboardingDraftService';
+import { sortClasses, sortSections } from '../../../../src/utils/classUtils';
 
 export default function InstitutionsList() {
   const router = useRouter();
@@ -82,13 +90,29 @@ export default function InstitutionsList() {
   const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
   const [detailData, setDetailData] = useState<{
     classes: any[];
-    departments: string[];
+    departments: any[];
     subjects: any[];
     timetable?: any;
+    stakeholders: {
+      students: number;
+      faculty: number;
+      staff: number;
+      parents: number;
+      total: number;
+    };
+    fullInstitution?: any;
   }>({
     classes: [],
     departments: [],
     subjects: [],
+    stakeholders: {
+      students: 0,
+      faculty: 0,
+      staff: 0,
+      parents: 0,
+      total: 0,
+    },
+    fullInstitution: null,
   });
   const [loadingDetail, setLoadingDetail] = useState(false);
 
@@ -182,35 +206,145 @@ export default function InstitutionsList() {
     setLoadingDetail(true);
 
     try {
-      const [groupsRes, profilesRes, subjectsRes, ttRes] = await Promise.all([
+      const [classesRes, groupsRes, deptsRes, profilesRes, subjectsRes, ttRes, fullInstRes] = await Promise.all([
         supabase
-          .from('groups')
-          .select('id, name, classes(id, name, sections)')
+          .from('classes')
+          .select('id, name, sections, academic_year, class_teacher_id, group_id, stage, class_order')
           .eq('institution_id', inst.institution_id),
         supabase
-          .from('profiles')
-          .select('department')
+          .from('groups')
+          .select('id, name, classes(id, name, sections, stage, class_order)')
+          .eq('institution_id', inst.institution_id),
+        (supabase.from('departments') as any)
+          .select('*')
           .eq('institution_id', inst.institution_id)
-          .not('department', 'is', null),
-        supabase.from('subjects').select('*').eq('institution_id', inst.institution_id),
+          .order('name'),
+        supabase
+          .from('profiles')
+          .select('id, role, department, full_name, email')
+          .eq('institution_id', inst.institution_id),
+        supabase
+          .from('subjects')
+          .select('*')
+          .eq('institution_id', inst.institution_id)
+          .order('name'),
         (supabase.from('timetable_configs') as any)
+          .select('*')
+          .eq('institution_id', inst.institution_id)
+          .maybeSingle(),
+        supabase
+          .from('institutions')
           .select('*')
           .eq('institution_id', inst.institution_id)
           .maybeSingle(),
       ]);
 
-      const allClasses =
-        (groupsRes.data as any[])?.flatMap((g) => g.classes || []) || [];
-      const uniqueDepts = Array.from(
-        new Set((profilesRes.data as any[])?.map((p) => p.department))
-      ).filter(Boolean) as string[];
+      const groupMap = new Map<string, string>();
+      ((groupsRes.data as any[]) || []).forEach((g: any) => {
+        if (g.id && g.name) groupMap.set(g.id, g.name);
+      });
+
+      let allClasses: any[] = [];
+      if (classesRes.data && (classesRes.data as any[]).length > 0) {
+        allClasses = (classesRes.data as any[]).map((c: any) => ({
+          ...c,
+          group_name: groupMap.get(c.group_id) || '',
+        }));
+      } else if (groupsRes.data && (groupsRes.data as any[]).length > 0) {
+        // Fallback to groups nested classes
+        ((groupsRes.data as any[]) || []).forEach((g: any) => {
+          (g.classes || []).forEach((c: any) => {
+            allClasses.push({
+              ...c,
+              group_name: g.name,
+            });
+          });
+        });
+
+        // If nested join was empty, fetch classes directly by group_ids
+        if (allClasses.length === 0) {
+          const groupIds = (groupsRes.data as any[]).map((g: any) => g.id).filter(Boolean);
+          if (groupIds.length > 0) {
+            const { data: byGroupClasses } = await supabase
+              .from('classes')
+              .select('id, name, sections, academic_year, class_teacher_id, group_id')
+              .in('group_id', groupIds);
+            if (byGroupClasses && byGroupClasses.length > 0) {
+              allClasses = byGroupClasses.map((c: any) => ({
+                ...c,
+                group_name: groupMap.get(c.group_id) || '',
+              }));
+            }
+          }
+        }
+      }
+
+      // Aggregate all configured departments (from departments table, curriculum subjects, and assigned profiles)
+      const deptMap = new Map<string, any>();
+      (deptsRes.data || []).forEach((d: any) => {
+        const n = (d.name || '').trim();
+        if (n) {
+          deptMap.set(n.toLowerCase(), {
+            id: d.id,
+            name: n,
+            code: d.code || '',
+            description: d.description || '',
+          });
+        }
+      });
+      (subjectsRes.data || []).forEach((s: any) => {
+        const sn = (s.name || '').trim();
+        const dn = (s.department || '').trim();
+        if (dn && !deptMap.has(dn.toLowerCase())) {
+          deptMap.set(dn.toLowerCase(), { name: dn, code: '', description: `Department for ${dn}` });
+        }
+        if (sn && !deptMap.has(sn.toLowerCase())) {
+          deptMap.set(sn.toLowerCase(), { name: sn, code: s.code || '', description: `Curriculum department for ${sn}` });
+        }
+      });
+      (profilesRes.data || []).forEach((p: any) => {
+        const dn = (p.department || '').trim();
+        if (dn && !deptMap.has(dn.toLowerCase())) {
+          deptMap.set(dn.toLowerCase(), { name: dn, code: '', description: '' });
+        }
+      });
+
+      const resolvedDepartments = Array.from(deptMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+
+      // Compute stakeholders counts
+      const allProfiles = (profilesRes.data || []) as any[];
+      const studentsCount = allProfiles.filter(p => p.role === 'student').length;
+      const facultyCount = allProfiles.filter(p => p.role === 'faculty' || p.role === 'teacher').length;
+      const staffCount = allProfiles.filter(p => ['admin', 'staff', 'accountant', 'analytics', 'canteen_manager', 'driver'].includes(p.role)).length;
+      const parentsCount = allProfiles.filter(p => p.role === 'parent').length;
+
+      const mergedInst = {
+        ...inst,
+        ...(fullInstRes.data || {}),
+      };
+
+      const sortedClasses = sortClasses(
+        allClasses.map((c: any) => ({
+          ...c,
+          sections: sortSections(Array.isArray(c.sections) ? c.sections : (c.sections ? [c.sections] : []))
+        }))
+      );
 
       setDetailData({
-        classes: allClasses,
-        departments: uniqueDepts,
+        classes: sortedClasses,
+        departments: resolvedDepartments,
         subjects: subjectsRes.data || [],
         timetable: ttRes.data || null,
+        stakeholders: {
+          students: studentsCount,
+          faculty: facultyCount,
+          staff: staffCount,
+          parents: parentsCount,
+          total: allProfiles.length,
+        },
+        fullInstitution: mergedInst,
       });
+      setSelectedInst(mergedInst);
     } catch (e) {
       console.error('Error fetching detail:', e);
     } finally {
@@ -751,20 +885,147 @@ export default function InstitutionsList() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <View>
-                <Text style={styles.modalTitle}>{selectedInst?.name}</Text>
-                <Text style={styles.modalSubtitle}>ID: {selectedInst?.institution_id}</Text>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <Text style={styles.modalTitle}>{selectedInst?.name}</Text>
+                  <View style={[
+                    styles.statusPill, 
+                    selectedInst?.status === 'active' ? styles.statusPillActive : styles.statusPillInactive
+                  ]}>
+                    <View style={[
+                      styles.statusDot, 
+                      selectedInst?.status === 'active' ? styles.statusDotActive : styles.statusDotInactive
+                    ]} />
+                    <Text style={[
+                      styles.statusPillText,
+                      selectedInst?.status === 'active' ? styles.statusPillTextActive : styles.statusPillTextInactive
+                    ]}>
+                      {(selectedInst?.status || 'active').toUpperCase()}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Subtitle Badges Row */}
+                <View style={styles.headerBadgesRow}>
+                  <View style={styles.headerIdBadge}>
+                    <Text style={styles.headerIdBadgeText}>ID: {selectedInst?.institution_id}</Text>
+                  </View>
+                  {(selectedInst?.institution_category || selectedInst?.type) && (
+                    <View style={styles.headerCatBadge}>
+                      <Text style={styles.headerCatBadgeText}>
+                        {String(selectedInst?.institution_category || selectedInst?.type).replace(/_/g, ' ').toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+                  {selectedInst?.ownership_type && (
+                    <View style={styles.headerOwnerBadge}>
+                      <Text style={styles.headerOwnerBadgeText}>
+                        {String(selectedInst?.ownership_type).toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+                  {selectedInst?.board_or_university && (
+                    <View style={styles.headerBoardBadge}>
+                      <Text style={styles.headerBoardBadgeText}>
+                        {String(selectedInst?.board_or_university).toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+                </View>
               </View>
-              <TouchableOpacity onPress={() => setIsDetailVisible(false)}>
-                <X size={22} color={theme.colors.text} {...({} as any)} />
+              <TouchableOpacity onPress={() => setIsDetailVisible(false)} style={styles.closeModalBtn}>
+                <X size={20} color={theme.colors.text} {...({} as any)} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalBody}>
+            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
               {loadingDetail ? (
-                <ActivityIndicator size="large" color={theme.colors.primary} style={{ marginTop: 40 }} />
+                <View style={styles.detailLoaderBox}>
+                  <ActivityIndicator size="large" color={theme.colors.primary} />
+                  <Text style={styles.detailLoaderText}>Loading Institution Blueprint...</Text>
+                </View>
               ) : (
                 <>
+                  {/* 1. Executive Metrics Grid (Onboarding Palette) */}
+                  <View style={styles.blueprintMetricsRow}>
+                    <View style={[styles.blueprintMetricCard, { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }]}>
+                      <GraduationCap size={18} color="#2563EB" {...({} as any)} />
+                      <Text style={[styles.blueprintMetricVal, { color: '#1E40AF' }]}>
+                        {detailData.stakeholders.students}
+                      </Text>
+                      <Text style={styles.blueprintMetricSub}>Students</Text>
+                    </View>
+
+                    <View style={[styles.blueprintMetricCard, { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }]}>
+                      <Users size={18} color="#D97706" {...({} as any)} />
+                      <Text style={[styles.blueprintMetricVal, { color: '#92400E' }]}>
+                        {detailData.stakeholders.faculty + detailData.stakeholders.staff}
+                      </Text>
+                      <Text style={styles.blueprintMetricSub}>Staff & Faculty</Text>
+                    </View>
+
+                    <View style={[styles.blueprintMetricCard, { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' }]}>
+                      <School size={18} color="#16A34A" {...({} as any)} />
+                      <Text style={[styles.blueprintMetricVal, { color: '#166534' }]}>
+                        {detailData.classes.length}
+                      </Text>
+                      <Text style={styles.blueprintMetricSub}>Classes</Text>
+                    </View>
+
+                    <View style={[styles.blueprintMetricCard, { backgroundColor: '#FAF5FF', borderColor: '#E9D5FF' }]}>
+                      <Building size={18} color="#9333EA" {...({} as any)} />
+                      <Text style={[styles.blueprintMetricVal, { color: '#6B21A8' }]}>
+                        {detailData.departments.length}
+                      </Text>
+                      <Text style={styles.blueprintMetricSub}>Departments</Text>
+                    </View>
+
+                    <View style={[styles.blueprintMetricCard, { backgroundColor: '#FFF7ED', borderColor: '#FED7AA' }]}>
+                      <BookOpen size={18} color="#EA580C" {...({} as any)} />
+                      <Text style={[styles.blueprintMetricVal, { color: '#9A3412' }]}>
+                        {detailData.subjects.length}
+                      </Text>
+                      <Text style={styles.blueprintMetricSub}>Subjects</Text>
+                    </View>
+                  </View>
+
+                  {/* 2. Institutional Identity & Affiliation */}
+                  <View style={styles.detailSectionCard}>
+                    <View style={styles.cardHeaderRow}>
+                      <View style={[styles.iconWrap, { backgroundColor: '#FEF3C7' }]}>
+                        <Award size={16} color="#D97706" {...({} as any)} />
+                      </View>
+                      <Text style={styles.cardHeaderTitle}>Institutional Identity & Affiliation</Text>
+                    </View>
+                    <View style={styles.keyValGrid}>
+                      <View style={styles.keyValItem}>
+                        <Text style={styles.keyValLabel}>Category</Text>
+                        <Text style={styles.keyValText}>
+                          {String(selectedInst?.institution_category || selectedInst?.type || 'School').replace(/_/g, ' ')}
+                        </Text>
+                      </View>
+                      <View style={styles.keyValItem}>
+                        <Text style={styles.keyValLabel}>Affiliation / Board</Text>
+                        <Text style={styles.keyValText}>
+                          {selectedInst?.board_or_university || 'Not Specified'}
+                        </Text>
+                      </View>
+                      <View style={styles.keyValItem}>
+                        <Text style={styles.keyValLabel}>Ownership Type</Text>
+                        <Text style={styles.keyValText}>
+                          {selectedInst?.ownership_type || 'Private'}
+                        </Text>
+                      </View>
+                      <View style={styles.keyValItem}>
+                        <Text style={styles.keyValLabel}>Academic Year</Text>
+                        <Text style={styles.keyValText}>
+                          {selectedInst?.current_academic_year || selectedInst?.academic_year || '2026-2027'}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* 3. Campus Location & Geo-Coordinates */}
                   <LocationMapPreview
                     addressLine1={selectedInst?.address_line_1 || selectedInst?.address}
                     addressLine2={selectedInst?.address_line_2}
@@ -777,61 +1038,189 @@ export default function InstitutionsList() {
                     institutionName={selectedInst?.name}
                   />
 
-                  {/* Academic Structure Metrics */}
-                  <View style={styles.detailSection}>
-                    <View style={styles.sectionHeader}>
-                      <School size={18} color={theme.colors.primary} {...({} as any)} />
-                      <Text style={styles.sectionTitle}>Academic Structure & Standards</Text>
+                  {/* 4. Campus Directory & Emergency Communication */}
+                  <View style={styles.detailSectionCard}>
+                    <View style={styles.cardHeaderRow}>
+                      <View style={[styles.iconWrap, { backgroundColor: '#EFF6FF' }]}>
+                        <Phone size={16} color="#2563EB" {...({} as any)} />
+                      </View>
+                      <Text style={styles.cardHeaderTitle}>Campus Contacts & Directory</Text>
                     </View>
-                    <View style={styles.gridContainer}>
-                      <View style={styles.gridItem}>
-                        <Text style={styles.gridLabel}>Classes / Years</Text>
-                        <Text style={styles.gridValue}>{detailData.classes.length}</Text>
+                    <View style={styles.contactsGrid}>
+                      <View style={styles.contactItem}>
+                        <Mail size={14} color={theme.colors.textMuted} {...({} as any)} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.contactLabel}>Official Email</Text>
+                          <Text style={styles.contactVal}>{selectedInst?.email || selectedInst?.admin_email || 'Not specified'}</Text>
+                        </View>
                       </View>
-                      <View style={styles.gridItem}>
-                        <Text style={styles.gridLabel}>Subjects Mapped</Text>
-                        <Text style={styles.gridValue}>{detailData.subjects.length}</Text>
+                      <View style={styles.contactItem}>
+                        <Phone size={14} color={theme.colors.textMuted} {...({} as any)} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.contactLabel}>Main Office Phone</Text>
+                          <Text style={styles.contactVal}>{selectedInst?.office_phone || selectedInst?.phone || 'Not specified'}</Text>
+                        </View>
                       </View>
-                      <View style={styles.gridItem}>
-                        <Text style={styles.gridLabel}>Departments</Text>
-                        <Text style={styles.gridValue}>{detailData.departments.length}</Text>
+                      {selectedInst?.guard_phone && (
+                        <View style={styles.contactItem}>
+                          <ShieldCheck size={14} color={theme.colors.textMuted} {...({} as any)} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.contactLabel}>Security / Guard Gate</Text>
+                            <Text style={styles.contactVal}>{selectedInst.guard_phone}</Text>
+                          </View>
+                        </View>
+                      )}
+                      {selectedInst?.transport_phone && (
+                        <View style={styles.contactItem}>
+                          <Phone size={14} color={theme.colors.textMuted} {...({} as any)} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.contactLabel}>Transport Desk</Text>
+                            <Text style={styles.contactVal}>{selectedInst.transport_phone}</Text>
+                          </View>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+
+                  {/* 5. Academic Departments & Subjects Breakdown */}
+                  <View style={styles.detailSectionCard}>
+                    <View style={styles.cardHeaderRow}>
+                      <View style={[styles.iconWrap, { backgroundColor: '#FAF5FF' }]}>
+                        <Building size={16} color="#9333EA" {...({} as any)} />
                       </View>
+                      <Text style={styles.cardHeaderTitle}>
+                        Academic Departments ({detailData.departments.length})
+                      </Text>
+                    </View>
+                    
+                    {detailData.departments.length === 0 ? (
+                      <Text style={styles.emptyCardSubText}>No departments configured.</Text>
+                    ) : (
+                      <View style={styles.departmentsGridList}>
+                        {detailData.departments.map((dept: any, idx: number) => {
+                          const deptName = typeof dept === 'string' ? dept : dept.name;
+                          const matchingSubs = detailData.subjects.filter((s: any) => 
+                            (s.department || '').toLowerCase() === deptName.toLowerCase() ||
+                            s.name?.toLowerCase().includes(deptName.toLowerCase())
+                          );
+                          return (
+                            <View key={idx} style={styles.deptCardItem}>
+                              <View style={styles.deptCardItemTop}>
+                                <Text style={styles.deptCardName}>{deptName}</Text>
+                                {dept.code ? (
+                                  <View style={styles.deptCodeBadge}>
+                                    <Text style={styles.deptCodeBadgeText}>{dept.code}</Text>
+                                  </View>
+                                ) : null}
+                              </View>
+                              <Text style={styles.deptCardSubText}>
+                                {matchingSubs.length} mapped subject{matchingSubs.length !== 1 ? 's' : ''}
+                              </Text>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    )}
+                  </View>
+
+                  {/* 6. Classes & Sections Standards */}
+                  <View style={styles.detailSectionCard}>
+                    <View style={styles.cardHeaderRow}>
+                      <View style={[styles.iconWrap, { backgroundColor: '#F0FDF4' }]}>
+                        <School size={16} color="#16A34A" {...({} as any)} />
+                      </View>
+                      <Text style={styles.cardHeaderTitle}>
+                        Classes & Standards ({detailData.classes.length})
+                      </Text>
                     </View>
 
-                    <View style={styles.tagList}>
-                      {detailData.classes.slice(0, 10).map((c, i) => (
-                        <View key={i} style={styles.tag}>
-                          <Text style={styles.tagText}>{c.name}</Text>
+                    <View style={styles.classesGridList}>
+                      {detailData.classes.map((c: any, i: number) => {
+                        const sections = Array.isArray(c.sections) ? c.sections : [c.sections].filter(Boolean);
+                        return (
+                          <View key={i} style={styles.classDetailPill}>
+                            <Text style={styles.classNameText}>{c.name}</Text>
+                            <View style={styles.sectionsBadgeRow}>
+                              {sections.length > 0 ? (
+                                sections.map((sec: string, sIdx: number) => (
+                                  <View key={sIdx} style={styles.miniSecChip}>
+                                    <Text style={styles.miniSecChipText}>{sec}</Text>
+                                  </View>
+                                ))
+                              ) : (
+                                <View style={styles.miniSecChip}>
+                                  <Text style={styles.miniSecChipText}>Sec A</Text>
+                                </View>
+                              )}
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </View>
+
+                  {/* 7. Curriculum Subjects Catalog */}
+                  <View style={styles.detailSectionCard}>
+                    <View style={styles.cardHeaderRow}>
+                      <View style={[styles.iconWrap, { backgroundColor: '#FFF7ED' }]}>
+                        <BookOpen size={16} color="#EA580C" {...({} as any)} />
+                      </View>
+                      <Text style={styles.cardHeaderTitle}>
+                        Curriculum Subjects Catalog ({detailData.subjects.length})
+                      </Text>
+                    </View>
+                    
+                    <View style={styles.subjectsWrap}>
+                      {detailData.subjects.slice(0, 24).map((sub: any, sIdx: number) => (
+                        <View key={sIdx} style={styles.subjectPillTag}>
+                          <Text style={styles.subjectPillName}>{sub.name}</Text>
+                          {sub.code ? (
+                            <Text style={styles.subjectPillCode}>[{sub.code}]</Text>
+                          ) : null}
                         </View>
                       ))}
-                      {detailData.classes.length > 10 && (
-                        <Text style={styles.moreText}>
-                          +{detailData.classes.length - 10} more
+                      {detailData.subjects.length > 24 && (
+                        <Text style={styles.moreSubjectsNotice}>
+                          +{detailData.subjects.length - 24} more subjects configured
                         </Text>
                       )}
                     </View>
                   </View>
 
-                  {/* Timetable Configuration Overview */}
+                  {/* 8. Timetable Bell Schedule Overview */}
                   {detailData.timetable && (
-                    <View style={styles.detailSection}>
-                      <View style={styles.sectionHeader}>
-                        <Clock size={18} color="#7C3AED" {...({} as any)} />
-                        <Text style={styles.sectionTitle}>Timetable Bell Schedule</Text>
+                    <View style={styles.detailSectionCard}>
+                      <View style={styles.cardHeaderRow}>
+                        <View style={[styles.iconWrap, { backgroundColor: '#FAF5FF' }]}>
+                          <Clock size={16} color="#7C3AED" {...({} as any)} />
+                        </View>
+                        <Text style={styles.cardHeaderTitle}>Timetable Bell Schedule</Text>
                       </View>
-                      <Text style={styles.ttSummaryText}>
-                        • {detailData.timetable.periods_per_day || 8} Periods / Day ({detailData.timetable.period_duration_minutes || 45} mins)
-                      </Text>
-                      <Text style={styles.ttSummaryText}>
-                        • Starts at {String(detailData.timetable.start_time || '08:30:00').slice(0, 5)}
-                      </Text>
-                      <Text style={styles.ttSummaryText}>
-                        • Working Days: {Array.isArray(detailData.timetable.days_of_week) ? detailData.timetable.days_of_week.join(', ') : 'Mon - Sat'}
-                      </Text>
+                      <View style={styles.ttSpecsList}>
+                        <View style={styles.ttSpecRow}>
+                          <Text style={styles.ttSpecLabel}>Periods Per Day</Text>
+                          <Text style={styles.ttSpecVal}>
+                            {detailData.timetable.periods_per_day || 8} Periods ({detailData.timetable.period_duration_minutes || 45} mins each)
+                          </Text>
+                        </View>
+                        <View style={styles.ttSpecRow}>
+                          <Text style={styles.ttSpecLabel}>Session Timing</Text>
+                          <Text style={styles.ttSpecVal}>
+                            Starts at {String(detailData.timetable.start_time || '08:30:00').slice(0, 5)}
+                          </Text>
+                        </View>
+                        <View style={styles.ttSpecRow}>
+                          <Text style={styles.ttSpecLabel}>Instructional Days</Text>
+                          <Text style={styles.ttSpecVal}>
+                            {Array.isArray(detailData.timetable.days_of_week) ? detailData.timetable.days_of_week.join(', ') : 'Mon, Tue, Wed, Thu, Fri, Sat'}
+                          </Text>
+                        </View>
+                      </View>
                     </View>
                   )}
                 </>
               )}
+              <View style={{ height: 20 }} />
             </ScrollView>
 
             <View style={styles.modalFooter}>
@@ -1210,110 +1599,391 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 16,
   },
   modalContent: {
     width: '100%',
-    maxWidth: 540,
+    maxWidth: 680,
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 24,
     overflow: 'hidden',
-    maxHeight: '85%',
+    maxHeight: '90%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 24,
+    elevation: 8,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
+    alignItems: 'flex-start',
+    padding: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
+    backgroundColor: '#FAFAFA',
   },
   modalTitle: {
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 20,
+    fontWeight: '800',
     color: '#0F172A',
   },
-  modalSubtitle: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 2,
-  },
-  modalBody: {
-    padding: 16,
-  },
-  detailSection: {
-    marginTop: 16,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 10,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  sectionHeader: {
+  statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
   },
-  sectionTitle: {
+  statusPillActive: {
+    backgroundColor: '#DCFCE7',
+  },
+  statusPillInactive: {
+    backgroundColor: '#F1F5F9',
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  statusDotActive: {
+    backgroundColor: '#16A34A',
+  },
+  statusDotInactive: {
+    backgroundColor: '#94A3B8',
+  },
+  statusPillText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  statusPillTextActive: {
+    color: '#15803D',
+  },
+  statusPillTextInactive: {
+    color: '#64748B',
+  },
+  headerBadgesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+    marginTop: 8,
+  },
+  headerIdBadge: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  headerIdBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#92400E',
+  },
+  headerCatBadge: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  headerCatBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1E40AF',
+  },
+  headerOwnerBadge: {
+    backgroundColor: '#FAF5FF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  headerOwnerBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#6B21A8',
+  },
+  headerBoardBadge: {
+    backgroundColor: '#F0FDF4',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  headerBoardBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#166534',
+  },
+  closeModalBtn: {
+    padding: 6,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+  },
+  modalBody: {
+    padding: 20,
+    backgroundColor: '#F8F9F3',
+  },
+  detailLoaderBox: {
+    paddingVertical: 60,
+    alignItems: 'center',
+    gap: 12,
+  },
+  detailLoaderText: {
     fontSize: 13,
+    color: theme.colors.textMuted,
+    fontWeight: '600',
+  },
+  blueprintMetricsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
+    marginBottom: 16,
+  },
+  blueprintMetricCard: {
+    flex: 1,
+    minWidth: 100,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    padding: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  blueprintMetricVal: {
+    fontSize: 18,
+    fontWeight: '800',
+    marginTop: 4,
+  },
+  blueprintMetricSub: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  detailSectionCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 14,
+  },
+  iconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cardHeaderTitle: {
+    fontSize: 15,
     fontWeight: '700',
     color: '#1E293B',
   },
-  gridContainer: {
+  keyValGrid: {
     flexDirection: 'row',
-    gap: 8,
-    marginBottom: 10,
+    flexWrap: 'wrap',
+    gap: 10,
   },
-  gridItem: {
+  keyValItem: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    padding: 8,
-    alignItems: 'center',
+    minWidth: '45%',
+    backgroundColor: '#F8FAFC',
+    padding: 10,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#F1F5F9',
   },
-  gridLabel: {
-    fontSize: 10,
+  keyValLabel: {
+    fontSize: 11,
     color: '#64748B',
+    fontWeight: '500',
   },
-  gridValue: {
-    fontSize: 15,
+  keyValText: {
+    fontSize: 13,
+    color: '#0F172A',
     fontWeight: '700',
-    color: theme.colors.primary,
     marginTop: 2,
   },
-  tagList: {
+  contactsGrid: {
+    gap: 10,
+  },
+  contactItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#F8FAFC',
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+  },
+  contactLabel: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  contactVal: {
+    fontSize: 13,
+    color: '#0F172A',
+    fontWeight: '600',
+  },
+  emptyCardSubText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontStyle: 'italic',
+  },
+  departmentsGridList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  deptCardItem: {
+    backgroundColor: '#FAF5FF',
+    borderWidth: 1,
+    borderColor: '#E9D5FF',
+    borderRadius: 12,
+    padding: 10,
+    minWidth: '47%',
+    flex: 1,
+  },
+  deptCardItemTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+  },
+  deptCardName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#6B21A8',
+  },
+  deptCodeBadge: {
+    backgroundColor: '#E9D5FF',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  deptCodeBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#6B21A8',
+  },
+  deptCardSubText: {
+    fontSize: 11,
+    color: '#9333EA',
+    marginTop: 4,
+  },
+  classesGridList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  classDetailPill: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: 12,
+    padding: 10,
+    minWidth: '47%',
+    flex: 1,
+  },
+  classNameText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#166534',
+  },
+  sectionsBadgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginTop: 4,
+  },
+  miniSecChip: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  miniSecChipText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  subjectsWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
   },
-  tag: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
+  subjectPillTag: {
+    backgroundColor: '#FFF7ED',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#FED7AA',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
-  tagText: {
+  subjectPillName: {
     fontSize: 11,
-    color: '#334155',
+    fontWeight: '600',
+    color: '#9A3412',
+  },
+  subjectPillCode: {
+    fontSize: 10,
+    color: '#C2410C',
+  },
+  moreSubjectsNotice: {
+    fontSize: 11,
+    color: '#9A3412',
+    fontStyle: 'italic',
+    alignSelf: 'center',
+    marginTop: 4,
+  },
+  ttSpecsList: {
+    gap: 8,
+  },
+  ttSpecRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+  },
+  ttSpecLabel: {
+    fontSize: 12,
+    color: '#64748B',
     fontWeight: '500',
   },
-  moreText: {
-    fontSize: 11,
-    color: '#64748B',
-    alignSelf: 'center',
-  },
-  ttSummaryText: {
+  ttSpecVal: {
     fontSize: 12,
-    color: '#475569',
-    marginTop: 3,
+    color: '#1E293B',
+    fontWeight: '700',
   },
   modalFooter: {
     flexDirection: 'row',

@@ -16,6 +16,7 @@ import { Button } from '../../../../src/components/common/Button';
 import { useAdmissions, AdmissionRecord } from '../../../../src/hooks/useAdmissions';
 import { useAuth } from '../../../../src/hooks/useAuth';
 import { supabase } from '../../../../src/lib/supabase';
+import { sortClasses } from '../../../../src/utils/classUtils';
 import {
   User,
   Phone,
@@ -119,7 +120,7 @@ export default function AddAdmissionScreen() {
           const uniqueClasses = Array.from(
             new Set(data.map((c: any) => c.class_name || c.name).filter(Boolean))
           );
-          setClassesList(uniqueClasses.map((c) => ({ label: c as string, value: c as string })));
+          setClassesList(sortClasses(uniqueClasses).map((c) => ({ label: c as string, value: c as string })));
         }
       } catch (e) {
         console.warn('Failed to load classes for dropdown', e);

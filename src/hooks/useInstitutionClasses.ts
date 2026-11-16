@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import { sortClasses } from '../utils/classUtils';
 
 export function useInstitutionClasses(institutionId: string | null) {
     return useQuery({
@@ -21,11 +22,11 @@ export function useInstitutionClasses(institutionId: string | null) {
             // 2. Get classes for these groups
             const { data, error } = await supabase
                 .from('classes')
-                .select('id, name')
+                .select('id, name, stage, class_order, sections')
                 .in('group_id', groupIds);
             
             if (error) throw error;
-            return data || [];
+            return sortClasses(data || []);
         },
         enabled: !!institutionId
     });

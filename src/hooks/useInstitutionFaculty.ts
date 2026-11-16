@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { useEffect, useCallback } from 'react';
+import { sortClasses } from '../utils/classUtils';
 
 export function useInstitutionFaculty(institutionId: string | null) {
   const queryClient = useQueryClient();
@@ -12,7 +13,7 @@ export function useInstitutionFaculty(institutionId: string | null) {
       if (!institutionId) return [];
       const { data: groupsData, error } = await supabase
         .from('groups')
-        .select('id, classes(id, name, sections, class_teacher_id)')
+        .select('id, classes(id, name, sections, class_teacher_id, stage, class_order)')
         .eq('institution_id', institutionId);
 
       if (error) throw error;
@@ -28,6 +29,8 @@ export function useInstitutionFaculty(institutionId: string | null) {
                   id: c.id,
                   name: c.name,
                   section: sec,
+                  stage: c.stage,
+                  class_order: c.class_order,
                   classTeacherId: c.class_teacher_id
                 });
               }
@@ -35,7 +38,7 @@ export function useInstitutionFaculty(institutionId: string | null) {
           });
         }
       });
-      return fetchedClasses;
+      return sortClasses(fetchedClasses);
     },
     enabled: !!institutionId,
   });
@@ -47,7 +50,7 @@ export function useInstitutionFaculty(institutionId: string | null) {
       if (!institutionId) return [];
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, full_name, role')
+        .select('id, full_name, role, department, email, phone, avatar_url, image_url')
         .eq('institution_id', institutionId);
       if (error) throw error;
       const targetRoles = ['faculty', 'teacher', 'admin', 'staff', 'accountant'];
@@ -90,19 +93,26 @@ export function useInstitutionFaculty(institutionId: string | null) {
   const assignStaff = async (classId: string, section: string, subjectId: string, staffIds: string[]) => {
     if (!institutionId) return;
     try {
-      // Delete existing
-      await supabase
-        .from('faculty_subjects')
-        .delete()
-        .match({
-          institution_id: institutionId,
-          class_id: classId,
-          section: section,
-          subject_id: subjectId,
-          assignment_type: 'subject_staff'
-        });
+      // Find subject name to clean up any duplicate assignments for the same subject name in this class/section
+      const targetSubject = (subjects as any[]).find((s: any) => s.id === subjectId);
+      const targetSubjectName = targetSubject?.name?.trim().toLowerCase();
+      
+      const subjectIdsToDelete = targetSubjectName
+        ? (subjects as any[]).filter((s: any) => s.name?.trim().toLowerCase() === targetSubjectName).map((s: any) => s.id)
+        : [subjectId];
 
-      // Insert new
+      if (subjectIdsToDelete.length > 0) {
+        await (supabase as any)
+          .from('faculty_subjects')
+          .delete()
+          .eq('institution_id', institutionId)
+          .eq('class_id', classId)
+          .eq('section', section)
+          .eq('assignment_type', 'subject_staff')
+          .in('subject_id', subjectIdsToDelete);
+      }
+
+      // Insert new assignments
       if (staffIds.length > 0) {
         const toInsert = staffIds.map(fid => ({
           institution_id: institutionId,
@@ -112,11 +122,18 @@ export function useInstitutionFaculty(institutionId: string | null) {
           faculty_profile_id: fid,
           assignment_type: 'subject_staff'
         }));
-        await (supabase as any).from('faculty_subjects').insert(toInsert);
+        const { error: insertError } = await (supabase as any).from('faculty_subjects').insert(toInsert);
+        if (insertError) throw insertError;
       }
-      queryClient.invalidateQueries({ queryKey: ['institution-assignments-assign'] });
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['institution-assignments-assign'] }),
+        queryClient.invalidateQueries({ queryKey: ['institution-classes-assign'] }),
+        queryClient.invalidateQueries({ queryKey: ['faculty-assignments'] }),
+        queryClient.invalidateQueries({ queryKey: ['faculty-dashboard'] })
+      ]);
     } catch (e) {
-      console.error(e);
+      console.error('Error in assignStaff:', e);
       throw e;
     }
   };
@@ -167,7 +184,7 @@ export function useInstitutionFaculty(institutionId: string | null) {
 
       // 3. Perform new assignment
       if (teacherId) {
-        await (supabase as any).from('faculty_subjects').insert({
+        const { error: insertError } = await (supabase as any).from('faculty_subjects').insert({
           institution_id: institutionId,
           class_id: classId,
           section: section,
@@ -175,6 +192,7 @@ export function useInstitutionFaculty(institutionId: string | null) {
           assignment_type: 'class_teacher',
           subject_id: null
         });
+        if (insertError) throw insertError;
       }
       
       // 4. Sync classes table for the target class
@@ -183,10 +201,14 @@ export function useInstitutionFaculty(institutionId: string | null) {
         .update({ class_teacher_id: teacherId || null })
         .eq('id', classId);
 
-      queryClient.invalidateQueries({ queryKey: ['institution-assignments-assign'] });
-      queryClient.invalidateQueries({ queryKey: ['institution-classes-assign'] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['institution-assignments-assign'] }),
+        queryClient.invalidateQueries({ queryKey: ['institution-classes-assign'] }),
+        queryClient.invalidateQueries({ queryKey: ['faculty-assignments'] }),
+        queryClient.invalidateQueries({ queryKey: ['faculty-dashboard'] })
+      ]);
     } catch (e) {
-      console.error(e);
+      console.error('Error in assignClassTeacher:', e);
       throw e;
     }
   };

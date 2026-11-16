@@ -14,15 +14,39 @@ import {
   TrendingUp,
   AlertCircle
 } from 'lucide-react-native';
-import { PieChart, LineChart } from 'react-native-chart-kit';
+import { PieChart } from 'react-native-chart-kit';
 
 const screenWidth = Dimensions.get('window').width;
+
+// Helper to expand from_date to to_date (inclusive) safely without UTC shift
+const getDatesInRange = (startDateStr: string, endDateStr: string): string[] => {
+  try {
+    if (!startDateStr) return [];
+    if (!endDateStr) endDateStr = startDateStr;
+    const [sy, sm, sd] = startDateStr.split('-').map(Number);
+    const [ey, em, ed] = endDateStr.split('-').map(Number);
+    
+    const dates: string[] = [];
+    let current = new Date(sy, sm - 1, sd);
+    const end = new Date(ey, em - 1, ed);
+    
+    let count = 0;
+    while (current <= end && count < 60) {
+      dates.push(format(current, 'yyyy-MM-dd'));
+      current.setDate(current.getDate() + 1);
+      count++;
+    }
+    return dates;
+  } catch (_) {
+    return [startDateStr];
+  }
+};
 
 export default function MyAttendanceScreen() {
   const { user, institutionId } = useAuth();
 
-  // Fetch attendance records for the current user
-  const { data: records = [], isLoading } = useQuery({
+  // 1. Fetch attendance records for the current user
+  const { data: rawAttendance = [], isLoading: isLoadingAttendance, refetch: refetchAttendance } = useQuery({
     queryKey: ['my-staff-attendance', user?.id],
     queryFn: async () => {
       if (!user?.id) return [];
@@ -38,17 +62,111 @@ export default function MyAttendanceScreen() {
     enabled: !!user?.id,
   });
 
+  // 2. Fetch faculty's own leave requests (pending and approved)
+  const { data: leaveRequests = [], isLoading: isLoadingLeaves, refetch: refetchLeaves } = useQuery({
+    queryKey: ['my-leave-requests-attendance', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return [];
+      const { data, error } = await supabase
+        .from('leave_requests')
+        .select('*')
+        .eq('staff_id', user.id)
+        .neq('status', 'rejected')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching leave requests for attendance:', error);
+        return [];
+      }
+      return data || [];
+    },
+    enabled: !!user?.id,
+  });
+
+  // 3. Realtime subscription to live attendance and leave updates
+  React.useEffect(() => {
+    if (!user?.id) return;
+    const channel = supabase
+      .channel(`faculty-my-attendance-live-${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'staff_attendance', filter: `staff_id=eq.${user.id}` }, () => {
+        refetchAttendance();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leave_requests', filter: `staff_id=eq.${user.id}` }, () => {
+        refetchLeaves();
+      })
+      .subscribe();
+
+    return () => {
+      channel.unsubscribe();
+    };
+  }, [user?.id]);
+
+  // 4. Merge attendance logs and leave requests (requested leave days count as absent)
+  const records = React.useMemo(() => {
+    const attendanceMap = new Map<string, any>();
+
+    // Add confirmed attendance entries
+    rawAttendance.forEach((rec: any) => {
+      attendanceMap.set(rec.attendance_date, {
+        ...rec,
+        is_leave: false,
+      });
+    });
+
+    // Overlay leave requested days (mark as absent)
+    leaveRequests.forEach((leave: any) => {
+      const dates = getDatesInRange(leave.from_date, leave.to_date);
+      dates.forEach((dateStr) => {
+        const existing = attendanceMap.get(dateStr);
+        if (existing) {
+          // If already in attendance, update status to absent reflecting leave request
+          attendanceMap.set(dateStr, {
+            ...existing,
+            status: 'absent',
+            is_leave: true,
+            leave_id: leave.id,
+            leave_status: leave.status,
+            leave_reason: leave.reason || 'Leave requested',
+            leave_type: leave.leave_type || 'Casual/Medical',
+          });
+        } else {
+          // Virtual record for requested leave day
+          attendanceMap.set(dateStr, {
+            id: `leave-${leave.id}-${dateStr}`,
+            staff_id: user?.id,
+            attendance_date: dateStr,
+            status: 'absent',
+            is_leave: true,
+            leave_id: leave.id,
+            leave_status: leave.status,
+            leave_reason: leave.reason || 'Leave requested',
+            leave_type: leave.leave_type || 'Casual/Medical',
+            created_at: leave.created_at,
+          });
+        }
+      });
+    });
+
+    // Return records sorted by attendance_date descending
+    return Array.from(attendanceMap.values()).sort(
+      (a, b) => new Date(b.attendance_date).getTime() - new Date(a.attendance_date).getTime()
+    );
+  }, [rawAttendance, leaveRequests, user?.id]);
+
   const stats = React.useMemo(() => {
     if (records.length === 0) return { present: 0, absent: 0, late: 0, total: 0, rate: 0 };
     const present = records.filter((r: any) => r.status === 'present').length;
     const absent = records.filter((r: any) => r.status === 'absent').length;
     const late = records.filter((r: any) => r.status === 'late').length;
     const total = records.length;
-    const rate = Math.round(((present + late) / total) * 100);
+    const rate = total > 0 ? Math.round(((present + late) / total) * 100) : 0;
     return { present, absent, late, total, rate };
   }, [records]);
 
-  const getStatusStyle = (status: string) => {
+  const getStatusStyle = (status: string, isLeave?: boolean) => {
+    if (isLeave) {
+      return { color: '#EF4444', bg: '#FEE2E2', icon: XCircle };
+    }
     switch (status) {
       case 'present': return { color: '#10B981', bg: '#DCFCE7', icon: CheckCircle2 };
       case 'absent': return { color: '#EF4444', bg: '#FEE2E2', icon: XCircle };
@@ -57,6 +175,8 @@ export default function MyAttendanceScreen() {
       default: return { color: '#64748B', bg: '#F1F5F9', icon: AlertCircle };
     }
   };
+
+  const isLoading = isLoadingAttendance || isLoadingLeaves;
 
   if (isLoading) {
     return (
@@ -103,9 +223,10 @@ export default function MyAttendanceScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Recent History</Text>
           {records.length > 0 ? (
-            records.slice(0, 10).map((record: any) => {
-              const style = getStatusStyle(record.status);
+            records.slice(0, 15).map((record: any) => {
+              const style = getStatusStyle(record.status, record.is_leave);
               const Icon = style.icon;
+              const isLeaveApproved = record.leave_status === 'approved';
               return (
                 <View key={record.id} style={styles.historyItem}>
                   <View style={[styles.iconBox, { backgroundColor: style.bg }]}>
@@ -113,10 +234,25 @@ export default function MyAttendanceScreen() {
                   </View>
                   <View style={styles.itemDetails}>
                     <Text style={styles.itemDate}>{format(new Date(record.attendance_date), 'EEEE, MMM d, yyyy')}</Text>
-                    <Text style={styles.itemStatus}>{record.status.toUpperCase()}</Text>
+                    <Text style={styles.itemStatus}>
+                      {record.is_leave ? 'ABSENT (ON LEAVE)' : record.status.toUpperCase()}
+                    </Text>
+                    {record.is_leave && record.leave_reason ? (
+                      <Text style={styles.itemReason} numberOfLines={1}>
+                        Reason: {record.leave_reason}
+                      </Text>
+                    ) : null}
                   </View>
-                  <View style={[styles.statusTag, { backgroundColor: style.bg }]}>
-                    <Text style={[styles.statusTagText, { color: style.color }]}>Confirmed</Text>
+                  <View style={[
+                    styles.statusTag, 
+                    { backgroundColor: record.is_leave ? (isLeaveApproved ? '#DCFCE7' : '#FEF3C7') : style.bg }
+                  ]}>
+                    <Text style={[
+                      styles.statusTagText, 
+                      { color: record.is_leave ? (isLeaveApproved ? '#16A34A' : '#D97706') : style.color }
+                    ]}>
+                      {record.is_leave ? (isLeaveApproved ? 'Leave Approved' : 'Leave Requested') : 'Confirmed'}
+                    </Text>
                   </View>
                 </View>
               );
@@ -176,6 +312,7 @@ const styles = StyleSheet.create({
   itemDetails: { flex: 1 },
   itemDate: { fontSize: 15, fontWeight: 'bold', color: theme.colors.text },
   itemStatus: { fontSize: 11, color: theme.colors.textMuted, fontWeight: '700', marginTop: 2 },
+  itemReason: { fontSize: 11, color: '#64748B', marginTop: 2 },
   statusTag: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   statusTagText: { fontSize: 10, fontWeight: 'bold' },
   chartSection: { backgroundColor: 'white', borderRadius: 24, padding: 20, borderWidth: 1, borderColor: '#F1F5F9' },

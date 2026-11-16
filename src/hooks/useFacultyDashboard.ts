@@ -42,7 +42,7 @@ export interface FacultyProfile {
     department: string | null;
 }
 
-const resolveInstitutionIds = async (rawId?: string) => {
+export const resolveInstitutionIds = async (rawId?: string) => {
     if (!rawId) return [];
     const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
     const validInstIds = new Set<string>([rawId, rawId.toUpperCase(), rawId.toLowerCase()]);
@@ -98,9 +98,38 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
                 return { subjects: [], studentCount: 0 };
             }
 
+            // Normalize joins if PostgREST returns an array for 1-to-1 relations
+            let rawList = (subjectsData as any[] || []).map((s: any) => ({
+                ...s,
+                subjects: Array.isArray(s.subjects) ? s.subjects[0] : s.subjects,
+                classes: Array.isArray(s.classes) ? s.classes[0] : s.classes,
+            }));
+
+            // If foreign keys didn't join names, fetch them manually
+            const missingSubjectIds = rawList.filter(s => !s.subjects && s.subject_id).map(s => s.subject_id);
+            const missingClassIds = rawList.filter(s => !s.classes && s.class_id).map(s => s.class_id);
+
+            if (missingSubjectIds.length > 0) {
+                const { data: subData } = await supabase
+                    .from('subjects')
+                    .select('id, name')
+                    .in('id', missingSubjectIds);
+                const subMap = new Map((subData || []).map((sub: any) => [sub.id, sub.name]));
+                rawList = rawList.map(s => (!s.subjects && subMap.has(s.subject_id)) ? { ...s, subjects: { name: subMap.get(s.subject_id) } } : s);
+            }
+
+            if (missingClassIds.length > 0) {
+                const { data: clsData } = await supabase
+                    .from('classes')
+                    .select('id, name')
+                    .in('id', missingClassIds);
+                const clsMap = new Map((clsData || []).map((cls: any) => [cls.id, cls.name]));
+                rawList = rawList.map(s => (!s.classes && clsMap.has(s.class_id)) ? { ...s, classes: { name: clsMap.get(s.class_id) } } : s);
+            }
+
             const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
-            const subjects = (subjectsData as any[] || [])
+            const subjects = rawList
                 .filter(s => !!s.subjects && !!s.subject_id && isUUID(s.subject_id) && !!s.class_id && isUUID(s.class_id)) as unknown as FacultySubject[];
             
             let studentCount = 0;

@@ -19,6 +19,24 @@ export function useInstitutionTimetable(institutionId: string | null, facultyId?
     enabled: !!facultyId,
   });
 
+  // 1b. Fetch Timetable Config / Bell Schedule Template for this Institution
+  const { data: timetableConfig, isLoading: isConfigLoading } = useQuery({
+    queryKey: ['institution-timetable-config', institutionId],
+    queryFn: async () => {
+      if (!institutionId) return null;
+      const { data, error } = await (supabase.from('timetable_configs') as any)
+        .select('*')
+        .eq('institution_id', institutionId)
+        .maybeSingle();
+      if (error) {
+        console.warn('Error fetching timetable config:', error);
+        return null;
+      }
+      return data;
+    },
+    enabled: !!institutionId,
+  });
+
   // 2. Fetch Special Slots
   const { data: specialSlots = [], isLoading: isSpecialLoading } = useQuery({
     queryKey: ['special-timetable-slots', facultyId],
@@ -77,6 +95,59 @@ export function useInstitutionTimetable(institutionId: string | null, facultyId?
     }
   };
 
+  // 3b. Batch Save/Replace Full Day Schedule for Faculty
+  const saveDaySchedule = async (dayOfWeek: string, slotsToSave: any[]) => {
+    try {
+      if (!institutionId || !facultyId) return { success: false, error: 'Missing institutionId or facultyId' };
+
+      // Delete existing records for this day and faculty to cleanly replace
+      const { error: delError } = await (supabase.from('timetable') as any)
+        .delete()
+        .match({
+          institution_id: institutionId,
+          faculty_id: facultyId,
+          day_of_week: dayOfWeek,
+        });
+
+      if (delError) {
+        console.warn('Error clearing existing day slots:', delError);
+      }
+
+      // Filter valid slots to insert: ignore breaks/lunch and unassigned slots (no subject or no class)
+      const validSlots = (slotsToSave || []).filter((s: any) => 
+        !s.is_break && 
+        s.subject_id && 
+        s.subject_id !== 'none' && 
+        s.subject_id !== 'break' && 
+        s.subject_id !== 'lunch' &&
+        s.class_id
+      );
+
+      if (validSlots.length > 0) {
+        const rows = validSlots.map((s: any) => ({
+          institution_id: institutionId,
+          class_id: s.class_id,
+          subject_id: s.subject_id,
+          faculty_id: facultyId,
+          day_of_week: dayOfWeek,
+          start_time: s.start_time?.length === 5 ? `${s.start_time}:00` : (s.start_time || '09:00:00'),
+          end_time: s.end_time?.length === 5 ? `${s.end_time}:00` : (s.end_time || '09:45:00'),
+          room_number: s.room_number || null,
+        }));
+
+        const { error: insError } = await (supabase.from('timetable') as any).insert(rows);
+        if (insError) throw insError;
+      }
+
+      queryClient.invalidateQueries({ queryKey: ['timetable-slots', facultyId] });
+      queryClient.invalidateQueries({ queryKey: ['student-timetable-slots'] });
+      return { success: true };
+    } catch (e) {
+      console.error('Save day schedule error:', e);
+      return { success: false, error: e };
+    }
+  };
+
   // 4. Save Special Slot
   const saveSpecialSlot = async (specialData: any) => {
     try {
@@ -102,8 +173,11 @@ export function useInstitutionTimetable(institutionId: string | null, facultyId?
   return {
     slots,
     specialSlots,
+    timetableConfig,
+    isConfigLoading,
     isLoading: isSlotsLoading || isSpecialLoading,
     saveSlot,
+    saveDaySchedule,
     saveSpecialSlot
   };
 }

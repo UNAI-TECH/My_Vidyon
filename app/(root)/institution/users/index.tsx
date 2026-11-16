@@ -30,6 +30,7 @@ import {
   rejectPasswordResetRequest,
   PasswordResetRequest,
 } from '../../../../src/services/passwordResetService';
+import { sortClasses, sortSections } from '../../../../src/utils/classUtils';
 
 type UserCategory = 'students' | 'staff' | 'admissions' | 'accountants' | 'reports' | 'parents' | 'stakeholders' | 'canteen' | 'drivers' | 'password_resets';
 
@@ -157,12 +158,17 @@ export default function UserManagementScreen() {
       // Fetch Classes & Sections
       const { data: groupsData } = await supabase
         .from('groups')
-        .select('id, classes(id, name, sections)')
+        .select('id, classes(id, name, sections, stage, class_order)')
         .eq('institution_id', institutionId);
       
       if (groupsData) {
-        const classes = groupsData.flatMap((g: any) => g.classes || []);
-        setAvailableClasses(classes);
+        const rawClasses = groupsData.flatMap((g: any) => 
+          (g.classes || []).map((c: any) => ({
+            ...c,
+            sections: sortSections(Array.isArray(c.sections) ? c.sections : (c.sections ? [c.sections] : []))
+          }))
+        );
+        setAvailableClasses(sortClasses(rawClasses));
       }
 
       // Fetch Unique Departments
