@@ -19,7 +19,10 @@
     "typecheck": "tsc --noEmit",
     "dev:electron": "node scripts/dev-exe.mjs",
     "dev:exe": "node scripts/dev-exe.mjs",
-    "build:exe": "node scripts/build-exe.mjs"
+    "build:exe": "node scripts/build-exe.mjs",
+    "build:desktop": "expo export -p web && electron-builder build --win --publish never && powershell -Command \"Copy-Item -Path 'C:/Users/kamal/myvidyon-dist/*.exe' -Destination 'desktop-dist' -Force\"",
+    "build:desktop:dir": "expo export -p web && electron-builder build --win --dir --publish never",
+    "start:desktop": "electron electron/main.js"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
@@ -51,6 +54,7 @@
     "expo-status-bar": "~57.0.1",
     "expo-system-ui": "~57.0.4",
     "expo-updates": "~57.0.26",
+    "firebase": "^13.4.0",
     "lucide-react-native": "^0.577.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -69,11 +73,54 @@
     "xlsx": "^0.18.5"
   },
   "private": true,
+  "build": {
+    "appId": "com.myvidyon.app",
+    "productName": "My Vidyon",
+    "copyright": "Copyright © 2026 My Vidyon",
+    "extraMetadata": {
+      "main": "electron/main.js"
+    },
+    "files": [
+      "electron/**/*",
+      "dist/**/*",
+      "assets/icon.png",
+      "package.json"
+    ],
+    "directories": {
+      "output": "C:/Users/kamal/myvidyon-dist"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "My Vidyon"
+    }
+  },
   "devDependencies": {
     "@react-native/jest-preset": "^0.86.3",
     "@testing-library/react-native": "^14.1.0",
     "@types/jest": "29.5.14",
     "@types/react": "~19.2.4",
+    "electron": "^36.9.5",
+    "electron-builder": "^25.1.8",
     "jest": "~29.7.0",
     "jest-expo": "^57.0.6",
     "react-test-renderer": "^19.2.3",

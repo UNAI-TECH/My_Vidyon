@@ -80,6 +80,54 @@ export async function registerForPushNotificationsAsync(userId: string) {
   let token: string | undefined;
 
   if (Platform.OS === 'web') {
+    // 1. Immediately trigger the desktop notification on login to confirm alerts are active
+    try {
+      if (typeof window !== 'undefined' && (window as any).electronAPI?.showToast) {
+        (window as any).electronAPI.showToast('My Vidyon Desktop', 'Desktop notifications are connected and active.');
+      } else if (typeof Notification !== 'undefined') {
+        if (Notification.permission === 'granted') {
+          new Notification('My Vidyon Desktop', {
+            body: 'Desktop notifications are connected and active.',
+            icon: '/favicon.ico',
+          });
+        } else if (Notification.permission !== 'denied') {
+          Notification.requestPermission().then((perm) => {
+            if (perm === 'granted') {
+              new Notification('My Vidyon Desktop', {
+                body: 'Desktop notifications are connected and active.',
+                icon: '/favicon.ico',
+              });
+            }
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('[DesktopNotification] Error displaying toast:', err);
+    }
+
+    // 2. Try FCM Web Push (works in standard web browsers like Chrome/Edge)
+    // Note: In Electron containers, notifications are delivered via Supabase Realtime WebSocket instead.
+    try {
+      const { getWebPushToken } = await import('../lib/firebase-web');
+      const webToken = await getWebPushToken();
+      if (webToken && userId) {
+        const deviceId = `web_${(typeof navigator !== 'undefined' ? navigator.userAgent : 'desktop').slice(0, 24).replace(/\s/g, '_')}`;
+        await (supabase.from('user_push_tokens') as any)
+          .upsert(
+            {
+              user_id:      userId,
+              fcm_token:    webToken,
+              device_id:    deviceId,
+              platform:     'web',
+              last_used_at: new Date().toISOString(),
+            },
+            { onConflict: 'user_id,fcm_token' }
+          );
+        console.log('[WebPush] Web push token registered to Supabase');
+      }
+    } catch (e) {
+      console.log('[WebPush] FCM PushManager not available in desktop container; using Realtime WebSocket for notifications.');
+    }
     return null;
   }
 

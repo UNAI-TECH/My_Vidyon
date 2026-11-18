@@ -1,5 +1,5 @@
 import { Stack, useRouter } from 'expo-router';
-import { LogBox } from 'react-native';
+import { LogBox, Platform } from 'react-native';
 
 // Suppress the Expo Go push notification removal warning for Android SDK 53+
 LogBox.ignoreLogs(['expo-notifications: Android Push notifications', 'remote notifications functionality provided by expo-notifications was removed from Expo Go']);
@@ -17,14 +17,17 @@ const queryClient = new QueryClient();
 
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { useQueryClient } from '@tanstack/react-query';
 import { registerForPushNotificationsAsync, setupNotificationListeners, setupAndroidNotificationChannel } from '../src/utils/notifications';
 import { useEffect } from 'react';
 
 function RealtimeObserver({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const router = useRouter();
+  const queryClient = useQueryClient();
   useERPRealtime();
 
+  // Mobile push notification listeners (Android / iOS only)
   useEffect(() => {
     if (user?.id) {
       // Register for push notifications
@@ -48,6 +51,19 @@ function RealtimeObserver({ children }: { children: React.ReactNode }) {
       };
     }
   }, [user?.id, router]);
+
+  // Web / Electron foreground push listener
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !user?.id) return;
+    let unsubscribe: (() => void) | undefined;
+    import('../src/lib/firebase-web').then(({ setupWebForegroundListener }) => {
+      unsubscribe = setupWebForegroundListener(() => {
+        // Refresh the notification bell count when a foreground push arrives
+        queryClient.invalidateQueries({ queryKey: ['aggregated-notifications'] });
+      });
+    }).catch((e) => console.warn('[WebPush] Foreground listener setup failed:', e));
+    return () => unsubscribe?.();
+  }, [user?.id, queryClient]);
 
   return <>{children}</>;
 }

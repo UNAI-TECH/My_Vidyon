@@ -58,12 +58,15 @@ yarn-error.*
 *.aab
 
 # Desktop / Electron builds
+/desktop-dist/
 /MyVidyon-win32-*/
 /*-win32-*/
 /*-darwin-*/
 /*-linux-*/
 /out/
 /build/
+*.blockmap
+*.7z
 
 # Bundles
 *.bundle
