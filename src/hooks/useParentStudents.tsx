@@ -75,7 +75,7 @@ export function ParentStudentsProvider({ children: reactChildren }: { children: 
             class_name,
             section,
             image_url,
-            roll_number,
+            register_number,
             institution_id,
             dob,
             gender,
@@ -93,7 +93,10 @@ export function ParentStudentsProvider({ children: reactChildren }: { children: 
             relationship_type: l.relationship_type,
             is_primary_guardian: l.is_primary_guardian,
             can_pickup: l.can_pickup,
-            student: l.students,
+            student: {
+              ...l.students,
+              roll_number: l.students?.register_number || 'N/A',
+            },
           }));
 
         setChildrenList(mapped);
@@ -103,18 +106,34 @@ export function ParentStudentsProvider({ children: reactChildren }: { children: 
         return;
       }
 
-      // 2. Backward compatibility fallback: query students where parent_id = user.id
-      const { data: students } = await (supabase as any)
+      // 2. Backward compatibility fallback: query students where parent_id = user.id OR parent_email = user.email
+      let students: any[] = [];
+      const { data: directStudents } = await (supabase as any)
         .from('students')
-        .select('id, name, class_name, section, image_url, roll_number, institution_id, dob, gender, blood_group')
+        .select('id, name, class_name, section, image_url, register_number, institution_id, dob, gender, blood_group')
         .eq('parent_id', user.id);
+
+      if (directStudents && directStudents.length > 0) {
+        students = directStudents;
+      } else if (user?.email) {
+        const { data: emailStudents } = await (supabase as any)
+          .from('students')
+          .select('id, name, class_name, section, image_url, register_number, institution_id, dob, gender, blood_group')
+          .eq('parent_email', user.email);
+        if (emailStudents && emailStudents.length > 0) {
+          students = emailStudents;
+        }
+      }
 
       if (students && students.length > 0) {
         const fallbackMapped: LinkedStudent[] = students.map((s: any) => ({
           student_id: s.id,
           relationship_type: 'parent',
           is_primary_guardian: true,
-          student: s,
+          student: {
+            ...s,
+            roll_number: s.register_number || 'N/A',
+          },
         }));
         setChildrenList(fallbackMapped);
         if (!selectedChildId) {

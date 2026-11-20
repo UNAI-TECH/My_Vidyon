@@ -182,7 +182,6 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({ role }) => {
         { label: 'Fee Management', href: '/(root)/institution/fees', icon: CreditCard },
         { label: 'Reports', href: '/(root)/institution/reports', icon: FileText },
         { label: 'Analytics', href: '/(root)/institution/analytics', icon: TrendingUp },
-        { label: 'Communication', href: '/(root)/institution/communication', icon: Bell },
         { label: 'Settings', href: '/(root)/institution/settings', icon: Settings },
       ];
     }

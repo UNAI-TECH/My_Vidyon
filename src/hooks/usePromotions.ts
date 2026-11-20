@@ -154,7 +154,7 @@ export function usePromotions() {
 
       const { data: items, error: itemErr } = await (supabase as any)
         .from('promotion_items')
-        .select('*, student:students(id, name, roll_number, class, section)')
+        .select('*, student:students(id, name, register_number, class_name, section)')
         .eq('request_id', requestId)
         .order('created_at', { ascending: true });
 
@@ -230,7 +230,7 @@ export function usePromotions() {
     try {
       let query = (supabase as any)
         .from('promotion_history')
-        .select('*, student:students(name, roll_number)')
+        .select('*, student:students(name, register_number)')
         .eq('institution_id', institutionId)
         .order('created_at', { ascending: false })
         .limit(100);
@@ -265,11 +265,11 @@ export function usePromotions() {
       // 1. Fetch Students to promote
       let studQuery = (supabase as any)
         .from('students')
-        .select('id, name, class, section, roll_number')
+        .select('id, name, class_name, section, register_number')
         .eq('institution_id', institutionId);
 
       if (params.requestType === 'class' && params.className) {
-        studQuery = studQuery.eq('class', params.className);
+        studQuery = studQuery.eq('class_name', params.className);
         if (params.section) studQuery = studQuery.eq('section', params.section);
       } else if (params.requestType === 'individual' && params.studentIds?.length) {
         studQuery = studQuery.in('id', params.studentIds);

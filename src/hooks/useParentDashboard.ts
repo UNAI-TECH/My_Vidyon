@@ -33,10 +33,10 @@ export interface ParentDashboardData {
     parentProfile: { full_name: string; image_url: string | null } | null;
 }
 
-export function useParentDashboard(parentId?: string): ParentDashboardData & { isLoading: boolean } {
-    // 1. Fetch Linked Children (combines parent_student_links + direct parent_id)
+export function useParentDashboard(parentId?: string, parentEmail?: string): ParentDashboardData & { isLoading: boolean } {
+    // 1. Fetch Linked Children (combines parent_student_links + direct parent_id + email fallback)
     const { data: children = [], isLoading: isChildrenLoading, refetch: refetchChildren } = useQuery({
-        queryKey: ['parent-children-v2', parentId],
+        queryKey: ['parent-children-v2', parentId, parentEmail],
         queryFn: async () => {
             if (!parentId) return [];
             
@@ -55,7 +55,6 @@ export function useParentDashboard(parentId?: string): ParentDashboardData & { i
                             section,
                             image_url,
                             register_number,
-                            roll_number,
                             institution_id,
                             dob,
                             gender,
@@ -71,14 +70,27 @@ export function useParentDashboard(parentId?: string): ParentDashboardData & { i
                 // Method B: direct students where parent_id = parentId
                 const { data: directStudents, error: directErr } = await (supabase as any)
                     .from('students')
-                    .select('id, name, class_name, section, image_url, register_number, roll_number, institution_id, dob, gender, parent_id')
+                    .select('id, name, class_name, section, image_url, register_number, institution_id, dob, gender, parent_id')
                     .eq('parent_id', parentId);
 
                 if (directErr) {
                     console.warn('[useParentDashboard] direct students query:', directErr.message);
                 }
 
-                // Deduplicate across both link sources
+                // Method C: fallback by parent email
+                let emailStudents: any[] = [];
+                const effectiveEmail = parentEmail?.trim();
+                if (effectiveEmail) {
+                    const { data: byEmail, error: emailErr } = await (supabase as any)
+                        .from('students')
+                        .select('id, name, class_name, section, image_url, register_number, institution_id, dob, gender, parent_id')
+                        .eq('parent_email', effectiveEmail);
+                    if (!emailErr && Array.isArray(byEmail)) {
+                        emailStudents = byEmail;
+                    }
+                }
+
+                // Deduplicate across all link sources
                 const studentMap = new Map<string, any>();
 
                 if (Array.isArray(links)) {
@@ -91,6 +103,14 @@ export function useParentDashboard(parentId?: string): ParentDashboardData & { i
 
                 if (Array.isArray(directStudents)) {
                     directStudents.forEach((s: any) => {
+                        if (s?.id && !studentMap.has(s.id)) {
+                            studentMap.set(s.id, s);
+                        }
+                    });
+                }
+
+                if (Array.isArray(emailStudents)) {
+                    emailStudents.forEach((s: any) => {
                         if (s?.id && !studentMap.has(s.id)) {
                             studentMap.set(s.id, s);
                         }

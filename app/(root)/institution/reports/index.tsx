@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Linking } from 'react-native';
 import { theme } from '../../../../src/theme';
 import { PageHeader } from '../../../../src/components/common/PageHeader';
@@ -12,14 +12,17 @@ import {
   Clock,
   Calendar,
   CheckCircle2,
-  ExternalLink
+  ExternalLink,
+  Receipt,
+  AlertCircle,
+  Tag
 } from 'lucide-react-native';
 import { useInstitutionReports, exportToExcel, useReportHistory, ReportRow } from '../../../../src/hooks/useInstitutionReports';
 import { format } from 'date-fns';
 
 const ACADEMIC_YEARS = ['2023-24', '2024-25', '2025-26', '2026-27'];
 
-const REPORT_CATEGORIES = [
+const ALL_REPORT_CATEGORIES = [
   {
     id: 'students',
     title: 'Student Reports',
@@ -41,19 +44,49 @@ const REPORT_CATEGORIES = [
     title: 'Financial Reports',
     icon: IndianRupee,
     reports: [
-      { id: 'fin1', name: 'Fee Collection Ledger', description: 'Student-wise paid vs due amounts' },
+      { id: 'fin1', name: 'Fee Collection Ledger', description: 'Complete student-wise invoiced, paid, concession and outstanding balance' },
+      { id: 'fin2', name: 'Outstanding Defaulters List', description: 'Students with pending or overdue fee balances requiring collection' },
+      { id: 'fin3', name: 'Concessions & Waivers Ledger', description: 'List of students with approved merit, sibling or management fee waivers' },
     ]
   }
 ];
 
 export default function ReportsScreen() {
-  const { institutionId } = useAuth();
-  const [activeCategory, setActiveCategory] = useState('students');
-  const [academicYear, setAcademicYear] = useState('2025-26');
+  const { institutionId, role } = useAuth();
+  const isFinanceRole = role === 'accountant' || role === 'finance';
+
+  const categories = useMemo(() => {
+    if (isFinanceRole) {
+      return ALL_REPORT_CATEGORIES.filter((c) => c.id === 'finances');
+    }
+    return ALL_REPORT_CATEGORIES;
+  }, [isFinanceRole]);
+
+  const [activeCategory, setActiveCategory] = useState(isFinanceRole ? 'finances' : 'students');
+  const [academicYear, setAcademicYear] = useState('2026-27');
   const [isGenerating, setIsGenerating] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isFinanceRole) {
+      setActiveCategory('finances');
+    }
+  }, [isFinanceRole]);
 
   const { data: reportsData, isLoading } = useInstitutionReports(institutionId, academicYear);
   const { data: history, refetch: refetchHistory } = useReportHistory(institutionId);
+
+  // Filter exported document history: for finance, strictly show finance/fee documents
+  const filteredHistory = useMemo(() => {
+    if (!history) return [];
+    if (isFinanceRole) {
+      return (history as ReportRow[]).filter((item) => {
+        const t = (item.type || '').toLowerCase();
+        const title = (item.title || '').toLowerCase();
+        return t === 'finances' || title.includes('fee') || title.includes('ledger') || title.includes('financ') || title.includes('defaulter') || title.includes('concession');
+      });
+    }
+    return history as ReportRow[];
+  }, [history, isFinanceRole]);
 
   const handleGenerate = async (reportId: string) => {
     if (!reportsData || !institutionId) {
@@ -81,6 +114,7 @@ export default function ReportsScreen() {
           }));
           fileName = `Student_Directory_${academicYear}_${timestamp}`;
           break;
+
         case 'f1': // Staff Directory
           exportData = reportsData.faculty.map(f => ({
             'Staff ID': f.staff_id || 'N/A',
@@ -91,6 +125,7 @@ export default function ReportsScreen() {
           }));
           fileName = `Staff_Directory_${timestamp}`;
           break;
+
         case 'fin1': // Fee Ledger
           exportData = reportsData.fees.map(f => ({
             'Student Name': f.student_name,
@@ -98,19 +133,54 @@ export default function ReportsScreen() {
             'Section': f.section,
             'Amount Due': f.amount_due,
             'Amount Paid': f.amount_paid,
-            'Outstanding': f.amount_due - f.amount_paid,
+            'Concession': f.concession_amount || 0,
+            'Outstanding Due': f.outstanding !== undefined ? f.outstanding : Math.max(0, f.amount_due - f.amount_paid - (f.concession_amount || 0)),
             'Payment Status': f.status.toUpperCase()
           }));
           fileName = `Fee_Ledger_${academicYear}_${timestamp}`;
           break;
+
+        case 'fin2': // Outstanding Defaulters
+          exportData = reportsData.fees
+            .filter(f => (f.outstanding !== undefined ? f.outstanding : (f.amount_due - f.amount_paid - (f.concession_amount || 0))) > 0)
+            .map(f => ({
+              'Student Name': f.student_name,
+              'Class': f.class_name,
+              'Section': f.section,
+              'Total Fee': f.amount_due,
+              'Amount Paid': f.amount_paid,
+              'Concession': f.concession_amount || 0,
+              'Outstanding Balance': f.outstanding !== undefined ? f.outstanding : Math.max(0, f.amount_due - f.amount_paid - (f.concession_amount || 0)),
+              'Status': f.status.toUpperCase()
+            }));
+          fileName = `Fee_Defaulters_${academicYear}_${timestamp}`;
+          break;
+
+        case 'fin3': // Concessions & Waivers Ledger
+          exportData = reportsData.fees
+            .filter(f => (f.concession_amount || 0) > 0)
+            .map(f => ({
+              'Student Name': f.student_name,
+              'Class': f.class_name,
+              'Section': f.section,
+              'Invoiced Amount': f.amount_due,
+              'Concession Granted': f.concession_amount || 0,
+              'Net Payable': Math.max(0, f.amount_due - (f.concession_amount || 0)),
+              'Amount Paid': f.amount_paid,
+              'Remaining Balance': f.outstanding !== undefined ? f.outstanding : Math.max(0, f.amount_due - f.amount_paid - (f.concession_amount || 0)),
+              'Status': f.status.toUpperCase()
+            }));
+          fileName = `Fee_Concessions_${academicYear}_${timestamp}`;
+          break;
+
         default:
-          Alert.alert("Coming Soon", "Detailed mapping for this report is in progress.");
+          Alert.alert("Notice", "Detailed mapping for this report is in progress.");
           setIsGenerating(null);
           return;
       }
 
       if (exportData.length === 0) {
-        Alert.alert("No Data", "No records found in the database for this academic year.");
+        Alert.alert("No Records", `No records found in the database for ${academicYear}.`);
       } else {
         await exportToExcel(exportData, fileName, institutionId, activeCategory);
         refetchHistory();
@@ -123,11 +193,13 @@ export default function ReportsScreen() {
     }
   };
 
+  const activeGroup = categories.find((c) => c.id === activeCategory) || categories[0];
+
   return (
     <View style={styles.container}>
       <PageHeader 
-        title="Reports" 
-        subtitle="Download institutional data from database" 
+        title={isFinanceRole ? "Financial Reports & Ledgers" : "Reports"} 
+        subtitle={isFinanceRole ? "Download student fee ledgers, defaulters lists, and financial audit spreadsheets" : "Download institutional data from database"} 
       />
 
       {/* Academic Year Selector */}
@@ -150,23 +222,25 @@ export default function ReportsScreen() {
         </ScrollView>
       </View>
 
-      {/* Category Tabs */}
-      <View style={styles.tabs}>
-        {REPORT_CATEGORIES.map(cat => (
-          <TouchableOpacity 
-            key={cat.id} 
-            style={[styles.tab, activeCategory === cat.id && styles.activeTab]}
-            onPress={() => setActiveCategory(cat.id)}
-          >
-            <cat.icon size={18} color={activeCategory === cat.id ? theme.colors.primary : theme.colors.textMuted} {...({} as any)} />
-            <Text style={[styles.tabText, activeCategory === cat.id && styles.activeTabText]} numberOfLines={1}>
-              {cat.id.charAt(0).toUpperCase() + cat.id.slice(1)}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+      {/* Category Tabs: only shown when multiple categories exist (hidden for finance) */}
+      {categories.length > 1 && (
+        <View style={styles.tabs}>
+          {categories.map(cat => (
+            <TouchableOpacity 
+              key={cat.id} 
+              style={[styles.tab, activeCategory === cat.id && styles.activeTab]}
+              onPress={() => setActiveCategory(cat.id)}
+            >
+              <cat.icon size={18} color={activeCategory === cat.id ? theme.colors.primary : theme.colors.textMuted} {...({} as any)} />
+              <Text style={[styles.tabText, activeCategory === cat.id && styles.activeTabText]} numberOfLines={1}>
+                {cat.id.charAt(0).toUpperCase() + cat.id.slice(1)}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {isLoading ? (
           <View style={styles.loader}>
             <ActivityIndicator size="large" color={theme.colors.primary} />
@@ -176,11 +250,11 @@ export default function ReportsScreen() {
           <>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>
-                {REPORT_CATEGORIES.find(c => c.id === activeCategory)?.title}
+                {activeGroup?.title || 'Available Reports'}
               </Text>
             </View>
 
-            {REPORT_CATEGORIES.find(c => c.id === activeCategory)?.reports.map(report => (
+            {activeGroup?.reports.map(report => (
               <TouchableOpacity 
                 key={report.id} 
                 style={styles.reportCard}
@@ -188,8 +262,12 @@ export default function ReportsScreen() {
                 disabled={isGenerating !== null}
               >
                 <View style={styles.reportInfo}>
-                  <View style={styles.iconBox}>
-                    <FileText size={20} color={theme.colors.primary} {...({} as any)} />
+                  <View style={[styles.iconBox, isFinanceRole && { backgroundColor: '#FEF3C7' }]}>
+                    {isFinanceRole ? (
+                      <IndianRupee size={20} color="#D97706" {...({} as any)} />
+                    ) : (
+                      <FileText size={20} color={theme.colors.primary} {...({} as any)} />
+                    )}
                   </View>
                   <View style={styles.textDetails}>
                     <Text style={styles.reportName}>{report.name}</Text>
@@ -215,8 +293,8 @@ export default function ReportsScreen() {
                 <Text style={styles.recentTitle}>Exported Documents (.xlsx)</Text>
               </View>
               
-              {(history || []).length > 0 ? (
-                (history as ReportRow[]).map((item) => (
+              {filteredHistory.length > 0 ? (
+                filteredHistory.map((item) => (
                   <TouchableOpacity 
                     key={item.id} 
                     style={styles.historyItem}
@@ -232,7 +310,9 @@ export default function ReportsScreen() {
               ) : (
                 <View style={styles.infoBox}>
                   <Text style={styles.infoText}>
-                    No recent exports. When you click download, the database data will be formatted into an Excel document and stored here.
+                    {isFinanceRole 
+                      ? "No recent financial exports. When you click download, the fee ledger records will be formatted into an Excel spreadsheet and stored here."
+                      : "No recent exports. When you click download, the database data will be formatted into an Excel document and stored here."}
                   </Text>
                 </View>
               )}

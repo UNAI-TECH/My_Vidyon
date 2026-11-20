@@ -26,7 +26,7 @@ export default function FeeGateway() {
   const router = useRouter();
   const { user } = useAuth();
   const params = useLocalSearchParams<{ studentId?: string }>();
-  const { children, institution, totalPaid, pendingFees, paymentHistory, isLoading: isDashLoading } = useParentDashboard(user?.id);
+  const { children, institution, totalPaid, pendingFees, paymentHistory, isLoading: isDashLoading } = useParentDashboard(user?.id, user?.email);
   const { completeStudentPayment } = useFeeWorkflow();
   
   const [localPayments, setLocalPayments] = useState<any[]>([]);
@@ -262,7 +262,14 @@ export default function FeeGateway() {
     ...paymentHistory.filter(p => !localPayments.some(lp => lp.transaction_id === p.transaction_id || lp.id === p.id))
   ];
 
-  const currentDueDisplay = feeCalc.isCleared ? 0 : feeCalc.netPayable;
+  const totalStudentPending = studentFees.reduce((acc, f) => {
+    const bal = f.balance !== undefined
+      ? Number(f.balance)
+      : Math.max(0, Number(f.amount_due || 0) - Number(f.amount_paid || 0) - Number(f.concession_amount || 0));
+    return acc + bal;
+  }, 0);
+
+  const currentDueDisplay = totalStudentPending > 0 ? totalStudentPending : (feeCalc.isCleared ? 0 : feeCalc.netPayable);
   const totalPaidDisplay = totalPaid + localPayments.reduce((acc, curr) => acc + (curr.amount_paid || 0), 0);
 
   return (
@@ -309,7 +316,6 @@ export default function FeeGateway() {
             <Text style={styles.securityTitle}>Secure Institutional Payments</Text>
             <Text style={styles.securitySub}>All payments are authenticated and directly reconciled with your institution's ledger.</Text>
           </View>
-          <Text style={styles.securityTag}>ENCRYPTED</Text>
         </View>
 
         {/* Child Selector */}
@@ -622,18 +628,6 @@ const styles = StyleSheet.create({
   securityMsg: { flex: 1 },
   securityTitle: { color: 'white', fontWeight: 'bold', fontSize: 13 },
   securitySub: { color: '#94A3B8', fontSize: 11, marginTop: 2 },
-  securityTag: {
-    position: 'absolute',
-    top: 10,
-    right: 12,
-    fontSize: 9,
-    fontWeight: 'bold',
-    color: '#38BDF8',
-    backgroundColor: 'rgba(56,189,248,0.1)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
   selectorSection: { marginBottom: 16 },
   sectionTitle: { fontSize: 16, fontWeight: 'bold', color: theme.colors.text, marginBottom: 12 },
   childScroller: { flexDirection: 'row' },

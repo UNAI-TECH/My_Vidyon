@@ -239,6 +239,7 @@ export function useFeeWorkflow() {
         student_id: studentId,
         fee_structure_id: feeStructureId,
         amount_paid: amount,
+        amount: amount,
         payment_date: new Date().toISOString(),
         status: 'paid',
         transaction_id: transactionId,

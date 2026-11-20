@@ -42,7 +42,7 @@ export default function ParentDashboard() {
     institution, 
     parentProfile, 
     isLoading 
-  } = useParentDashboard(user?.id);
+  } = useParentDashboard(user?.id, user?.email);
 
   const welcomeName = parentProfile?.full_name || user?.email?.split('@')[0] || 'Parent';
 

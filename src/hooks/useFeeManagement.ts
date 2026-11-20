@@ -239,6 +239,7 @@ export function useFeeManagement() {
       if (err) throw err;
       const mapped = (data || []).map((p: any) => ({
         ...p,
+        amount: Number(p.amount_paid ?? p.amount ?? 0),
         student: p.student ? {
           ...p.student,
           roll_number: p.student.register_number,
@@ -446,17 +447,30 @@ export function useFeeManagement() {
     try {
       const receiptNo = `REC-${Date.now().toString().slice(-8)}`;
 
-      // 1. Insert fee_payment
+      // 1. Fetch current student_fee first to validate and get fee_structure_id
+      const { data: currFee, error: fErr } = await (supabase as any)
+        .from('student_fees')
+        .select('*')
+        .eq('id', params.studentFeeId)
+        .single();
+
+      if (fErr || !currFee) throw new Error('Student fee record not found');
+
+      // 2. Insert fee_payment
       const { data: payment, error: pErr } = await (supabase as any)
         .from('fee_payments')
         .insert({
           student_fee_id: params.studentFeeId,
+          fee_structure_id: currFee.fee_structure_id || null,
           institution_id: institutionId,
           student_id: params.studentId,
+          amount_paid: params.amount,
           amount: params.amount,
           payment_method: params.paymentMethod,
           payment_reference: params.paymentReference || null,
           receipt_number: receiptNo,
+          status: 'paid',
+          transaction_id: receiptNo,
           notes: params.notes || null,
           collected_by: user?.id || null,
           payment_date: new Date().toISOString(),
@@ -466,15 +480,7 @@ export function useFeeManagement() {
 
       if (pErr) throw pErr;
 
-      // 2. Fetch current student_fee to update amount_paid
-      const { data: currFee, error: fErr } = await (supabase as any)
-        .from('student_fees')
-        .select('*')
-        .eq('id', params.studentFeeId)
-        .single();
-
-      if (fErr || !currFee) throw new Error('Student fee record not found');
-
+      // 3. Update student_fees balance and status
       const updatedPaid = Number(currFee.amount_paid || 0) + Number(params.amount);
       const totalDue = Number(currFee.amount_due || 0);
       const concession = Number(currFee.concession_amount || 0);
@@ -487,6 +493,7 @@ export function useFeeManagement() {
         .update({
           amount_paid: updatedPaid,
           status: newStatus,
+          last_payment_date: new Date().toISOString(),
         })
         .eq('id', params.studentFeeId);
 

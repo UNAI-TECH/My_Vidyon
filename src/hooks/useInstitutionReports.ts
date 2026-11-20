@@ -32,6 +32,8 @@ export interface FeeReportDetail {
   section: string;
   amount_due: number;
   amount_paid: number;
+  concession_amount?: number;
+  outstanding?: number;
   status: string;
 }
 
@@ -56,25 +58,33 @@ export function useInstitutionReports(institutionId: string | null, academicYear
         .neq('role', 'student')
         .neq('role', 'parent') as { data: (FacultyReportDetail & { id: string })[] | null };
 
-      const { data: fees } = await supabase
+      const { data: fees } = await (supabase as any)
         .from('student_fees')
         .select(`
           amount_due,
           amount_paid,
+          concession_amount,
           status,
           students!inner(name, class_name, section, academic_year)
         `)
         .eq('institution_id', institutionId)
         .eq('students.academic_year', academicYear);
 
-      const feeDetails: FeeReportDetail[] = (fees || []).map((f: any) => ({
-        student_name: f.students.name,
-        class_name: f.students.class_name,
-        section: f.students.section,
-        amount_due: Number(f.amount_due) || 0,
-        amount_paid: Number(f.amount_paid) || 0,
-        status: f.status
-      }));
+      const feeDetails: FeeReportDetail[] = (fees || []).map((f: any) => {
+        const due = Number(f.amount_due) || 0;
+        const paid = Number(f.amount_paid) || 0;
+        const conc = Number(f.concession_amount) || 0;
+        return {
+          student_name: f.students?.name || 'Student',
+          class_name: f.students?.class_name || '-',
+          section: f.students?.section || '-',
+          amount_due: due,
+          amount_paid: paid,
+          concession_amount: conc,
+          outstanding: Math.max(0, due - paid - conc),
+          status: f.status
+        };
+      });
 
       return {
         enrollment: (students || []),
