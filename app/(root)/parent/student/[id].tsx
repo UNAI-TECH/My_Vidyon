@@ -94,17 +94,19 @@ export default function StudentDetail() {
         .order('created_at', { ascending: false })
         .limit(5);
 
-      // Get current student fees (to check if current one is paid)
-      const { data: currentFee } = await supabase
+      // Get current student fees
+      const { data: allFees } = await (supabase as any)
         .from('student_fees')
-        .select('*, fee_structures(*)')
-        .eq('student_id', id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .select('*, fee_structures(*), concessions:fee_concessions(*)')
+        .eq('student_id', id);
       
-      const latestFee = currentFee as any;
-      const totalPending = latestFee?.status !== 'paid' ? Number(latestFee?.amount_due || 0) : 0;
+      const totalPending = (allFees || []).reduce((acc: number, f: any) => {
+        const due = Number(f.amount_due || 0);
+        const paid = Number(f.amount_paid || 0);
+        const conc = Number(f.concession_amount || 0);
+        const bal = f.balance !== undefined ? Number(f.balance) : Math.max(0, due - paid - conc);
+        return f.status === 'paid' ? acc : acc + bal;
+      }, 0);
       
       // Get payment history
       const { data: payments } = await supabase
@@ -113,16 +115,18 @@ export default function StudentDetail() {
         .eq('student_id', id)
         .order('payment_date', { ascending: false });
       
-      // Combine current paid fee + history
+      // Combine paid fees + history
       const combinedPayments: any[] = [...(payments || [])];
-      if (latestFee?.status === 'paid' && !combinedPayments.find(p => p.fee_structure_id === latestFee.fee_structure_id)) {
-        combinedPayments.unshift({
-          ...latestFee,
-          amount_paid: latestFee.amount_paid || latestFee.amount_due,
-          payment_date: latestFee.last_payment_date || latestFee.created_at,
-          transaction_id: 'CURRENT_PAID'
-        });
-      }
+      (allFees || []).forEach((f: any) => {
+        if (f.status === 'paid' && !combinedPayments.find(p => p.fee_structure_id === f.fee_structure_id)) {
+          combinedPayments.unshift({
+            ...f,
+            amount_paid: f.amount_paid || f.amount_due,
+            payment_date: f.last_payment_date || f.created_at,
+            transaction_id: 'PAID'
+          });
+        }
+      });
 
       return { 
         attendanceRate: attRate, 

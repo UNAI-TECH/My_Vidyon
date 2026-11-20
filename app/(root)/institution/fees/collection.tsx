@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { theme } from '../../../../src/theme';
@@ -14,6 +13,7 @@ import { Button } from '../../../../src/components/common/Button';
 import { Select } from '../../../../src/components/common/Select';
 import { FormField } from '../../../../src/components/common/FormField';
 import { Badge } from '../../../../src/components/common/Badge';
+import { AlertModal } from '../../../../src/components/common/AlertModal';
 import { useFeeManagement, StudentFeeLedgerItem } from '../../../../src/hooks/useFeeManagement';
 import { ArrowLeft, CreditCard, Receipt, CheckCircle, ShieldCheck } from 'lucide-react-native';
 
@@ -29,6 +29,23 @@ export default function FeeCollectionScreen() {
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [receiptResult, setReceiptResult] = useState<{ receiptNo: string; amount: number } | null>(null);
+
+  const [alertConfig, setAlertConfig] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type: 'success' | 'error' | 'info' | 'warning';
+    buttons?: {
+      text: string;
+      style?: 'primary' | 'secondary' | 'destructive';
+      onPress: () => void;
+    }[];
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info',
+  });
 
   // Find selected fee record
   const selectedRecord = ledgers.find((l) => l.id === selectedFeeId) || ledgers[0];
@@ -50,22 +67,46 @@ export default function FeeCollectionScreen() {
 
   const handleProcessPayment = async () => {
     if (!selectedRecord) {
-      Alert.alert('Validation Error', 'Please select a student fee record.');
+      setAlertConfig({
+        visible: true,
+        title: 'Validation Error',
+        message: 'Please select a student fee record.',
+        type: 'error',
+      });
       return;
     }
 
     const payAmount = parseFloat(amount);
     if (isNaN(payAmount) || payAmount <= 0) {
-      Alert.alert('Validation Error', 'Please enter a valid payment amount greater than 0.');
+      setAlertConfig({
+        visible: true,
+        title: 'Validation Error',
+        message: 'Please enter a valid payment amount greater than 0.',
+        type: 'error',
+      });
       return;
     }
 
     const remaining = selectedRecord.balance ?? Math.max(0, Number(selectedRecord.amount_due || 0) - Number(selectedRecord.amount_paid || 0) - Number(selectedRecord.concession_amount || 0));
     if (payAmount > remaining) {
-      Alert.alert('Validation Warning', `Amount exceeds outstanding balance (₹${remaining.toLocaleString('en-IN')}). Proceed anyway?`, [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Proceed', onPress: () => executePayment(payAmount) },
-      ]);
+      setAlertConfig({
+        visible: true,
+        title: 'Validation Warning',
+        message: `Amount (₹${payAmount.toLocaleString('en-IN')}) exceeds the current outstanding balance (₹${remaining.toLocaleString('en-IN')}). Do you wish to proceed?`,
+        type: 'warning',
+        buttons: [
+          {
+            text: 'Cancel',
+            style: 'secondary',
+            onPress: () => {},
+          },
+          {
+            text: 'Proceed',
+            style: 'primary',
+            onPress: () => executePayment(payAmount),
+          },
+        ],
+      });
       return;
     }
 
@@ -89,7 +130,12 @@ export default function FeeCollectionScreen() {
         amount: payAmount,
       });
     } catch (err: any) {
-      Alert.alert('Payment Error', err?.message || 'Failed to record fee payment.');
+      setAlertConfig({
+        visible: true,
+        title: 'Payment Error',
+        message: err?.message || 'Failed to record fee payment.',
+        type: 'error',
+      });
     } finally {
       setSubmitting(false);
     }
@@ -269,6 +315,16 @@ export default function FeeCollectionScreen() {
           </>
         )}
       </ScrollView>
+
+      {/* Alert Modal */}
+      <AlertModal
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        buttons={alertConfig.buttons}
+        onClose={() => setAlertConfig((prev) => ({ ...prev, visible: false }))}
+      />
     </View>
   );
 }

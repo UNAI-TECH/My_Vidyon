@@ -331,13 +331,13 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({ role }) => {
               >
                 {item.label}
               </Text>
-              {item.badge && (
+              {Boolean(item.badge) ? (
                 <View style={[styles.badge, active && styles.badgeActive]}>
                   <Text style={[styles.badgeText, active && styles.badgeTextActive]}>
                     {item.badge}
                   </Text>
                 </View>
-              )}
+              ) : null}
             </TouchableOpacity>
           );
         })}

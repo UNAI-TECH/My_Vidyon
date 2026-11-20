@@ -148,19 +148,28 @@ export const RBACProvider = ({ children }: { children: React.ReactNode }) => {
     }
 
     try {
-      // Call RPC get_user_permissions(user.id)
+      // Call RPC get_user_permissions(p_user_id)
       const { data, error } = await (supabase.rpc as any)('get_user_permissions', {
-        target_user_id: user.id,
+        p_user_id: user.id,
       });
 
-      if (!error && Array.isArray(data)) {
+      if (!error && data) {
         const permSet = new Set<string>();
-        (data as any[]).forEach((p: any) => {
-          if (p.module && p.action) {
+        const permsList = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.permissions)
+          ? data.permissions
+          : [];
+        permsList.forEach((p: any) => {
+          if (typeof p === 'string') {
+            permSet.add(p);
+          } else if (p.module && p.action) {
             permSet.add(`${p.module}:${p.action}`);
           }
         });
-        setPermissions(permSet);
+        if (permSet.size > 0) {
+          setPermissions(permSet);
+        }
       }
     } catch (e) {
       // Fallback: rely on static BASELINE_ROLE_PERMISSIONS

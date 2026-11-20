@@ -997,7 +997,7 @@ export default function UserManagementScreen() {
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 32 }}>
           <View style={{ backgroundColor: 'white', borderRadius: 24, width: '100%', maxWidth: 360, overflow: 'hidden' }}>
             <Text style={{ fontSize: 18, fontWeight: 'bold', color: theme.colors.text, textAlign: 'center', paddingTop: 24, paddingBottom: 12 }}>Preview Avatar</Text>
-            <View style={{ alignItems: 'center', paddingVertical: 20 }}>{pendingPhoto && <Image source={{ uri: pendingPhoto }} style={{ width: 180, height: 180, borderRadius: 90, borderWidth: 3, borderColor: theme.colors.primary + '30' }} />}</View>
+            <View style={{ alignItems: 'center', paddingVertical: 20 }}>{pendingPhoto ? <Image source={{ uri: pendingPhoto }} style={{ width: 180, height: 180, borderRadius: 90, borderWidth: 3, borderColor: theme.colors.primary + '30' }} /> : null}</View>
             <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#F1F5F9' }}>
               <TouchableOpacity style={{ flex: 1, paddingVertical: 16, alignItems: 'center', borderRightWidth: 1, borderRightColor: '#F1F5F9' }} onPress={cancelPhotoUpload}><Text style={{ color: '#EF4444', fontWeight: 'bold' }}>Discard</Text></TouchableOpacity>
               <TouchableOpacity style={{ flex: 1, paddingVertical: 16, alignItems: 'center' }} onPress={confirmPhotoUpload}><Text style={{ color: theme.colors.primary, fontWeight: 'bold' }}>Confirm</Text></TouchableOpacity>

@@ -1,19 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { theme } from '../../../../../src/theme';
 import { PageHeader } from '../../../../../src/components/common/PageHeader';
 import { Button } from '../../../../../src/components/common/Button';
 import { FormField } from '../../../../../src/components/common/FormField';
 import { Select } from '../../../../../src/components/common/Select';
+import { AlertModal } from '../../../../../src/components/common/AlertModal';
 import { useFeeManagement } from '../../../../../src/hooks/useFeeManagement';
+import { useInstitutionFaculty } from '../../../../../src/hooks/useInstitutionFaculty';
+import { useAuth } from '../../../../../src/hooks/useAuth';
 import { ArrowLeft, Plus, Trash2, Layers, IndianRupee } from 'lucide-react-native';
 
 interface ComponentInput {
@@ -25,14 +27,34 @@ interface ComponentInput {
 
 export default function AddFeeStructureScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ termId?: string; termName?: string; academicYear?: string }>();
   const { terms, createFeeStructure } = useFeeManagement();
+  const { institutionId, academicYear: activeAcademicYear } = useAuth();
+  const { classes: rawClasses = [] } = useInstitutionFaculty(institutionId);
 
   const [name, setName] = useState('');
-  const [className, setClassName] = useState('Class 10');
-  const [termId, setTermId] = useState(terms[0]?.id || '');
-  const [academicYear, setAcademicYear] = useState('2026-27');
+  const [className, setClassName] = useState('All Classes');
+  const [termId, setTermId] = useState(params.termId || terms[0]?.id || '');
+  const [academicYear, setAcademicYear] = useState(params.academicYear || activeAcademicYear || '2026-27');
   const [category, setCategory] = useState('tuition');
   const [submitting, setSubmitting] = useState(false);
+
+  const [alertConfig, setAlertConfig] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type: 'success' | 'error' | 'info' | 'warning';
+    buttons?: {
+      text: string;
+      style?: 'primary' | 'secondary' | 'destructive';
+      onPress: () => void;
+    }[];
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info',
+  });
 
   // Dynamic fee components
   const [components, setComponents] = useState<ComponentInput[]>([
@@ -40,6 +62,43 @@ export default function AddFeeStructureScreen() {
     { name: 'Books & Stationery', amount: '3000', is_optional: false, is_transport: false },
     { name: 'Lab Fee', amount: '2000', is_optional: false, is_transport: false },
   ]);
+
+  useEffect(() => {
+    if (params.termId) {
+      setTermId(params.termId);
+    } else if (!termId && terms.length > 0) {
+      setTermId(terms[0].id);
+    }
+  }, [params.termId, terms]);
+
+  useEffect(() => {
+    if (params.academicYear) {
+      setAcademicYear(params.academicYear);
+    } else if (activeAcademicYear) {
+      setAcademicYear(activeAcademicYear);
+    }
+  }, [params.academicYear, activeAcademicYear]);
+
+  const uniqueClassNames = useMemo(() => {
+    const names = new Set<string>();
+    (rawClasses || []).forEach((c: any) => {
+      if (c.name) names.add(c.name);
+    });
+    if (names.size > 0) return Array.from(names);
+    return [
+      'Pre-KG', 'LKG', 'UKG',
+      '1st Standard', '2nd Standard', '3rd Standard', '4th Standard', '5th Standard',
+      '6th Standard', '7th Standard', '8th Standard', '9th Standard', '10th Standard',
+      '11th Standard', '12th Standard'
+    ];
+  }, [rawClasses]);
+
+  const classOptions = useMemo(() => {
+    return [
+      { label: 'All Classes (Institution-wide)', value: 'All Classes' },
+      ...uniqueClassNames.map((cName) => ({ label: cName, value: cName })),
+    ];
+  }, [uniqueClassNames]);
 
   const handleAddComponent = () => {
     setComponents((prev) => [
@@ -68,30 +127,50 @@ export default function AddFeeStructureScreen() {
 
   const handleSubmit = async () => {
     if (!name.trim()) {
-      Alert.alert('Validation Error', 'Please enter a name for the fee structure.');
+      setAlertConfig({
+        visible: true,
+        title: 'Validation Error',
+        message: 'Please enter a name for the fee structure.',
+        type: 'error',
+      });
       return;
     }
 
     if (components.length === 0) {
-      Alert.alert('Validation Error', 'Please add at least one fee component.');
+      setAlertConfig({
+        visible: true,
+        title: 'Validation Error',
+        message: 'Please add at least one fee component.',
+        type: 'error',
+      });
       return;
     }
 
     // Verify all components have names and amounts
     for (const c of components) {
       if (!c.name.trim()) {
-        Alert.alert('Validation Error', 'All fee components must have a valid name.');
+        setAlertConfig({
+          visible: true,
+          title: 'Validation Error',
+          message: 'All fee components must have a valid name.',
+          type: 'error',
+        });
         return;
       }
       if (isNaN(parseFloat(c.amount)) || parseFloat(c.amount) < 0) {
-        Alert.alert('Validation Error', `Invalid amount for component "${c.name}".`);
+        setAlertConfig({
+          visible: true,
+          title: 'Validation Error',
+          message: `Invalid amount for component "${c.name}".`,
+          type: 'error',
+        });
         return;
       }
     }
 
     try {
       setSubmitting(true);
-      await createFeeStructure(
+      const newStruct = await createFeeStructure(
         {
           name: name.trim(),
           term_id: termId || undefined,
@@ -107,29 +186,54 @@ export default function AddFeeStructureScreen() {
         }))
       );
 
-      Alert.alert('Success', 'Fee structure created successfully with all components!', [
-        { text: 'OK', onPress: () => router.back() },
-      ]);
+      const savedName = name.trim();
+      const savedClass = className.trim();
+      const savedTerm = termId;
+      const savedYear = academicYear.trim();
+
+      setAlertConfig({
+        visible: true,
+        title: 'Fee Structure Created!',
+        message: `"${savedName}" has been created with ${components.length} components totaling ₹${totalAmount.toLocaleString('en-IN')}.\n\nWould you like to continue to assign this fee structure to classes?`,
+        type: 'success',
+        buttons: [
+          {
+            text: 'Continue to Assign Class',
+            style: 'primary',
+            onPress: () => {
+              router.push({
+                pathname: '/(root)/institution/fees/assign' as any,
+                params: {
+                  feeStructureId: newStruct.id,
+                  termId: savedTerm,
+                  academicYear: savedYear,
+                  className: savedClass !== 'All Classes' ? savedClass : '',
+                },
+              });
+            },
+          },
+          {
+            text: 'View Structures',
+            style: 'secondary',
+            onPress: () => {
+              router.push('/(root)/institution/fees/structures' as any);
+            },
+          },
+        ],
+      });
     } catch (err: any) {
-      Alert.alert('Error', err?.message || 'Failed to create fee structure.');
+      setAlertConfig({
+        visible: true,
+        title: 'Creation Failed',
+        message: err?.message || 'Failed to create fee structure. Please try again.',
+        type: 'error',
+      });
     } finally {
       setSubmitting(false);
     }
   };
 
   const termOptions = terms.map((t) => ({ label: `${t.term_name} (${t.academic_year})`, value: t.id }));
-  const classOptions = [
-    { label: 'Class 1', value: 'Class 1' },
-    { label: 'Class 2', value: 'Class 2' },
-    { label: 'Class 3', value: 'Class 3' },
-    { label: 'Class 4', value: 'Class 4' },
-    { label: 'Class 5', value: 'Class 5' },
-    { label: 'Class 6', value: 'Class 6' },
-    { label: 'Class 7', value: 'Class 7' },
-    { label: 'Class 8', value: 'Class 8' },
-    { label: 'Class 9', value: 'Class 9' },
-    { label: 'Class 10', value: 'Class 10' },
-  ];
 
   return (
     <View style={styles.container}>
@@ -273,6 +377,16 @@ export default function AddFeeStructureScreen() {
           />
         </View>
       </ScrollView>
+
+      {/* Continuation & Feedback Modal */}
+      <AlertModal
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        buttons={alertConfig.buttons}
+        onClose={() => setAlertConfig((prev) => ({ ...prev, visible: false }))}
+      />
     </View>
   );
 }

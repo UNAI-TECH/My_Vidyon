@@ -12,16 +12,77 @@ import { PageHeader } from '../../../../../src/components/common/PageHeader';
 import { Button } from '../../../../../src/components/common/Button';
 import { Badge } from '../../../../../src/components/common/Badge';
 import { LoadingState, EmptyState } from '../../../../../src/components/common/FeedbackStates';
+import { AlertModal } from '../../../../../src/components/common/AlertModal';
 import { useFeeManagement, FeeStructure } from '../../../../../src/hooks/useFeeManagement';
-import { ArrowLeft, Plus, Layers, ChevronDown, ChevronUp, Tag } from 'lucide-react-native';
+import { ArrowLeft, Plus, Layers, ChevronDown, ChevronUp, Tag, Trash2 } from 'lucide-react-native';
 
 export default function FeeStructuresScreen() {
   const router = useRouter();
-  const { structures, loading, terms } = useFeeManagement();
+  const { structures, loading, terms, deleteFeeStructure } = useFeeManagement();
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const [alertConfig, setAlertConfig] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type: 'success' | 'error' | 'info' | 'warning';
+    buttons?: {
+      text: string;
+      style?: 'primary' | 'secondary' | 'destructive';
+      onPress: () => void;
+    }[];
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info',
+  });
 
   const toggleExpand = (id: string) => {
     setExpandedId((prev) => (prev === id ? null : id));
+  };
+
+  const confirmDeleteStructure = (s: FeeStructure) => {
+    setAlertConfig({
+      visible: true,
+      title: 'Delete Fee Structure',
+      message: `Are you sure you want to delete "${s.name}" (${s.class_name || 'All Classes'} • ₹${Number(s.amount || 0).toLocaleString('en-IN')})?\n\nIf any uncollected student fee schedules were assigned from this template, they will also be removed.`,
+      type: 'warning',
+      buttons: [
+        {
+          text: 'Cancel',
+          style: 'secondary',
+          onPress: () => setAlertConfig((prev) => ({ ...prev, visible: false })),
+        },
+        {
+          text: 'Delete Structure',
+          style: 'destructive',
+          onPress: async () => {
+            setAlertConfig((prev) => ({ ...prev, visible: false }));
+            try {
+              setDeletingId(s.id);
+              await deleteFeeStructure(s.id);
+              setAlertConfig({
+                visible: true,
+                title: 'Fee Structure Deleted',
+                message: `"${s.name}" has been deleted successfully.`,
+                type: 'success',
+              });
+            } catch (err: any) {
+              setAlertConfig({
+                visible: true,
+                title: 'Cannot Delete Fee Structure',
+                message: err?.message || 'Failed to delete fee structure.',
+                type: 'error',
+              });
+            } finally {
+              setDeletingId(null);
+            }
+          },
+        },
+      ],
+    });
   };
 
   return (
@@ -63,33 +124,46 @@ export default function FeeStructuresScreen() {
 
               return (
                 <View key={s.id} style={styles.structCard}>
-                  <TouchableOpacity
-                    style={styles.cardHeader}
-                    onPress={() => toggleExpand(s.id)}
-                    activeOpacity={0.8}
-                  >
-                    <View style={styles.iconBox}>
-                      <Layers size={20} color={theme.colors.primary} />
-                    </View>
+                  <View style={styles.cardHeaderRow}>
+                    <TouchableOpacity
+                      style={styles.cardHeader}
+                      onPress={() => toggleExpand(s.id)}
+                      activeOpacity={0.8}
+                    >
+                      <View style={styles.iconBox}>
+                        <Layers size={20} color={theme.colors.primary} />
+                      </View>
 
-                    <View style={{ flex: 1, marginLeft: 12 }}>
-                      <Text style={styles.structName}>{s.name}</Text>
-                      <Text style={styles.structSub}>
-                        Class: {s.class_name || 'All Classes'} • Term: {term?.term_name || 'Annual'}
-                      </Text>
-                    </View>
+                      <View style={{ flex: 1, marginLeft: 12 }}>
+                        <Text style={styles.structName}>{s.name}</Text>
+                        <Text style={styles.structSub}>
+                          Class: {s.class_name || 'All Classes'} • Term: {term?.term_name || 'Annual'}
+                        </Text>
+                      </View>
 
-                    <View style={{ alignItems: 'flex-end', marginRight: 10 }}>
-                      <Text style={styles.structAmount}>₹{Number(s.amount || 0).toLocaleString('en-IN')}</Text>
-                      <Badge variant="info">{s.category || 'tuition'}</Badge>
-                    </View>
+                      <View style={{ alignItems: 'flex-end', marginRight: 10 }}>
+                        <Text style={styles.structAmount}>₹{Number(s.amount || 0).toLocaleString('en-IN')}</Text>
+                        <Badge variant="info">{s.category || 'tuition'}</Badge>
+                      </View>
 
-                    {isExpanded ? (
-                      <ChevronUp size={18} color={theme.colors.textMuted} />
-                    ) : (
-                      <ChevronDown size={18} color={theme.colors.textMuted} />
-                    )}
-                  </TouchableOpacity>
+                      {isExpanded ? (
+                        <ChevronUp size={18} color={theme.colors.textMuted} />
+                      ) : (
+                        <ChevronDown size={18} color={theme.colors.textMuted} />
+                      )}
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.deleteIconBtn}
+                      onPress={() => confirmDeleteStructure(s)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      activeOpacity={0.7}
+                      disabled={deletingId === s.id}
+                      accessibilityLabel="Delete structure"
+                    >
+                      <Trash2 size={16} color="#EF4444" />
+                    </TouchableOpacity>
+                  </View>
 
                   {/* Component Breakdown */}
                   {isExpanded && (
@@ -114,6 +188,16 @@ export default function FeeStructuresScreen() {
                       )}
 
                       <View style={styles.drawerActions}>
+                        <TouchableOpacity
+                          style={styles.drawerDeleteBtn}
+                          onPress={() => confirmDeleteStructure(s)}
+                          disabled={deletingId === s.id}
+                          activeOpacity={0.7}
+                        >
+                          <Trash2 size={14} color="#EF4444" />
+                          <Text style={styles.drawerDeleteText}>Delete Structure</Text>
+                        </TouchableOpacity>
+
                         <Button
                           title="Assign to Class"
                           size="sm"
@@ -134,6 +218,15 @@ export default function FeeStructuresScreen() {
           </View>
         )}
       </ScrollView>
+
+      <AlertModal
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        buttons={alertConfig.buttons}
+        onClose={() => setAlertConfig((prev) => ({ ...prev, visible: false }))}
+      />
     </View>
   );
 }
@@ -165,10 +258,38 @@ const styles = StyleSheet.create({
     elevation: 1,
     overflow: 'hidden',
   },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   cardHeader: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
+  },
+  deleteIconBtn: {
+    padding: 8,
+    marginRight: 14,
+    borderRadius: theme.borderRadius.m,
+    backgroundColor: '#FEE2E2',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  drawerDeleteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: theme.borderRadius.m,
+    backgroundColor: '#FEE2E2',
+    marginRight: 10,
+  },
+  drawerDeleteText: {
+    color: '#EF4444',
+    fontSize: 13,
+    fontWeight: '600',
   },
   iconBox: {
     width: 40,

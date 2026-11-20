@@ -40,7 +40,11 @@ export default function FeeManagementDashboard() {
   // Filtered ledgers
   const filteredData = useMemo(() => {
     return ledgers.filter((item) => {
-      const matchTerm = selectedTermId === 'all' || item.term_id === selectedTermId;
+      const matchTerm =
+        selectedTermId === 'all' ||
+        (selectedTermId === 'academic'
+          ? item.scope_type === 'academic' || !item.term_id
+          : item.term_id === selectedTermId);
       const matchStatus = statusFilter === 'all' || item.status === statusFilter;
       return matchTerm && matchStatus;
     });
@@ -66,14 +70,25 @@ export default function FeeManagementDashboard() {
   const columns: ColumnDef<StudentFeeLedgerItem>[] = [
     {
       key: 'student',
-      title: 'Student',
+      title: 'Student & Scope',
       sortable: true,
       render: (item) => (
         <View>
           <Text style={styles.studentName}>{item.student?.name || 'Unknown'}</Text>
           <Text style={styles.studentSub}>
-            Roll: {item.student?.roll_number || 'N/A'} • {item.class_name || item.student?.class || '-'}
+            Roll: {item.student?.roll_number || item.student?.register_number || 'N/A'} • {item.class_name || item.student?.class_name || '-'}
+            {item.student?.section ? ` (${item.student.section})` : ''}
           </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+            <Badge variant={item.term_id ? 'default' : 'info'}>
+              {item.term_name || 'Academic Year'}
+            </Badge>
+            {item.fee_structure?.name ? (
+              <Text style={{ fontSize: 11, color: theme.colors.textMuted }} numberOfLines={1}>
+                {item.fee_structure.name}
+              </Text>
+            ) : null}
+          </View>
         </View>
       ),
     },
@@ -99,14 +114,29 @@ export default function FeeManagementDashboard() {
     },
     {
       key: 'concession',
-      title: 'Concession',
+      title: 'Concession (₹)',
       sortable: true,
       align: 'right',
-      render: (item) => (
-        <Text style={styles.subAmountText}>
-          {item.concession_amount ? `₹${Number(item.concession_amount).toLocaleString('en-IN')}` : '-'}
-        </Text>
-      ),
+      render: (item) => {
+        const concVal = Number(item.concession_amount || 0);
+        return (
+          <View style={{ alignItems: 'flex-end' }}>
+            <Text
+              style={[
+                styles.subAmountText,
+                concVal > 0 && { color: theme.colors.primary, fontWeight: '700' },
+              ]}
+            >
+              {concVal > 0 ? `₹${concVal.toLocaleString('en-IN')}` : '-'}
+            </Text>
+            {item.concessions?.[0]?.percentage ? (
+              <Text style={{ fontSize: 10, color: theme.colors.primary, fontWeight: '700' }}>
+                {item.concessions[0].percentage}% off
+              </Text>
+            ) : null}
+          </View>
+        );
+      },
     },
     {
       key: 'balance',
@@ -249,6 +279,15 @@ export default function FeeManagementDashboard() {
             >
               <Text style={[styles.termChipText, selectedTermId === 'all' && styles.termChipTextActive]}>
                 All Terms ({ledgers.length})
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.termChip, selectedTermId === 'academic' && styles.termChipActive]}
+              onPress={() => setSelectedTermId('academic')}
+            >
+              <Text style={[styles.termChipText, selectedTermId === 'academic' && styles.termChipTextActive]}>
+                Academic (Annual) ({ledgers.filter((l) => l.scope_type === 'academic' || !l.term_id).length})
               </Text>
             </TouchableOpacity>
 

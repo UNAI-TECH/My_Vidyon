@@ -38,6 +38,16 @@ export interface FeeStructure {
   components?: FeeComponent[];
 }
 
+export interface ConcessionRecord {
+  id: string;
+  concession_type: string;
+  amount: number;
+  percentage?: number | null;
+  reason?: string | null;
+  created_at?: string;
+  approved_by?: string | null;
+}
+
 export interface StudentFeeLedgerItem {
   id: string;
   institution_id: string;
@@ -54,10 +64,21 @@ export interface StudentFeeLedgerItem {
   student?: {
     id: string;
     name: string;
+    register_number?: string;
     roll_number?: string;
+    class_name?: string;
     class?: string;
     section?: string;
   };
+  fee_structure?: {
+    id: string;
+    name: string;
+    category?: string;
+    term_id?: string | null;
+  } | null;
+  concessions?: ConcessionRecord[];
+  term_name?: string;
+  scope_type?: 'term' | 'academic';
   balance?: number;
 }
 
@@ -75,6 +96,7 @@ export interface FeePaymentRecord {
   collected_by?: string;
   student?: {
     name: string;
+    register_number?: string;
     roll_number?: string;
   };
 }
@@ -137,7 +159,12 @@ export function useFeeManagement() {
     try {
       let query = (supabase as any)
         .from('student_fees')
-        .select('*, student:students(id, name, roll_number, class, section)')
+        .select(`
+          *,
+          student:students(id, name, register_number, class_name, section),
+          fee_structure:fee_structures(id, name, category, term_id),
+          concessions:fee_concessions(id, concession_type, amount, percentage, reason, created_at)
+        `)
         .eq('institution_id', institutionId)
         .order('created_at', { ascending: false });
 
@@ -154,13 +181,38 @@ export function useFeeManagement() {
       const { data, error: err } = await query;
       if (err) throw err;
 
+      // Build quick term lookup map
+      const termMap = new Map<string, string>();
+      terms.forEach((t) => termMap.set(t.id, t.term_name));
+      if (termMap.size === 0) {
+        const { data: dbTerms } = await (supabase as any)
+          .from('academic_terms')
+          .select('id, term_name')
+          .eq('institution_id', institutionId);
+        (dbTerms || []).forEach((t: any) => termMap.set(t.id, t.term_name));
+      }
+
       // Compute balance = amount_due - amount_paid - concession_amount
       const mapped = (data || []).map((row: any) => {
         const due = Number(row.amount_due || 0);
         const paid = Number(row.amount_paid || 0);
         const conc = Number(row.concession_amount || 0);
+        const student = row.student ? {
+          ...row.student,
+          roll_number: row.student.register_number,
+          class: row.student.class_name,
+        } : null;
+
+        const effectiveTermId = row.term_id || row.fee_structure?.term_id || null;
+        const termName = effectiveTermId ? (termMap.get(effectiveTermId) || 'Term Fee') : 'Academic Year';
+        const scopeType: 'term' | 'academic' = effectiveTermId ? 'term' : 'academic';
+
         return {
           ...row,
+          student,
+          term_id: effectiveTermId,
+          term_name: termName,
+          scope_type: scopeType,
           balance: Math.max(0, due - paid - conc),
         };
       });
@@ -171,7 +223,7 @@ export function useFeeManagement() {
       console.warn('Error fetching student fee ledgers:', e);
       return [];
     }
-  }, [institutionId]);
+  }, [institutionId, terms]);
 
   // 4. Fetch Payments & Receipts History
   const fetchPayments = useCallback(async () => {
@@ -179,14 +231,21 @@ export function useFeeManagement() {
     try {
       const { data, error: err } = await (supabase as any)
         .from('fee_payments')
-        .select('*, student:students(name, roll_number)')
+        .select('*, student:students(name, register_number)')
         .eq('institution_id', institutionId)
         .order('payment_date', { ascending: false })
         .limit(100);
 
       if (err) throw err;
-      setPayments(data || []);
-      return data || [];
+      const mapped = (data || []).map((p: any) => ({
+        ...p,
+        student: p.student ? {
+          ...p.student,
+          roll_number: p.student.register_number,
+        } : null,
+      }));
+      setPayments(mapped);
+      return mapped;
     } catch (e: any) {
       console.warn('Error fetching fee payments:', e);
       return [];
@@ -277,10 +336,11 @@ export function useFeeManagement() {
     }
   };
 
-  // 7. Bulk Assign Fee Structure to Students of a Class
+  // 7. Bulk Assign Fee Structure to Students of a Class (or Multiple Classes)
   const assignFeeStructureToClass = async (params: {
     feeStructureId: string;
     className: string;
+    classNames?: string[];
     termId?: string;
     academicYear?: string;
     dueDate?: string;
@@ -288,7 +348,7 @@ export function useFeeManagement() {
     if (!institutionId) throw new Error('No institution selected');
     setLoading(true);
     try {
-      // Find fee structure amount
+      // Find fee structure
       const { data: struct, error: sErr } = await (supabase as any)
         .from('fee_structures')
         .select('*')
@@ -297,19 +357,53 @@ export function useFeeManagement() {
 
       if (sErr || !struct) throw new Error('Fee structure not found');
 
-      // Find all students in this class
-      const { data: students, error: studErr } = await (supabase as any)
+      // Determine target classes
+      const targetClasses = (params.classNames && params.classNames.length > 0)
+        ? params.classNames
+        : [params.className];
+
+      // Query students for the target classes
+      let studentQuery = (supabase as any)
         .from('students')
-        .select('id, name, class')
-        .eq('institution_id', institutionId)
-        .eq('class', params.className);
+        .select('id, name, register_number, class_name, section')
+        .eq('institution_id', institutionId);
+
+      if (targetClasses.length === 1 && targetClasses[0] !== 'All Classes') {
+        studentQuery = studentQuery.eq('class_name', targetClasses[0]);
+      } else if (targetClasses.length > 1 && !targetClasses.includes('All Classes')) {
+        studentQuery = studentQuery.in('class_name', targetClasses);
+      }
+
+      const { data: students, error: studErr } = await studentQuery;
 
       if (studErr) throw studErr;
       if (!students || students.length === 0) {
-        throw new Error(`No students found in class ${params.className}`);
+        throw new Error(`No active students found in ${targetClasses.join(', ')}`);
       }
 
-      const rows = students.map((s: any) => ({
+      // Check existing student_fees to avoid duplicate assignments for this fee_structure
+      const studentIds = students.map((s: any) => s.id);
+      const { data: existingRows } = await (supabase as any)
+        .from('student_fees')
+        .select('student_id')
+        .eq('institution_id', institutionId)
+        .eq('fee_structure_id', struct.id)
+        .in('student_id', studentIds);
+
+      const existingSet = new Set((existingRows || []).map((r: any) => r.student_id));
+      const studentsToAssign = students.filter((s: any) => !existingSet.has(s.id));
+
+      if (studentsToAssign.length === 0) {
+        return { 
+          assignedCount: 0, 
+          alreadyAssignedCount: students.length,
+          totalStudents: students.length,
+          alreadyAssigned: true,
+          message: `All ${students.length} students in ${targetClasses.join(', ')} are already assigned to ${struct.name}.` 
+        };
+      }
+
+      const rows = studentsToAssign.map((s: any) => ({
         institution_id: institutionId,
         student_id: s.id,
         fee_structure_id: struct.id,
@@ -320,14 +414,19 @@ export function useFeeManagement() {
         due_date: params.dueDate || null,
         term_id: params.termId || struct.term_id || null,
         academic_year: params.academicYear || struct.academic_year || '2026-27',
-        class_name: params.className,
+        class_name: s.class_name || params.className,
       }));
 
       const { error: insErr } = await (supabase as any).from('student_fees').insert(rows);
       if (insErr) throw insErr;
 
       await fetchLedgers();
-      return { assignedCount: rows.length };
+      return { 
+        assignedCount: rows.length, 
+        alreadyAssignedCount: existingSet.size,
+        totalStudents: students.length,
+        alreadyAssigned: false
+      };
     } finally {
       setLoading(false);
     }
@@ -415,6 +514,7 @@ export function useFeeManagement() {
     studentFeeId: string;
     concessionType: string;
     amount: number;
+    percentage?: number;
     reason?: string;
   }) => {
     if (!institutionId) throw new Error('No institution selected');
@@ -425,6 +525,7 @@ export function useFeeManagement() {
         student_fee_id: params.studentFeeId,
         concession_type: params.concessionType,
         amount: params.amount,
+        percentage: params.percentage || null,
         reason: params.reason || null,
         approved_by: user?.id || null,
       });
@@ -461,6 +562,148 @@ export function useFeeManagement() {
     }
   };
 
+  // 10. Delete Fee Structure
+  const deleteFeeStructure = async (structureId: string) => {
+    if (!institutionId) throw new Error('No institution selected');
+    setLoading(true);
+    try {
+      // 1. Check if any student fees under this structure have recorded payments
+      const { data: sfData, error: sfErr } = await (supabase as any)
+        .from('student_fees')
+        .select('id, amount_paid')
+        .eq('fee_structure_id', structureId);
+
+      if (sfErr) {
+        console.warn('Error checking student fees on delete structure:', sfErr);
+      }
+
+      const hasPayments = sfData?.some((sf: any) => Number(sf.amount_paid || 0) > 0);
+      if (hasPayments) {
+        throw new Error('Cannot delete this fee structure because payments have already been collected against it. Reversing collected payments is required first.');
+      }
+
+      // 2. Remove any uncollected student fees (and their concessions) created under this structure
+      if (sfData && sfData.length > 0) {
+        const sfIds = sfData.map((sf: any) => sf.id);
+        await (supabase as any)
+          .from('fee_concessions')
+          .delete()
+          .in('student_fee_id', sfIds);
+
+        await (supabase as any)
+          .from('student_fees')
+          .delete()
+          .in('id', sfIds);
+      }
+
+      // 3. Delete components
+      await (supabase as any)
+        .from('fee_components')
+        .delete()
+        .eq('fee_structure_id', structureId);
+
+      // 4. Delete the fee structure
+      const { error: delErr } = await (supabase as any)
+        .from('fee_structures')
+        .delete()
+        .eq('id', structureId)
+        .eq('institution_id', institutionId);
+
+      if (delErr) throw delErr;
+
+      // Update state locally and re-fetch
+      setStructures((prev) => prev.filter((s) => s.id !== structureId));
+      await fetchStructures();
+      await fetchLedgers();
+      return true;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 11. Delete Academic Term
+  const deleteTerm = async (termId: string) => {
+    if (!institutionId) throw new Error('No institution selected');
+    setLoading(true);
+    try {
+      // 1. Check fee structures under this term
+      const { data: termStructs, error: strErr } = await (supabase as any)
+        .from('fee_structures')
+        .select('id')
+        .eq('term_id', termId)
+        .eq('institution_id', institutionId);
+
+      if (strErr) {
+        console.warn('Error checking fee structures on delete term:', strErr);
+      }
+
+      const structIds = (termStructs || []).map((s: any) => s.id);
+
+      // 2. Check student fees under this term or these structures
+      let sfQuery = (supabase as any)
+        .from('student_fees')
+        .select('id, amount_paid, fee_structure_id');
+
+      if (structIds.length > 0) {
+        sfQuery = sfQuery.or(`term_id.eq.${termId},fee_structure_id.in.(${structIds.join(',')})`);
+      } else {
+        sfQuery = sfQuery.eq('term_id', termId);
+      }
+
+      const { data: sfData, error: sfErr } = await sfQuery;
+      if (!sfErr && sfData) {
+        const hasPayments = sfData.some((sf: any) => Number(sf.amount_paid || 0) > 0);
+        if (hasPayments) {
+          throw new Error('Cannot delete this academic term because payments have already been recorded under it.');
+        }
+
+        // Clean up uncollected student fees & concessions
+        if (sfData.length > 0) {
+          const sfIds = sfData.map((sf: any) => sf.id);
+          await (supabase as any)
+            .from('fee_concessions')
+            .delete()
+            .in('student_fee_id', sfIds);
+
+          await (supabase as any)
+            .from('student_fees')
+            .delete()
+            .in('id', sfIds);
+        }
+      }
+
+      // 3. Clean up fee structures and components under this term
+      if (structIds.length > 0) {
+        await (supabase as any)
+          .from('fee_components')
+          .delete()
+          .in('fee_structure_id', structIds);
+
+        await (supabase as any)
+          .from('fee_structures')
+          .delete()
+          .in('id', structIds);
+      }
+
+      // 4. Delete the term
+      const { error: delErr } = await (supabase as any)
+        .from('academic_terms')
+        .delete()
+        .eq('id', termId)
+        .eq('institution_id', institutionId);
+
+      if (delErr) throw delErr;
+
+      setTerms((prev) => prev.filter((t) => t.id !== termId));
+      await fetchTerms();
+      await fetchStructures();
+      await fetchLedgers();
+      return true;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Initial load
   useEffect(() => {
     if (institutionId) {
@@ -487,5 +730,7 @@ export function useFeeManagement() {
     assignFeeStructureToClass,
     recordPayment,
     grantConcession,
+    deleteFeeStructure,
+    deleteTerm,
   };
 }

@@ -164,7 +164,7 @@ export function useInstitutionData(institutionId: string | null, academicYear: s
             const [studentAtt, staffAtt] = await Promise.all([
                 supabase
                     .from('student_attendance')
-                    .select('id, created_at, status, students(full_name, class_name)')
+                    .select('id, created_at, status, students(name, class_name)')
                     .eq('institution_id', institutionId)
                     .eq('attendance_date', today)
                     .order('created_at', { ascending: false })
@@ -182,7 +182,7 @@ export function useInstitutionData(institutionId: string | null, academicYear: s
                 ...(studentAtt.data?.map((a: any) => ({
                     id: a.id,
                     created_at: a.created_at,
-                    name: a.students?.full_name || 'Student',
+                    name: a.students?.name || a.students?.full_name || 'Student',
                     subtitle: a.students?.class_name || 'Unknown Class',
                     type: 'Student' as const
                 })) || []),
@@ -242,11 +242,14 @@ export function useInstitutionData(institutionId: string | null, academicYear: s
         queryKey: ['institution-details', institutionId],
         queryFn: async () => {
             if (!institutionId) return null;
-            const { data } = await supabase
-                .from('institutions')
-                .select('*')
-                .eq('id', institutionId)
-                .maybeSingle();
+            const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+            let query = supabase.from('institutions').select('*');
+            if (isUUID(institutionId)) {
+                query = query.eq('id', institutionId);
+            } else {
+                query = query.ilike('institution_id', institutionId);
+            }
+            const { data } = await (query as any).maybeSingle();
             return data as any;
         },
         enabled: !!institutionId,

@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   Modal,
-  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { theme } from '../../../../src/theme';
@@ -16,51 +15,180 @@ import { Badge } from '../../../../src/components/common/Badge';
 import { FormField } from '../../../../src/components/common/FormField';
 import { LoadingState, EmptyState } from '../../../../src/components/common/FeedbackStates';
 import { useFeeManagement } from '../../../../src/hooks/useFeeManagement';
-import { ArrowLeft, Plus, Calendar, CheckCircle2, Clock } from 'lucide-react-native';
+import { useAuth } from '../../../../src/hooks/useAuth';
+import { CalendarModal } from '../../../../src/components/common/CalendarPicker';
+import { AlertModal } from '../../../../src/components/common/AlertModal';
+import { ArrowLeft, Plus, Calendar, CheckCircle2, Clock, X, Trash2 } from 'lucide-react-native';
 
 export default function AcademicTermsScreen() {
   const router = useRouter();
-  const { terms, loading, createTerm, fetchTerms } = useFeeManagement();
+  const { terms, loading, createTerm, fetchTerms, deleteTerm } = useFeeManagement();
+  const { academicYear: activeAcademicYear } = useAuth();
 
   const [modalVisible, setModalVisible] = useState(false);
-  const [academicYear, setAcademicYear] = useState('2026-27');
+  const [academicYear, setAcademicYear] = useState(activeAcademicYear || '2026-27');
   const [termName, setTermName] = useState('');
   const [termNumber, setTermNumber] = useState('1');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [datePickerConfig, setDatePickerConfig] = useState<{
+    visible: boolean;
+    type: 'start' | 'end';
+  }>({ visible: false, type: 'start' });
+
+  const [alertConfig, setAlertConfig] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type: 'success' | 'error' | 'info' | 'warning';
+    buttons?: {
+      text: string;
+      style?: 'primary' | 'secondary' | 'destructive';
+      onPress: () => void;
+    }[];
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info',
+  });
+
+  React.useEffect(() => {
+    if (activeAcademicYear) {
+      setAcademicYear(activeAcademicYear);
+    }
+  }, [activeAcademicYear]);
+
+  const handleDateSelect = (date: string) => {
+    if (datePickerConfig.type === 'start') {
+      setStartDate(date);
+    } else {
+      setEndDate(date);
+    }
+    setDatePickerConfig(prev => ({ ...prev, visible: false }));
+  };
 
   const handleSaveTerm = async () => {
     if (!termName.trim()) {
-      Alert.alert('Validation Error', 'Please enter a term name (e.g., Term 1).');
+      setAlertConfig({
+        visible: true,
+        title: 'Validation Error',
+        message: 'Please enter a term name (e.g., Term 1).',
+        type: 'error',
+      });
       return;
     }
     const num = parseInt(termNumber, 10);
     if (isNaN(num) || num < 1) {
-      Alert.alert('Validation Error', 'Please enter a valid term number (1, 2, 3...).');
+      setAlertConfig({
+        visible: true,
+        title: 'Validation Error',
+        message: 'Please enter a valid term number (1, 2, 3...).',
+        type: 'error',
+      });
       return;
     }
 
     try {
       setSubmitting(true);
-      await createTerm({
+      const createdTerm = await createTerm({
         academic_year: academicYear.trim(),
         term_name: termName.trim(),
         term_number: num,
         start_date: startDate.trim() || undefined,
         end_date: endDate.trim() || undefined,
       });
+
+      const savedName = termName.trim();
+      const savedYear = academicYear.trim();
+
       setModalVisible(false);
       setTermName('');
       setTermNumber(String(terms.length + 2));
       setStartDate('');
       setEndDate('');
-      Alert.alert('Success', 'Academic term created successfully.');
+
+      setAlertConfig({
+        visible: true,
+        title: 'Academic Term Created!',
+        message: `Academic term "${savedName}" has been configured successfully.\n\nWould you like to move to Fee Structures to assign classes and payment methods for this term?`,
+        type: 'success',
+        buttons: [
+          {
+            text: 'Continue to Fee Structure',
+            style: 'primary',
+            onPress: () => {
+              router.push({
+                pathname: '/(root)/institution/fees/structures/add' as any,
+                params: {
+                  termId: createdTerm?.id || '',
+                  termName: savedName,
+                  academicYear: savedYear,
+                },
+              });
+            },
+          },
+          {
+            text: 'Stay on Terms',
+            style: 'secondary',
+            onPress: () => {},
+          },
+        ],
+      });
     } catch (err: any) {
-      Alert.alert('Error', err?.message || 'Failed to create academic term.');
+      setAlertConfig({
+        visible: true,
+        title: 'Creation Failed',
+        message: err?.message || 'Failed to create academic term. Please try again.',
+        type: 'error',
+      });
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const confirmDeleteTerm = (term: any) => {
+    setAlertConfig({
+      visible: true,
+      title: 'Delete Academic Term',
+      message: `Are you sure you want to delete "${term.term_name}" (Academic Year: ${term.academic_year})?\n\nAssociated fee structures and uncollected fee schedules for this term will also be removed.`,
+      type: 'warning',
+      buttons: [
+        {
+          text: 'Cancel',
+          style: 'secondary',
+          onPress: () => setAlertConfig((prev) => ({ ...prev, visible: false })),
+        },
+        {
+          text: 'Delete Term',
+          style: 'destructive',
+          onPress: async () => {
+            setAlertConfig((prev) => ({ ...prev, visible: false }));
+            try {
+              setDeletingId(term.id);
+              await deleteTerm(term.id);
+              setAlertConfig({
+                visible: true,
+                title: 'Term Deleted',
+                message: `Academic term "${term.term_name}" has been deleted successfully.`,
+                type: 'success',
+              });
+            } catch (err: any) {
+              setAlertConfig({
+                visible: true,
+                title: 'Cannot Delete Term',
+                message: err?.message || 'Failed to delete academic term.',
+                type: 'error',
+              });
+            } finally {
+              setDeletingId(null);
+            }
+          },
+        },
+      ],
+    });
   };
 
   return (
@@ -111,6 +239,16 @@ export default function AcademicTermsScreen() {
                   <Badge variant={term.is_active ? 'success' : 'default'}>
                     {term.is_active ? 'ACTIVE' : 'INACTIVE'}
                   </Badge>
+                  <TouchableOpacity
+                    style={styles.deleteTermBtn}
+                    onPress={() => confirmDeleteTerm(term)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    activeOpacity={0.7}
+                    disabled={deletingId === term.id}
+                    accessibilityLabel="Delete academic term"
+                  >
+                    <Trash2 size={16} color="#EF4444" />
+                  </TouchableOpacity>
                 </View>
 
                 <View style={styles.termMetaBox}>
@@ -165,22 +303,61 @@ export default function AcademicTermsScreen() {
               required
             />
 
-            <View style={{ flexDirection: 'row', gap: 12 }}>
+            <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16 }}>
               <View style={{ flex: 1 }}>
-                <FormField
-                  label="Start Date (YYYY-MM-DD)"
-                  value={startDate}
-                  onChangeText={setStartDate}
-                  placeholder="2026-06-01"
-                />
+                <Text style={styles.inputLabel}>Start Date</Text>
+                <TouchableOpacity
+                  style={styles.datePickerBtn}
+                  onPress={() => setDatePickerConfig({ visible: true, type: 'start' })}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.datePickerContent}>
+                    <Calendar size={18} color={startDate ? theme.colors.primary : '#94A3B8'} {...({} as any)} />
+                    <Text style={[styles.datePickerText, !startDate && styles.datePlaceholderText]}>
+                      {startDate || 'YYYY-MM-DD'}
+                    </Text>
+                  </View>
+                  {startDate ? (
+                    <TouchableOpacity
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        setStartDate('');
+                      }}
+                      style={styles.dateClearBtn}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <X size={14} color="#94A3B8" {...({} as any)} />
+                    </TouchableOpacity>
+                  ) : null}
+                </TouchableOpacity>
               </View>
+
               <View style={{ flex: 1 }}>
-                <FormField
-                  label="End Date (YYYY-MM-DD)"
-                  value={endDate}
-                  onChangeText={setEndDate}
-                  placeholder="2026-10-31"
-                />
+                <Text style={styles.inputLabel}>End Date</Text>
+                <TouchableOpacity
+                  style={styles.datePickerBtn}
+                  onPress={() => setDatePickerConfig({ visible: true, type: 'end' })}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.datePickerContent}>
+                    <Calendar size={18} color={endDate ? theme.colors.primary : '#94A3B8'} {...({} as any)} />
+                    <Text style={[styles.datePickerText, !endDate && styles.datePlaceholderText]}>
+                      {endDate || 'YYYY-MM-DD'}
+                    </Text>
+                  </View>
+                  {endDate ? (
+                    <TouchableOpacity
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        setEndDate('');
+                      }}
+                      style={styles.dateClearBtn}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <X size={14} color="#94A3B8" {...({} as any)} />
+                    </TouchableOpacity>
+                  ) : null}
+                </TouchableOpacity>
               </View>
             </View>
 
@@ -200,6 +377,25 @@ export default function AcademicTermsScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Calendar Date Picker Modal */}
+      <CalendarModal
+        visible={datePickerConfig.visible}
+        onClose={() => setDatePickerConfig(prev => ({ ...prev, visible: false }))}
+        onSelect={handleDateSelect}
+        initialDate={datePickerConfig.type === 'start' ? startDate : endDate}
+        title={datePickerConfig.type === 'start' ? 'Select Term Start Date' : 'Select Term End Date'}
+      />
+
+      {/* Continuation & Alert Modal */}
+      <AlertModal
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        buttons={alertConfig.buttons}
+        onClose={() => setAlertConfig(prev => ({ ...prev, visible: false }))}
+      />
     </View>
   );
 }
@@ -235,6 +431,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 12,
+  },
+  deleteTermBtn: {
+    marginLeft: 10,
+    padding: 8,
+    borderRadius: theme.borderRadius.m,
+    backgroundColor: '#FEE2E2',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   termIconBox: {
     width: 40,
@@ -309,5 +513,47 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     gap: 12,
     marginTop: 20,
+  },
+  inputLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: theme.colors.text,
+    marginBottom: 6,
+  },
+  datePickerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: theme.borderRadius.m,
+    paddingHorizontal: 14,
+    minHeight: 46,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.02,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  datePickerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  datePickerText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.colors.text,
+  },
+  datePlaceholderText: {
+    color: '#94A3B8',
+    fontWeight: 'normal',
+  },
+  dateClearBtn: {
+    padding: 4,
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9',
   },
 });

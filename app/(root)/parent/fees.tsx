@@ -16,7 +16,7 @@ import { Button } from '../../../src/components/common/Button';
 import { LoadingState, EmptyState } from '../../../src/components/common/FeedbackStates';
 import { useParentStudents } from '../../../src/hooks/useParentStudents';
 import { supabase } from '../../../src/lib/supabase';
-import { ArrowLeft, CreditCard, Receipt, AlertCircle, CheckCircle, IndianRupee } from 'lucide-react-native';
+import { ArrowLeft, CreditCard, Receipt, AlertCircle, CheckCircle, IndianRupee, Tag } from 'lucide-react-native';
 
 export default function ParentFeesScreen() {
   const router = useRouter();
@@ -32,16 +32,39 @@ export default function ParentFeesScreen() {
       setLoading(true);
 
       try {
-        // 1. Fetch student_fees records
+        // 1. Fetch student_fees records with structure and concessions
         const { data: fees } = await (supabase as any)
           .from('student_fees')
-          .select('*')
+          .select(`
+            *,
+            fee_structure:fee_structures(name, category, term_id),
+            concessions:fee_concessions(concession_type, amount, percentage, reason)
+          `)
           .eq('student_id', selectedChild.student.id)
           .order('created_at', { ascending: false });
 
-        setStudentFees(fees || []);
+        // 2. Fetch terms for human-readable term names
+        const { data: termData } = await (supabase as any)
+          .from('academic_terms')
+          .select('id, term_name, academic_year');
 
-        // 2. Fetch fee payments
+        const termMap = new Map<string, string>();
+        (termData || []).forEach((t: any) => termMap.set(t.id, t.term_name));
+
+        const mappedFees = (fees || []).map((f: any) => {
+          const effectiveTermId = f.term_id || f.fee_structure?.term_id || null;
+          const termName = effectiveTermId
+            ? termMap.get(effectiveTermId) || 'Term Fee'
+            : 'Academic Year';
+          return {
+            ...f,
+            term_name: termName,
+          };
+        });
+
+        setStudentFees(mappedFees || []);
+
+        // 3. Fetch fee payments
         const { data: payHistory } = await (supabase as any)
           .from('fee_payments')
           .select('*')
@@ -149,23 +172,74 @@ export default function ParentFeesScreen() {
               return (
                 <View key={fee.id} style={styles.feeItem}>
                   <View style={styles.feeItemHeader}>
-                    <Text style={styles.feeItemTitle}>
-                      {fee.description || fee.class_name || 'Academic Fee'}
-                    </Text>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <Text style={styles.feeItemTitle}>
+                        {fee.fee_structure?.name
+                          ? `${fee.term_name} — ${fee.fee_structure.name}`
+                          : fee.term_name || fee.class_name || 'Academic Fee'}
+                      </Text>
+                      <Text style={styles.feeItemMeta}>
+                        Due Date: {fee.due_date ? new Date(fee.due_date).toLocaleDateString() : 'Immediate'}
+                      </Text>
+                    </View>
                     <Badge
                       variant={feeBalance <= 0 ? 'success' : feePaid > 0 ? 'warning' : 'destructive'}
                     >
                       {fee.status ? fee.status.toUpperCase() : feeBalance <= 0 ? 'PAID' : 'PENDING'}
                     </Badge>
                   </View>
-                  <View style={styles.feeItemRow}>
-                    <Text style={styles.feeItemMeta}>
-                      Due Date: {fee.due_date ? new Date(fee.due_date).toLocaleDateString() : 'N/A'}
-                    </Text>
-                    <Text style={styles.feeItemBalance}>
-                      Remaining: ₹{feeBalance.toLocaleString('en-IN')}
-                    </Text>
+
+                  {/* Financial Breakdown Row */}
+                  <View style={styles.feeBreakdownRow}>
+                    <View style={styles.breakdownCol}>
+                      <Text style={styles.breakdownLabel}>Invoiced</Text>
+                      <Text style={styles.breakdownVal}>₹{feeDue.toLocaleString('en-IN')}</Text>
+                    </View>
+                    {feeConcession > 0 && (
+                      <View style={styles.breakdownCol}>
+                        <Text style={styles.breakdownLabel}>Concession</Text>
+                        <Text style={[styles.breakdownVal, { color: theme.colors.primary, fontWeight: '700' }]}>
+                          -₹{feeConcession.toLocaleString('en-IN')}
+                        </Text>
+                      </View>
+                    )}
+                    <View style={styles.breakdownCol}>
+                      <Text style={styles.breakdownLabel}>Paid</Text>
+                      <Text style={[styles.breakdownVal, { color: '#10B981' }]}>
+                        ₹{feePaid.toLocaleString('en-IN')}
+                      </Text>
+                    </View>
+                    <View style={styles.breakdownCol}>
+                      <Text style={styles.breakdownLabel}>Remaining</Text>
+                      <Text
+                        style={[
+                          styles.breakdownVal,
+                          {
+                            color: feeBalance > 0 ? '#EF4444' : theme.colors.textMuted,
+                            fontWeight: '800',
+                          },
+                        ]}
+                      >
+                        ₹{feeBalance.toLocaleString('en-IN')}
+                      </Text>
+                    </View>
                   </View>
+
+                  {/* Concession Notice Tag */}
+                  {feeConcession > 0 && (
+                    <View style={styles.concessionNoticeRow}>
+                      <Tag size={13} color={theme.colors.primary} />
+                      <Text style={styles.concessionNoticeText}>
+                        Concession applied: ₹{feeConcession.toLocaleString('en-IN')}
+                        {fee.concessions?.[0]?.concession_type
+                          ? ` (${fee.concessions[0].concession_type.replace(/_/g, ' ')})`
+                          : ''}
+                        {fee.concessions?.[0]?.percentage
+                          ? ` • ${fee.concessions[0].percentage}% off`
+                          : ''}
+                      </Text>
+                    </View>
+                  )}
                 </View>
               );
             })
@@ -343,5 +417,41 @@ const styles = StyleSheet.create({
     color: '#10B981',
     fontSize: 14,
     fontWeight: '700',
+  },
+  feeBreakdownRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: theme.borderRadius.s,
+    padding: 10,
+    marginTop: 8,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  breakdownCol: {
+    flex: 1,
+  },
+  breakdownLabel: {
+    fontSize: 10.5,
+    color: theme.colors.textMuted,
+    marginBottom: 2,
+  },
+  breakdownVal: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: theme.colors.text,
+  },
+  concessionNoticeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+    paddingHorizontal: 4,
+  },
+  concessionNoticeText: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: theme.colors.primary,
   },
 });

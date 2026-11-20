@@ -308,8 +308,7 @@ export function DataTable<T extends Record<string, any>>({
           {/* Pagination Controls */}
           <View style={styles.paginationBar}>
             <Text style={styles.paginationInfo}>
-              Showing {(currentPage - 1) * pageSize + 1}-
-              {Math.min(currentPage * pageSize, sortedData.length)} of {sortedData.length}
+              {`Showing ${((currentPage - 1) * pageSize) + 1}-${Math.min(currentPage * pageSize, sortedData.length)} of ${sortedData.length}`}
             </Text>
 
             <View style={styles.paginationButtons}>
