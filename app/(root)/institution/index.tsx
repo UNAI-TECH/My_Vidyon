@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, ActivityIndicator } from 'react-native';
+import { useRouter } from 'expo-router';
 import { NotificationBell } from '../../../src/components/common/NotificationBell';
 import { theme } from '../../../src/theme';
 import { PageHeader } from '../../../src/components/common/PageHeader';
@@ -8,21 +9,24 @@ import { StatCard } from '../../../src/components/common/StatCard';
 import { EventAdCarousel } from '../../../src/components/common/EventAdCarousel';
 import { useAuth } from '../../../src/hooks/useAuth';
 import { useInstitutionData } from '../../../src/hooks/useInstitutionData';
+import { useAccountantDashboard } from '../../../src/hooks/useAccountantDashboard';
 import { AdBanner } from '../../../src/components/common/Ads/AdBanner';
 import { 
   Users, 
   Briefcase, 
-  FileText,
-  TrendingUp,
-  Settings,
-  GraduationCap,
-  Building,
-  UserCheck,
-  Clock,
-  ChevronDown,
-  Bell,
-  ClipboardList,
-  Calendar
+  FileText, 
+  TrendingUp, 
+  Settings, 
+  GraduationCap, 
+  Building, 
+  UserCheck, 
+  Clock, 
+  ChevronDown, 
+  Bell, 
+  ClipboardList, 
+  Calendar,
+  CreditCard,
+  CheckCircle,
 } from 'lucide-react-native';
 import { ShortcutGrid } from '../../../src/components/common/ShortcutGrid';
 import { LineChart, PieChart } from 'react-native-chart-kit';
@@ -31,9 +35,13 @@ import { format } from 'date-fns';
 const screenWidth = Dimensions.get('window').width;
 
 export default function InstitutionDashboard() {
+  const router = useRouter();
   const { institutionId, role, imageUrl } = useAuth();
   const [academicYear, setAcademicYear] = useState('2026-27');
-  const { stats, charts, attendanceFeed, pendingLeaves, profile, institution, isLoading } = useInstitutionData(institutionId, academicYear);
+  const isFinance = role === 'accountant' || role === 'finance';
+
+  const { stats, charts, attendanceFeed, pendingLeaves, profile, institution, isLoading } = useInstitutionData(!isFinance ? institutionId : null, academicYear);
+  const accountantData = useAccountantDashboard(isFinance ? (institutionId || undefined) : undefined);
   const [containerWidth, setContainerWidth] = useState(screenWidth - 32);
 
   const onLayout = (event: any) => {
@@ -54,11 +62,12 @@ export default function InstitutionDashboard() {
     }
     if (role === 'accountant' || role === 'finance') {
       return [
-        ...(((institution as any)?.allowed_roles?.finance !== false) ? [{ label: 'Fee Management', icon: Briefcase, href: '/(root)/institution/fees', color: '#F59E0B' }] : []),
         { label: 'Fee Collection', icon: TrendingUp, href: '/(root)/institution/fees/collection', color: '#10B981' },
+        { label: 'Fee Management', icon: Briefcase, href: '/(root)/institution/fees', color: '#F59E0B' },
         { label: 'Fee Structures', icon: FileText, href: '/(root)/institution/fees/structures', color: '#6366F1' },
         { label: 'Concessions', icon: UserCheck, href: '/(root)/institution/fees/concessions', color: '#EC4899' },
         { label: 'Reports', icon: FileText, href: '/(root)/institution/reports', color: '#3B82F6' },
+        { label: 'Analytics', icon: TrendingUp, href: '/(root)/institution/analytics', color: '#0EA5E9' },
         { label: 'Settings', icon: Settings, href: '/(root)/institution/settings', color: '#64748B' },
       ];
     }
@@ -100,7 +109,10 @@ export default function InstitutionDashboard() {
     ? Math.round((stats.presentToday / stats.totalPeople) * 100) 
     : 0;
 
-  if (isLoading && !stats.students) {
+  const currentInstitution = isFinance ? (accountantData.institution || institution) : institution;
+  const currentProfile = isFinance ? (accountantData.stats.accountantProfile || profile) : profile;
+
+  if (!isFinance && isLoading && !stats.students) {
     return (
       <View style={styles.loaderContainer}>
         <ActivityIndicator size="large" color={theme.colors.primary} />
@@ -108,6 +120,188 @@ export default function InstitutionDashboard() {
     );
   }
 
+  if (isFinance && accountantData.isLoading) {
+    return (
+      <View style={styles.loaderContainer}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+      </View>
+    );
+  }
+
+  // FINANCE & ACCOUNTANT DASHBOARD VIEW
+  if (isFinance) {
+    const accStats = accountantData.stats;
+    const totalBilled = accStats.totalRevenue + accStats.outstandingAmount;
+    const collectionRate = totalBilled > 0
+      ? Math.round((accStats.totalRevenue / totalBilled) * 100)
+      : 100;
+
+    return (
+      <ScrollView style={styles.container} contentContainerStyle={styles.content} onLayout={onLayout}>
+        <PageHeader 
+          title="Fee & Finance Console" 
+          subtitle={`Cash Flow, Ledger Status & Counter Operations • Academic Year ${academicYear}`}
+          institutionName={currentInstitution?.name}
+          institutionLogo={currentInstitution?.logo_url}
+          userRole={role || 'accountant'}
+          userAvatar={imageUrl || currentProfile?.image_url || undefined}
+          actions={
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <NotificationBell />
+              <TouchableOpacity style={styles.yearPicker}>
+                <Text style={styles.yearText}>{academicYear}</Text>
+                <ChevronDown size={14} color={theme.colors.textMuted} {...({} as any)} />
+              </TouchableOpacity>
+            </View>
+          }
+        />
+
+        <EventAdCarousel 
+          nativeAdUnitID="ca-app-pub-3940256099942544/2247696110" 
+          adInterval={2}
+        />
+
+        {/* Shortcuts - Management Console */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Financial Operations</Text>
+          <ShortcutGrid items={shortcuts} />
+        </View>
+
+        {/* Financial Stat Cards */}
+        <View style={styles.statsGrid}>
+          <StatCard 
+            title="Total Collections (YTD)" 
+            value={`₹${accStats.totalRevenue.toLocaleString('en-IN')}`} 
+            icon={TrendingUp} 
+            iconColor="#10B981"
+            change="Real-time collection"
+            changeType="positive"
+          />
+          <StatCard 
+            title="Outstanding Dues" 
+            value={`₹${accStats.outstandingAmount.toLocaleString('en-IN')}`} 
+            icon={Clock} 
+            iconColor="#EF4444"
+            change={accStats.outstandingAmount > 0 ? "Pending collection" : "All cleared"}
+            changeType={accStats.outstandingAmount > 0 ? "negative" : "positive"}
+          />
+          <StatCard 
+            title="Transactions Recorded" 
+            value={accStats.transactionCount.toString()} 
+            icon={CreditCard} 
+            iconColor="#3B82F6"
+            change="Receipts issued"
+          />
+          <StatCard 
+            title="Collection Rate" 
+            value={`${collectionRate}%`} 
+            icon={CheckCircle} 
+            iconColor="#F59E0B"
+            change="Realized vs Invoiced"
+          />
+        </View>
+
+        {/* 7-Day Revenue Collections Trend (Native Responsive Bar Chart) */}
+        <View style={styles.chartCard}>
+          <Text style={styles.chartTitle}>7-Day Revenue Collections (₹)</Text>
+          <View style={styles.barChartContainer}>
+            {accStats.weeklyTrend.map((item, idx) => {
+              const maxVal = Math.max(...accStats.weeklyTrend.map(t => t.amount), 1);
+              const heightPct = Math.max(8, Math.round((item.amount / maxVal) * 100));
+              return (
+                <View key={idx} style={styles.barCol}>
+                  <Text style={styles.barValueText}>
+                    {item.amount >= 1000 ? `₹${(item.amount / 1000).toFixed(0)}k` : item.amount > 0 ? `₹${item.amount}` : '-'}
+                  </Text>
+                  <View style={styles.barTrack}>
+                    <View style={[styles.barFill, { height: `${heightPct}%`, backgroundColor: item.amount > 0 ? '#10B981' : '#E2E8F0' }]} />
+                  </View>
+                  <Text style={styles.barLabelText}>{item.day}</Text>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* Fee Collection Status Breakdown */}
+        <View style={styles.chartCard}>
+          <Text style={styles.chartTitle}>Fee Collection Status Breakdown</Text>
+          <View style={styles.distGrid}>
+            {accStats.feeDistribution.map((item, idx) => (
+              <View key={idx} style={[styles.distCard, { borderLeftColor: item.color }]}>
+                <Text style={styles.distLabel}>{item.name}</Text>
+                <Text style={[styles.distCount, { color: item.color }]}>{item.count} Accounts</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* Recent Payments & Counter Collections */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Recent Payments & Counter Collections</Text>
+            <TouchableOpacity onPress={() => router.push('/(root)/institution/fees/collection' as any)}>
+              <Text style={styles.viewAll}>+ Record Payment</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.feedContainer}>
+            {accStats.recentPayments.length > 0 ? (
+              accStats.recentPayments.map((p: any, idx: number) => (
+                <View key={p.id || idx} style={styles.feedItem}>
+                  <View style={styles.feedProfile}>
+                    <View style={[styles.avatar, { backgroundColor: '#10B98115' }]}>
+                      <CreditCard size={18} color="#10B981" />
+                    </View>
+                    <View>
+                      <Text style={styles.feedName}>{p.students?.name || 'Student'}</Text>
+                      <Text style={styles.feedSubtitle}>
+                        {p.students?.class_name || 'Class'}{p.students?.section ? ` • Sec ${p.students.section}` : ''} • {p.receipt_number || 'Receipt'}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.feedMeta}>
+                    <Text style={[styles.feedName, { color: '#10B981' }]}>
+                      +₹{Number(p.amount_paid || p.amount || 0).toLocaleString('en-IN')}
+                    </Text>
+                    <Text style={styles.feedTime}>
+                      {(p.payment_method || 'CASH').toUpperCase()} • {p.payment_date ? format(new Date(p.payment_date), 'MMM d, hh:mm a') : 'Today'}
+                    </Text>
+                  </View>
+                </View>
+              ))
+            ) : (
+              <View style={styles.emptyFeed}>
+                <Text style={styles.emptyText}>No fee payments recorded yet</Text>
+              </View>
+            )}
+          </View>
+        </View>
+
+        {/* Quick Financial Action Row */}
+        <View style={styles.actionRow}>
+          <TouchableOpacity 
+            style={[styles.actionButton, { flex: 1, backgroundColor: '#FAB75A' }]}
+            onPress={() => router.push('/(root)/institution/fees/collection' as any)}
+          >
+            <TrendingUp size={18} color="#1E293B" />
+            <Text style={[styles.actionButtonText, { color: '#1E293B' }]}>Fee Collection Counter</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.actionButton, { flex: 1, backgroundColor: '#3B82F6' }]}
+            onPress={() => router.push('/(root)/institution/reports' as any)}
+          >
+            <FileText size={18} color="white" />
+            <Text style={[styles.actionButtonText, { color: 'white' }]}>Financial Reports</Text>
+          </TouchableOpacity>
+        </View>
+
+        <AdBanner type="INSTITUTION" />
+      </ScrollView>
+    );
+  }
+
+  // INSTITUTION OVERVIEW (ADMIN / DEFAULT VIEW)
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content} onLayout={onLayout}>
       <PageHeader 
@@ -278,9 +472,9 @@ export default function InstitutionDashboard() {
         </View>
         <LineChart
           data={{
-            labels: charts.facultyAttendanceTrend?.length > 0 ? charts.facultyAttendanceTrend.map((t: any) => t.name) : ["Sun"],
+            labels: charts.facultyAttendanceTrend.length > 0 ? charts.facultyAttendanceTrend.map((t: any) => t.name) : ["Sun"],
             datasets: [{
-              data: charts.facultyAttendanceTrend?.length > 0 ? charts.facultyAttendanceTrend.map((t: any) => t.value) : [0]
+              data: charts.facultyAttendanceTrend.length > 0 ? charts.facultyAttendanceTrend.map((t: any) => t.value) : [0]
             }]
           }}
           width={containerWidth - 36}
@@ -325,7 +519,6 @@ export default function InstitutionDashboard() {
           style={styles.chartStyle}
         />
       </View>
-
 
       {/* Notifications */}
       <View style={styles.section}>
@@ -392,4 +585,85 @@ const styles = StyleSheet.create({
   notifTime: { fontSize: theme.metrics.normalize(11), color: theme.colors.textMuted, marginTop: 2 },
   viewAll: { fontSize: 12, color: theme.colors.primary, fontWeight: '600' },
   emptyNotif: { textAlign: 'center', paddingVertical: 12, fontSize: 12, color: theme.colors.textMuted },
+  barChartContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    height: 180,
+    paddingTop: 24,
+    paddingHorizontal: 8,
+  },
+  barCol: {
+    flex: 1,
+    alignItems: 'center',
+    height: '100%',
+    justifyContent: 'flex-end',
+  },
+  barTrack: {
+    width: 28,
+    height: 120,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 8,
+    justifyContent: 'flex-end',
+    overflow: 'hidden',
+  },
+  barFill: {
+    width: '100%',
+    borderRadius: 8,
+  },
+  barValueText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#059669',
+    marginBottom: 4,
+  },
+  barLabelText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: theme.colors.textMuted,
+    marginTop: 8,
+  },
+  distGrid: {
+    flexDirection: 'row',
+    gap: 12,
+    flexWrap: 'wrap',
+    marginTop: 4,
+  },
+  distCard: {
+    flex: 1,
+    minWidth: 140,
+    backgroundColor: '#F8FAFC',
+    padding: 14,
+    borderRadius: 12,
+    borderLeftWidth: 4,
+  },
+  distLabel: {
+    fontSize: 12,
+    color: theme.colors.textMuted,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  distCount: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  actionRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+    marginBottom: 24,
+  },
+  actionButton: {
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+  },
+  actionButtonText: {
+    fontWeight: '700',
+    fontSize: 13,
+  },
 });
