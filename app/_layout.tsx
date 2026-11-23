@@ -1,4 +1,4 @@
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useRouter, ErrorBoundaryProps } from 'expo-router';
 import { LogBox, Platform } from 'react-native';
 
 // Suppress the Expo Go push notification removal warning for Android SDK 53+
@@ -12,6 +12,8 @@ import { SearchProvider } from '../src/hooks/useSearch';
 import { useERPRealtime } from '../src/hooks/useERPRealtime';
 import { ThemedAlertProvider } from '../src/components/common/ThemedAlert';
 import { AccountSwitcherProvider } from '../src/context/AccountSwitcherContext';
+import { NetworkStatusProvider } from '../src/context/NetworkStatusContext';
+import { StatusErrorView } from '../src/components/common/StatusErrorView';
 
 const queryClient = new QueryClient();
 
@@ -90,15 +92,19 @@ export default function AppLayout() {
                 <WebSocketProvider>
                   <ThemedAlertProvider>
                     <SearchProvider>
-                      <Stack
-                        screenOptions={{
-                          headerShown: false,
-                          contentStyle: { backgroundColor: theme.colors.background },
-                        }}
-                      >
-                        <Stack.Screen name="(auth)" options={{ animation: 'fade' }} />
-                        <Stack.Screen name="(root)" options={{ animation: 'slide_from_right' }} />
-                      </Stack>
+                      <NetworkStatusProvider>
+                        <Stack
+                          screenOptions={{
+                            headerShown: false,
+                            contentStyle: { backgroundColor: theme.colors.background },
+                          }}
+                        >
+                          <Stack.Screen name="(auth)" options={{ animation: 'fade' }} />
+                          <Stack.Screen name="(root)" options={{ animation: 'slide_from_right' }} />
+                          <Stack.Screen name="+not-found" options={{ animation: 'fade' }} />
+                          <Stack.Screen name="offline" options={{ animation: 'fade' }} />
+                        </Stack>
+                      </NetworkStatusProvider>
                     </SearchProvider>
                   </ThemedAlertProvider>
                 </WebSocketProvider>
@@ -108,5 +114,16 @@ export default function AppLayout() {
         </AuthProvider>
       </QueryClientProvider>
     </SafeAreaProvider>
+  );
+}
+
+export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
+  return (
+    <StatusErrorView
+      type="error"
+      primaryActionLabel="Try Again"
+      onPrimaryAction={retry}
+      referenceCode={error?.message ? String(error.message).slice(0, 40) : undefined}
+    />
   );
 }
