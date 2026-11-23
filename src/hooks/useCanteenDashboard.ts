@@ -46,10 +46,30 @@ export function useCanteenDashboard(institutionId?: string, selectedClass?: stri
     enabled: !!institutionId,
   });
 
-  // 2. Fetch today's canteen attendance records (DEPRECATED: Now uses student_attendance)
+  // 2. Fetch today's CANTEEN attendance records from canteen_attendance table
   const today = new Date().toISOString().split('T')[0];
 
-  // 3. Fetch today's SCHOOL attendance from student_attendance table (morning check-in)
+  const { data: canteenRecords } = useQuery({
+    queryKey: ['canteen-attendance-records', institutionId, today],
+    queryFn: async () => {
+      if (!institutionId) return [];
+      const { data, error } = await supabase
+        .from('canteen_attendance')
+        .select('id, student_id, status, canteen_date')
+        .eq('institution_id', institutionId)
+        .eq('canteen_date', today);
+
+      if (error) {
+        console.warn('[Canteen] Canteen attendance fetch error:', error);
+        return [];
+      }
+      return (data || []) as any[];
+    },
+    enabled: !!institutionId,
+    refetchInterval: 15000,
+  });
+
+  // 3. Fetch today's SCHOOL attendance from student_attendance table (morning roll call)
   //    "present" and "late" are treated as IN-SCHOOL
   //    "absent" is treated as ABSENT-FROM-SCHOOL
   const { data: schoolAttendance } = useQuery({
@@ -58,10 +78,9 @@ export function useCanteenDashboard(institutionId?: string, selectedClass?: stri
       if (!institutionId) return [];
       const { data, error } = await supabase
         .from('student_attendance')
-        .select('id, student_id, status, canteen_permission, entry_allowed, academic_year')
+        .select('id, student_id, status, entry_allowed, academic_year')
         .eq('institution_id', institutionId)
-        .gte('created_at', today + 'T00:00:00')
-        .lte('created_at', today + 'T23:59:59');
+        .eq('attendance_date', today);
 
       if (error) {
         console.warn('[Canteen] School attendance fetch error:', error);
@@ -88,10 +107,13 @@ export function useCanteenDashboard(institutionId?: string, selectedClass?: stri
   ).sort() as string[];
 
   // 5. Merge students with attendance data
+  const validCanteenVerdicts = ['permitted', 'absent', 'illegal'];
+
   const allMerged = filteredByClass
     .filter((s: any) => !selectedSection || s.section === selectedSection)
     .map((s: any) => {
       const schoolRecord = (schoolAttendance || []).find((a: any) => a.student_id === s.id);
+      const canteenRecord = (canteenRecords || []).find((c: any) => c.student_id === s.id);
 
       // Determine school presence: present/late = "in_school", absent = "absent_school", no record = "no_record"
       const rawStatus = schoolRecord?.status?.toLowerCase?.() || '';
@@ -102,15 +124,19 @@ export function useCanteenDashboard(institutionId?: string, selectedClass?: stri
         schoolPresence = 'absent_school';
       }
 
+      // Valid canteen statuses: 'permitted' | 'absent' | 'illegal'. Any other value is 'unverified'
+      const rawCanteen = canteenRecord?.status?.toLowerCase?.();
+      const canteenStatus = validCanteenVerdicts.includes(rawCanteen) ? rawCanteen : 'unverified';
+
       return {
         id: s.id,
-        recordId: schoolRecord?.id || null, // The student_attendance primary key
+        recordId: canteenRecord?.id || null, // The canteen_attendance primary key
         name: s.name,
         roll: s.register_number || '—',
         className: s.class_name,
         section: s.section,
         imageUrl: s.image_url || null,
-        canteenStatus: schoolRecord?.canteen_permission || 'unverified',
+        canteenStatus,
         schoolPresence,
         entryAllowed: schoolRecord?.entry_allowed ?? true,
         academicYear: schoolRecord?.academic_year || s.academic_year,
@@ -172,7 +198,7 @@ export function useCanteenDashboard(institutionId?: string, selectedClass?: stri
   // 10. Refresh helper
   const refresh = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['canteen-students'] });
-    queryClient.invalidateQueries({ queryKey: ['canteen-attendance'] });
+    queryClient.invalidateQueries({ queryKey: ['canteen-attendance-records'] });
     queryClient.invalidateQueries({ queryKey: ['canteen-school-attendance'] });
   }, [queryClient]);
 

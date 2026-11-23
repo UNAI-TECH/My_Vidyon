@@ -74,6 +74,7 @@ export function useERPRealtime() {
           console.log('Attendance Change Detected:', payload);
           queryClient.invalidateQueries({ queryKey: ['attendance'] });
           queryClient.invalidateQueries({ queryKey: ['canteen_status'] });
+          queryClient.invalidateQueries({ queryKey: ['canteen-school-attendance'] });
           queryClient.invalidateQueries({ queryKey: ['parent-children'] });
           queryClient.invalidateQueries({ queryKey: ['parent-student-detail'] });
           queryClient.invalidateQueries({ queryKey: ['parent-student-stats'] });
@@ -91,6 +92,7 @@ export function useERPRealtime() {
         { event: 'UPDATE', schema: 'public', table: 'student_attendance' },
         () => {
           queryClient.invalidateQueries({ queryKey: ['attendance'] });
+          queryClient.invalidateQueries({ queryKey: ['canteen-school-attendance'] });
           queryClient.invalidateQueries({ queryKey: ['parent-children'] });
           queryClient.invalidateQueries({ queryKey: ['parent-student-detail'] });
           queryClient.invalidateQueries({ queryKey: ['parent-student-stats'] });
@@ -271,6 +273,7 @@ export function useERPRealtime() {
         { event: '*', schema: 'public', table: 'canteen_attendance' },
         (payload) => {
           queryClient.invalidateQueries({ queryKey: ['canteen_status'] });
+          queryClient.invalidateQueries({ queryKey: ['canteen-attendance-records'] });
         }
       )
       .subscribe();

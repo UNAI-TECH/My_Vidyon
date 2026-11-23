@@ -40,6 +40,7 @@ export default function CanteenDashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [statusModal, setStatusModal] = useState<{type: 'success' | 'error' | 'warning', title: string, message: string} | null>(null);
+  const [isClassUnlocked, setIsClassUnlocked] = useState(false);
 
   // Local state for canteen status overrides before submitting
   const [localSelections, setLocalSelections] = useState<Record<string, 'permitted' | 'absent' | 'illegal'>>({});
@@ -79,6 +80,12 @@ export default function CanteenDashboard() {
   const handleClassChange = (cls?: string) => {
     setSelectedClass(cls);
     setSelectedSection(undefined);
+    setIsClassUnlocked(false);
+  };
+
+  const handleSectionChange = (sec?: string) => {
+    setSelectedSection(sec);
+    setIsClassUnlocked(false);
   };
 
   // Merge "no record" with "absent" — from canteen perspective, not confirmed = not here
@@ -91,14 +98,14 @@ export default function CanteenDashboard() {
   // Boolean helper to check if UI should prompt for selection
   const needsSelection = !selectedClass || !selectedSection;
 
-  // Is Class locked? (Once any student in the selected class/section is submitted, lock it)
-  const isClassLocked = (selectedClass && selectedSection) 
-    ? displayStudents.some(s => s.canteenStatus !== 'unverified')
+  // Is Class locked? (Once any student in the selected class/section is submitted, lock it unless unlocked)
+  const isClassLocked = (selectedClass && selectedSection && displayStudents.length > 0) 
+    ? displayStudents.some(s => s.canteenStatus !== 'unverified') && !isClassUnlocked
     : false;
 
   const setStatus = (studentId: string, newStatus: 'permitted' | 'absent' | 'illegal') => {
     if (isClassLocked) {
-      Alert.alert('Class Submitted', 'This class has already been finalized for today and cannot be edited.');
+      Alert.alert('Class Submitted', 'This class has already been finalized for today and cannot be edited. Tap "Reopen / Edit" to make changes.');
       return;
     }
     setLocalSelections(prev => ({ ...prev, [studentId]: newStatus }));
@@ -115,22 +122,23 @@ export default function CanteenDashboard() {
         ...(s?.recordId ? { id: s.recordId } : {}),
         student_id: studentId,
         institution_id: institutionId!,
-        attendance_date: today,
-        status: s?.schoolPresence === 'in_school' ? 'present' : 'absent',
-        canteen_permission: status,
-        entry_allowed: s?.schoolPresence === 'in_school',
-        academic_year: s?.academicYear,
+        canteen_date: today,
+        status: status,
       };
     });
 
     if (updates.length === 0) {
+      if (isClassUnlocked) {
+        setIsClassUnlocked(false);
+        return;
+      }
       setStatusModal({ type: 'warning', title: 'No Changes', message: 'Please select at least one student status before submitting.' });
       return;
     }
 
     const { error } = await supabase
-      .from('student_attendance')
-      .upsert(updates as any);
+      .from('canteen_attendance')
+      .upsert(updates as any, { onConflict: 'student_id,canteen_date' });
 
     if (error) {
       console.error('Error in bulk update:', error);
@@ -138,6 +146,7 @@ export default function CanteenDashboard() {
     } else {
       setStatusModal({ type: 'success', title: 'Success', message: 'All records submitted successfully.' });
       setLocalSelections({}); // Clear cached selections
+      setIsClassUnlocked(false);
       refresh();
     }
   };
@@ -285,7 +294,7 @@ export default function CanteenDashboard() {
               >
                 <TouchableOpacity 
                   style={[styles.sectionChip, !selectedSection && styles.activeSectionChip]}
-                  onPress={() => setSelectedSection(undefined)}
+                  onPress={() => handleSectionChange(undefined)}
                 >
                   <Text style={[styles.sectionChipText, !selectedSection && styles.activeSectionChipText]}>All Sections</Text>
                 </TouchableOpacity>
@@ -293,7 +302,7 @@ export default function CanteenDashboard() {
                   <TouchableOpacity 
                     key={sec} 
                     style={[styles.sectionChip, selectedSection === sec && styles.activeSectionChip]}
-                    onPress={() => setSelectedSection(sec)}
+                    onPress={() => handleSectionChange(sec)}
                   >
                     <Text style={[styles.sectionChipText, selectedSection === sec && styles.activeSectionChipText]}>Sec {sec}</Text>
                   </TouchableOpacity>
@@ -475,9 +484,17 @@ export default function CanteenDashboard() {
               <Text style={styles.closeBtnText}>Submit & Close {selectedClass} {selectedSection}</Text>
             </TouchableOpacity>
           ) : (
-            <View style={[styles.closeBtn, { backgroundColor: '#E2E8F0', borderColor: '#CBD5E1', borderWidth: 1 }]}>
-              <CheckCircle size={16} color="#64748B" {...({} as any)} />
-              <Text style={[styles.closeBtnText, { color: '#64748B' }]}>Day Closed for {selectedClass} {selectedSection}</Text>
+            <View style={{ flexDirection: 'row', gap: 12, width: '100%' }}>
+              <View style={[styles.closeBtn, { flex: 1, backgroundColor: '#E2E8F0', borderColor: '#CBD5E1', borderWidth: 1 }]}>
+                <CheckCircle size={16} color="#64748B" {...({} as any)} />
+                <Text style={[styles.closeBtnText, { color: '#64748B' }]}>Day Closed for {selectedClass} {selectedSection}</Text>
+              </View>
+              <TouchableOpacity 
+                style={[styles.closeBtn, { width: 140, backgroundColor: theme.colors.primary }]}
+                onPress={() => setIsClassUnlocked(true)}
+              >
+                <Text style={[styles.closeBtnText, { color: 'white' }]}>Reopen / Edit</Text>
+              </TouchableOpacity>
             </View>
           )}
         </View>
